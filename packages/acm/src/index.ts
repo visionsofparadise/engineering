@@ -44,8 +44,10 @@ export { spectralRepair, SpectralRepairModule as SpectralRepairTransformModule, 
 export { voiceDenoise, VoiceDenoiseModule as VoiceDenoiseTransformModule, type VoiceDenoiseProperties } from "./transforms/voice-denoise";
 
 // Utilities
-export { dbToLinear } from "./utils/db";
+export { biquadFilter, preFilterCoefficients, rlbFilterCoefficients, type BiquadCoefficients } from "./utils/biquad";
+export { dbToLinear, linearToDb } from "./utils/db";
 export { createOnnxSession, type OnnxSession, type OnnxTensor } from "./utils/onnx-runtime";
 export { readToBuffer, type ReadToBufferResult } from "./utils/read-to-buffer";
+export { linearResample } from "./utils/resample";
 export { resolveBinary } from "./utils/resolve-binary";
-export { istft, stft, type StftResult } from "./utils/stft";
+export { createFftWorkspace, fft, hanningWindow, ifft, istft, stft, type FftWorkspace, type StftOutput, type StftResult } from "./utils/stft";

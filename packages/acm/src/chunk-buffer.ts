@@ -11,10 +11,12 @@ const STORAGE_THRESHOLD = 10 * 1024 * 1024; // 10MB
 export class ChunkBuffer {
 	private _frames = 0;
 	private _channels = 0;
-	private readonly storage: BufferStorage;
+	private storage: BufferStorage = "memory";
+	private readonly storageThreshold: number;
 
 	// Memory storage
-	private memoryChannels: Array<Array<Float32Array>> = [];
+	private memoryChannels: Array<Float32Array> = [];
+	private memoryWriteOffset = 0;
 
 	// File storage
 	private tempPath?: string;
@@ -23,17 +25,17 @@ export class ChunkBuffer {
 	private fileChannels = 0;
 
 	constructor(bufferSize: number, channels: number, storageThreshold = STORAGE_THRESHOLD) {
-		const estimatedBytes = (bufferSize === Infinity ? storageThreshold + 1 : bufferSize) * channels * 4;
-		this.storage = estimatedBytes > storageThreshold ? "file" : "memory";
+		this.storageThreshold = storageThreshold;
 		this._channels = channels;
 
-		if (this.storage === "memory") {
-			this.memoryChannels = [];
+		const initialCapacity = bufferSize === Infinity ? 44100 : bufferSize;
+		this.memoryChannels = [];
 
-			for (let ch = 0; ch < channels; ch++) {
-				this.memoryChannels.push([]);
-			}
+		for (let ch = 0; ch < channels; ch++) {
+			this.memoryChannels.push(new Float32Array(initialCapacity));
 		}
+
+		this.memoryWriteOffset = 0;
 	}
 
 	get frames(): number {
@@ -52,7 +54,8 @@ export class ChunkBuffer {
 		// Expand channels if needed
 		while (this._channels < samples.length) {
 			if (this.storage === "memory") {
-				this.memoryChannels.push([]);
+				const buf = new Float32Array(this.memoryChannels[0]?.length ?? duration);
+				this.memoryChannels.push(buf);
 			}
 
 			this._channels++;
@@ -62,6 +65,7 @@ export class ChunkBuffer {
 			await this.appendFile(samples, duration);
 		} else {
 			this.appendMemory(samples);
+			await this.maybeFlushToFile();
 		}
 
 		this._frames += duration;
@@ -89,7 +93,8 @@ export class ChunkBuffer {
 		// Expand channels if needed
 		while (this._channels < samples.length) {
 			if (this.storage === "memory") {
-				this.memoryChannels.push([]);
+				const buf = new Float32Array(this.memoryChannels[0]?.length ?? duration);
+				this.memoryChannels.push(buf);
 			}
 
 			this._channels++;
@@ -105,6 +110,7 @@ export class ChunkBuffer {
 			await this.writeFile(offset, samples);
 		} else {
 			this.writeMemory(offset, samples);
+			await this.maybeFlushToFile();
 		}
 	}
 
@@ -133,6 +139,16 @@ export class ChunkBuffer {
 	}
 
 
+	async reset(): Promise<void> {
+		this._frames = 0;
+		this.memoryWriteOffset = 0;
+
+		if (this.tempHandle) {
+			await this.tempHandle.truncate(0);
+			this.fileFramesWritten = 0;
+		}
+	}
+
 	async close(): Promise<void> {
 		if (this.tempHandle) {
 			await this.tempHandle.close();
@@ -145,6 +161,7 @@ export class ChunkBuffer {
 		}
 
 		this.memoryChannels = [];
+		this.memoryWriteOffset = 0;
 		this._frames = 0;
 		this._channels = 0;
 	}
@@ -152,21 +169,36 @@ export class ChunkBuffer {
 	// --- Memory implementation ---
 
 	private appendMemory(samples: Array<Float32Array>): void {
+		const required = this.memoryWriteOffset + (samples[0]?.length ?? 0);
+
 		for (let ch = 0; ch < samples.length; ch++) {
 			const channel = samples[ch];
 
-			if (channel) {
-				this.memoryChannels[ch]?.push(channel.slice());
+			if (!channel) continue;
+
+			let buf = this.memoryChannels[ch];
+
+			if (!buf) continue;
+
+			if (required > buf.length) {
+				const newBuf = new Float32Array(Math.max(required, buf.length * 2));
+				newBuf.set(buf.subarray(0, this.memoryWriteOffset));
+				this.memoryChannels[ch] = newBuf;
+				buf = newBuf;
 			}
+
+			buf.set(channel, this.memoryWriteOffset);
 		}
+
+		this.memoryWriteOffset = required;
 	}
 
 	private readMemory(offset: number, frames: number): AudioChunk {
 		const samples: Array<Float32Array> = [];
 
 		for (let ch = 0; ch < this._channels; ch++) {
-			const merged = this.mergeMemoryChannel(ch);
-			samples.push(merged.slice(offset, offset + frames));
+			const buf = this.memoryChannels[ch];
+			samples.push(buf ? buf.slice(offset, offset + frames) : new Float32Array(frames));
 		}
 
 		return { samples, offset, duration: frames };
@@ -178,48 +210,53 @@ export class ChunkBuffer {
 
 			if (!source) continue;
 
-			const merged = this.mergeMemoryChannel(ch);
+			let buf = this.memoryChannels[ch];
+
+			if (!buf) continue;
+
 			const needed = offset + source.length;
 
-			if (needed > merged.length) {
-				const expanded = new Float32Array(needed);
-				expanded.set(merged);
-				expanded.set(source, offset);
-				this.memoryChannels[ch] = [expanded];
-			} else {
-				merged.set(source, offset);
-				this.memoryChannels[ch] = [merged];
+			if (needed > buf.length) {
+				const newBuf = new Float32Array(Math.max(needed, buf.length * 2));
+				newBuf.set(buf.subarray(0, this.memoryWriteOffset));
+				this.memoryChannels[ch] = newBuf;
+				buf = newBuf;
+			}
+
+			buf.set(source, offset);
+
+			if (needed > this.memoryWriteOffset) {
+				this.memoryWriteOffset = needed;
 			}
 		}
 	}
 
 	private truncateMemory(frames: number): void {
-		for (let ch = 0; ch < this._channels; ch++) {
-			const merged = this.mergeMemoryChannel(ch);
-			this.memoryChannels[ch] = [merged.slice(0, frames)];
-		}
+		this.memoryWriteOffset = frames;
 	}
 
-	private mergeMemoryChannel(ch: number): Float32Array {
-		const chunks = this.memoryChannels[ch];
+	private async maybeFlushToFile(): Promise<void> {
+		if (this.memoryWriteOffset * this._channels * 4 <= this.storageThreshold) return;
 
-		if (!chunks || chunks.length === 0) return new Float32Array(0);
+		const handle = await this.ensureFileHandle();
+		const channels = this._channels;
+		const frames = this.memoryWriteOffset;
 
-		if (chunks.length === 1) return chunks[0] ?? new Float32Array(0);
+		const buf = Buffer.alloc(frames * channels * 4);
 
-		const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-		const merged = new Float32Array(totalLength);
-		let writeOffset = 0;
-
-		for (const chunk of chunks) {
-			merged.set(chunk, writeOffset);
-			writeOffset += chunk.length;
+		for (let frame = 0; frame < frames; frame++) {
+			for (let ch = 0; ch < channels; ch++) {
+				const memBuf = this.memoryChannels[ch];
+				buf.writeFloatLE(memBuf ? memBuf[frame] ?? 0 : 0, (frame * channels + ch) * 4);
+			}
 		}
 
-		chunks.length = 0;
-		chunks.push(merged);
+		await handle.write(buf, 0, buf.length, 0);
+		this.fileFramesWritten = frames;
 
-		return merged;
+		this.memoryChannels = [];
+		this.memoryWriteOffset = 0;
+		this.storage = "file";
 	}
 
 	// --- File implementation ---

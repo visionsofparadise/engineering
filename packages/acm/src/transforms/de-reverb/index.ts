@@ -37,6 +37,12 @@ export class DeReverbModule extends TransformModule {
 
 		const fftSize = 1024;
 		const hopSize = fftSize / 4;
+		const halfSize = fftSize / 2 + 1;
+		const numStftFrames = Math.floor((frames - fftSize) / hopSize) + 1;
+		const stftOutput = numStftFrames > 0 ? {
+			real: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
+			imag: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
+		} : undefined;
 
 		for (let ch = 0; ch < channels; ch++) {
 			const chunk = await buffer.read(0, frames);
@@ -44,7 +50,7 @@ export class DeReverbModule extends TransformModule {
 
 			if (!channel) continue;
 
-			const stftResult = stft(channel, fftSize, hopSize);
+			const stftResult = stft(channel, fftSize, hopSize, stftOutput);
 			const numFrames = stftResult.frames;
 			const numBins = stftResult.real[0]?.length ?? 0;
 

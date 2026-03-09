@@ -172,19 +172,14 @@ export abstract class TransformModule extends AudioChainModule {
 
 			if (overlapStart > 0) {
 				const overlapChunk = await this.chunkBuffer.read(overlapStart, this.overlap);
-				const channels = this.streamContext?.channels ?? this.chunkBuffer.channels;
 
-				await this.chunkBuffer.close();
-				this.chunkBuffer = new ChunkBuffer(this.bufferSize, channels, this.properties.storageThreshold);
+				await this.chunkBuffer.reset();
 
 				await this.chunkBuffer.append(overlapChunk.samples);
 				this.bufferOffset -= this.overlap;
 			}
 		} else {
-			// Reset buffer for next cycle
-			const channels = this.streamContext?.channels ?? this.chunkBuffer.channels;
-			await this.chunkBuffer.close();
-			this.chunkBuffer = new ChunkBuffer(this.bufferSize, channels, this.properties.storageThreshold);
+			await this.chunkBuffer.reset();
 		}
 	}
 }
