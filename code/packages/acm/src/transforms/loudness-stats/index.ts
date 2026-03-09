@@ -80,12 +80,9 @@ export class LoudnessStatsModule extends TransformModule {
 
 async function applyKWeighting(buffer: ChunkBuffer, channels: number, frames: number, sampleRate: number): Promise<Array<Float32Array>> {
 	const result: Array<Float32Array> = [];
-	const channelData = new Float32Array(frames);
-	const filterBuf1 = new Float32Array(frames);
-	const filterBuf2 = new Float32Array(frames);
 
 	for (let ch = 0; ch < channels; ch++) {
-		channelData.fill(0);
+		const channelData = new Float32Array(frames);
 		const chunkSize = 44100;
 		let offset = 0;
 
@@ -99,9 +96,9 @@ async function applyKWeighting(buffer: ChunkBuffer, channels: number, frames: nu
 			offset += chunk.duration;
 		}
 
-		const filtered = applyPreFilter(channelData, sampleRate, filterBuf1);
-		const rlbFiltered = applyRlbFilter(filtered, sampleRate, filterBuf2);
-		result.push(Float32Array.from(rlbFiltered));
+		const filtered = applyPreFilter(channelData, sampleRate);
+		const rlbFiltered = applyRlbFilter(filtered, sampleRate);
+		result.push(rlbFiltered);
 	}
 
 	return result;
@@ -112,14 +109,14 @@ interface BiquadCoefficients {
 	fa: [number, number, number];
 }
 
-function applyPreFilter(samples: Float32Array, sampleRate: number, output: Float32Array): Float32Array {
+function applyPreFilter(samples: Float32Array, sampleRate: number): Float32Array {
 	const { fb, fa } = preFilterCoefficients(sampleRate);
-	return biquadFilter(samples, fb, fa, output);
+	return biquadFilter(samples, fb, fa);
 }
 
-function applyRlbFilter(samples: Float32Array, sampleRate: number, output: Float32Array): Float32Array {
+function applyRlbFilter(samples: Float32Array, sampleRate: number): Float32Array {
 	const { fb, fa } = rlbFilterCoefficients(sampleRate);
-	return biquadFilter(samples, fb, fa, output);
+	return biquadFilter(samples, fb, fa);
 }
 
 function preFilterCoefficients(sampleRate: number): BiquadCoefficients {
@@ -165,7 +162,8 @@ function rlbFilterCoefficients(sampleRate: number): BiquadCoefficients {
 	};
 }
 
-function biquadFilter(samples: Float32Array, fb: [number, number, number], fa: [number, number, number], output: Float32Array): Float32Array {
+function biquadFilter(samples: Float32Array, fb: [number, number, number], fa: [number, number, number]): Float32Array {
+	const output = new Float32Array(samples.length);
 	let x1 = 0;
 	let x2 = 0;
 	let y1 = 0;
