@@ -1,0 +1,102 @@
+import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../../module";
+import { TransformModule, type TransformModuleProperties } from "../../transform";
+
+export interface CutRegion {
+	readonly start: number;
+	readonly end: number;
+}
+
+export interface CutProperties extends TransformModuleProperties {
+	readonly regions: Array<CutRegion>;
+}
+
+export class CutModule extends TransformModule {
+	static override is(value: unknown): value is CutModule {
+		return TransformModule.is(value) && value.type[2] === "cut";
+	}
+
+	readonly type = ["async-module", "transform", "cut"] as const;
+	readonly properties: CutProperties;
+	readonly bufferSize = 0;
+	readonly latency = 0;
+
+	private cutSampleRate = 44100;
+	private sortedRegions: Array<CutRegion> = [];
+
+	constructor(properties: AudioChainModuleInput<CutProperties>) {
+		super(properties);
+
+		this.properties = { ...properties, targets: properties.targets ?? [] };
+	}
+
+	protected override _setup(context: StreamContext): void {
+		super._setup(context);
+		this.cutSampleRate = context.sampleRate;
+		this.sortedRegions = [...this.properties.regions].sort((left, right) => left.start - right.start);
+	}
+
+	override _unbuffer(chunk: AudioChunk): AudioChunk | undefined {
+		const sampleRate = this.cutSampleRate;
+		const chunkStartSec = chunk.offset / sampleRate;
+		const keepRanges: Array<{ start: number; end: number }> = [];
+		let cursor = 0;
+
+		for (const region of this.sortedRegions) {
+			const cutStart = Math.max(0, Math.round((region.start - chunkStartSec) * sampleRate));
+			const cutEnd = Math.min(chunk.duration, Math.round((region.end - chunkStartSec) * sampleRate));
+
+			if (cutEnd <= 0 || cutStart >= chunk.duration) continue;
+
+			const clampedStart = Math.max(cursor, 0);
+			const clampedEnd = Math.max(clampedStart, cutStart);
+
+			if (clampedEnd > clampedStart) {
+				keepRanges.push({ start: clampedStart, end: clampedEnd });
+			}
+
+			cursor = Math.max(cursor, cutEnd);
+		}
+
+		if (cursor < chunk.duration) {
+			keepRanges.push({ start: cursor, end: chunk.duration });
+		}
+
+		if (keepRanges.length === 0) return undefined;
+
+		const totalKept = keepRanges.reduce((sum, range) => sum + (range.end - range.start), 0);
+
+		if (totalKept === chunk.duration) return chunk;
+
+		const channels = chunk.samples.length;
+		const output: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < channels; ch++) {
+			const channel = chunk.samples[ch];
+
+			if (!channel) {
+				output.push(new Float32Array(totalKept));
+				continue;
+			}
+
+			const out = new Float32Array(totalKept);
+			let writeOffset = 0;
+
+			for (const range of keepRanges) {
+				out.set(channel.subarray(range.start, range.end), writeOffset);
+				writeOffset += range.end - range.start;
+			}
+
+			output.push(out);
+		}
+
+		return { samples: output, offset: chunk.offset, duration: totalKept };
+	}
+
+	clone(overrides?: Partial<CutProperties>): CutModule {
+		return new CutModule({ ...this.properties, previousProperties: this.properties, ...overrides });
+	}
+}
+
+export function cut(regions: Array<CutRegion>, options?: { id?: string }): CutModule {
+	return new CutModule({ regions, id: options?.id });
+}
