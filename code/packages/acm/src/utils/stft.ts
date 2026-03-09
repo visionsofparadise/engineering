@@ -12,16 +12,17 @@ export function stft(signal: Float32Array, fftSize: number, hopSize: number): St
 
 	const real: Array<Float32Array> = [];
 	const imag: Array<Float32Array> = [];
+	const windowed = new Float32Array(fftSize);
+	const workspace = createFftWorkspace(fftSize);
 
 	for (let frame = 0; frame < numFrames; frame++) {
 		const offset = frame * hopSize;
-		const windowed = new Float32Array(fftSize);
 
 		for (let index = 0; index < fftSize; index++) {
 			windowed[index] = (signal[offset + index] ?? 0) * (window[index] ?? 0);
 		}
 
-		const { re, im } = fft(windowed);
+		const { re, im } = fft(windowed, workspace);
 
 		real.push(re.slice(0, halfSize));
 		imag.push(im.slice(0, halfSize));
@@ -36,16 +37,19 @@ export function istft(result: StftResult, hopSize: number, outputLength: number)
 	const output = new Float32Array(outputLength);
 	const windowSum = new Float32Array(outputLength);
 
+	const fullRe = new Float32Array(fftSize);
+	const fullIm = new Float32Array(fftSize);
+	const halfSize = fftSize / 2 + 1;
+	const workspace = createFftWorkspace(fftSize);
+
 	for (let frame = 0; frame < frames; frame++) {
 		const re = real[frame];
 		const im = imag[frame];
 
 		if (!re || !im) continue;
 
-		const fullRe = new Float32Array(fftSize);
-		const fullIm = new Float32Array(fftSize);
-		const halfSize = fftSize / 2 + 1;
-
+		fullRe.fill(0);
+		fullIm.fill(0);
 		fullRe.set(re);
 		fullIm.set(im);
 
@@ -54,7 +58,7 @@ export function istft(result: StftResult, hopSize: number, outputLength: number)
 			fullIm[fftSize - index] = -(im[index] ?? 0);
 		}
 
-		const timeDomain = ifft(fullRe, fullIm);
+		const timeDomain = ifft(fullRe, fullIm, workspace);
 		const offset = frame * hopSize;
 
 		for (let index = 0; index < fftSize; index++) {
@@ -78,22 +82,48 @@ export function istft(result: StftResult, hopSize: number, outputLength: number)
 	return output;
 }
 
+const hanningWindowCache = new Map<number, Float32Array>();
+
 function hanningWindow(size: number): Float32Array {
+	const cached = hanningWindowCache.get(size);
+
+	if (cached) return cached;
+
 	const window = new Float32Array(size);
 
 	for (let index = 0; index < size; index++) {
 		window[index] = 0.5 * (1 - Math.cos((2 * Math.PI * index) / (size - 1)));
 	}
 
+	hanningWindowCache.set(size, window);
+
 	return window;
 }
 
-function fft(input: Float32Array): { re: Float32Array; im: Float32Array } {
+interface FftWorkspace {
+	re: Float32Array;
+	im: Float32Array;
+	outRe: Float32Array;
+	outIm: Float32Array;
+}
+
+function createFftWorkspace(size: number): FftWorkspace {
+	return {
+		re: new Float32Array(size),
+		im: new Float32Array(size),
+		outRe: new Float32Array(size),
+		outIm: new Float32Array(size),
+	};
+}
+
+function fft(input: Float32Array, workspace?: FftWorkspace): { re: Float32Array; im: Float32Array } {
 	const size = input.length;
-	const re = new Float32Array(size);
-	const im = new Float32Array(size);
+	const re = workspace ? workspace.re : new Float32Array(size);
+	const im = workspace ? workspace.im : new Float32Array(size);
 
 	re.set(input);
+
+	if (workspace) im.fill(0);
 
 	if (size <= 1) return { re, im };
 
@@ -103,10 +133,12 @@ function fft(input: Float32Array): { re: Float32Array; im: Float32Array } {
 	return { re, im };
 }
 
-function ifft(re: Float32Array, im: Float32Array): Float32Array {
+function ifft(re: Float32Array, im: Float32Array, workspace?: FftWorkspace): Float32Array {
 	const size = re.length;
-	const outRe = Float32Array.from(re);
-	const outIm = new Float32Array(size);
+	const outRe = workspace ? workspace.outRe : Float32Array.from(re);
+	const outIm = workspace ? workspace.outIm : new Float32Array(size);
+
+	if (workspace) outRe.set(re);
 
 	for (let index = 0; index < size; index++) {
 		outIm[index] = -(im[index] ?? 0);

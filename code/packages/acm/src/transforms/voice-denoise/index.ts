@@ -98,6 +98,15 @@ export class VoiceDenoiseModule extends TransformModule {
 
 		// Input buffer for overlap-add
 		const inputBuffer = new Float32Array(BLOCK_LEN);
+		const magnitude = new Float32Array(FFT_BINS);
+		const maskedReal = new Float32Array(FFT_BINS);
+		const maskedImag = new Float32Array(FFT_BINS);
+		const maskedStft = {
+			real: [maskedReal],
+			imag: [maskedImag],
+			frames: 1,
+			fftSize: BLOCK_LEN,
+		};
 		let outputOffset = 0;
 
 		for (let offset = 0; offset + BLOCK_LEN <= totalFrames; offset += BLOCK_SHIFT) {
@@ -114,7 +123,6 @@ export class VoiceDenoiseModule extends TransformModule {
 			if (!realFrame || !imagFrame) continue;
 
 			// Compute log magnitude
-			const magnitude = new Float32Array(FFT_BINS);
 
 			for (let bin = 0; bin < FFT_BINS; bin++) {
 				const re = realFrame[bin] ?? 0;
@@ -134,22 +142,12 @@ export class VoiceDenoiseModule extends TransformModule {
 			if (!mask) continue;
 
 			// Step 3: Apply mask to STFT and compute iFFT
-			const maskedReal = new Float32Array(FFT_BINS);
-			const maskedImag = new Float32Array(FFT_BINS);
-
 			for (let bin = 0; bin < FFT_BINS; bin++) {
 				const maskVal = mask.data[bin] ?? 0;
 				maskedReal[bin] = (realFrame[bin] ?? 0) * maskVal;
 				maskedImag[bin] = (imagFrame[bin] ?? 0) * maskVal;
 			}
 
-			// iFFT to get time-domain frame
-			const maskedStft = {
-				real: [maskedReal],
-				imag: [maskedImag],
-				frames: 1,
-				fftSize: BLOCK_LEN,
-			};
 			const maskedTimeDomain = istft(maskedStft, BLOCK_LEN, BLOCK_LEN);
 
 			// Step 4: Run model 2 — time-domain processing

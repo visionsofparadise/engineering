@@ -49,14 +49,17 @@ export class DeBleedModule extends TransformModule {
 		const { filterLength, stepSize } = this.properties;
 		const reference = this.referenceSignal;
 
+		const output = new Float32Array(frames);
+		const filterCoeffs = new Float32Array(filterLength);
+
 		for (let ch = 0; ch < channels; ch++) {
 			const chunk = await buffer.read(0, frames);
 			const channel = chunk.samples[ch];
 
 			if (!channel) continue;
 
-			const output = new Float32Array(frames);
-			const filterCoeffs = new Float32Array(filterLength);
+			output.fill(0);
+			filterCoeffs.fill(0);
 
 			for (let index = 0; index < frames; index++) {
 				let predicted = 0;

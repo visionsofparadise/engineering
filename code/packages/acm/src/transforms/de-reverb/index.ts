@@ -50,20 +50,37 @@ export class DeReverbModule extends TransformModule {
 
 			const { predictionDelay, filterLength, iterations } = this.properties;
 
+			// Pre-allocate power arrays for reuse across iterations
+			const originalPowerArrays: Array<Float32Array> = [];
+			const iterationPowerArrays: Array<Float32Array> = [];
+
+			for (let frame = 0; frame < numFrames; frame++) {
+				originalPowerArrays.push(new Float32Array(numBins));
+				iterationPowerArrays.push(new Float32Array(numBins));
+			}
+
 			// Save original power as upper bound — dereverberation should only reduce power
-			const originalPower = estimatePower(stftResult.real, stftResult.imag, numFrames, numBins);
+			const originalPower = estimatePower(stftResult.real, stftResult.imag, numFrames, numBins, originalPowerArrays);
 
 			const filterCoeffsReal = new Float32Array(filterLength);
 			const filterCoeffsImag = new Float32Array(filterLength);
+			const corrRealReal = new Float32Array(filterLength * filterLength);
+			const corrRealImag = new Float32Array(filterLength * filterLength);
+			const crossReal = new Float32Array(filterLength);
+			const crossImag = new Float32Array(filterLength);
+			const arWork = new Float32Array(filterLength * filterLength);
+			const aiWork = new Float32Array(filterLength * filterLength);
+			const brWork = new Float32Array(filterLength);
+			const biWork = new Float32Array(filterLength);
 
 			for (let iter = 0; iter < iterations; iter++) {
-				const power = iter === 0 ? originalPower : estimatePower(stftResult.real, stftResult.imag, numFrames, numBins);
+				const power = iter === 0 ? originalPower : estimatePower(stftResult.real, stftResult.imag, numFrames, numBins, iterationPowerArrays);
 
 				for (let bin = 0; bin < numBins; bin++) {
 					filterCoeffsReal.fill(0);
 					filterCoeffsImag.fill(0);
 
-					solveWpeFilter(stftResult.real, stftResult.imag, power, bin, numFrames, predictionDelay, filterLength, filterCoeffsReal, filterCoeffsImag);
+					solveWpeFilter(stftResult.real, stftResult.imag, power, bin, numFrames, predictionDelay, filterLength, filterCoeffsReal, filterCoeffsImag, corrRealReal, corrRealImag, crossReal, crossImag, arWork, aiWork, brWork, biWork);
 
 					for (let frame = predictionDelay + filterLength; frame < numFrames; frame++) {
 						let predReal = 0;
@@ -118,11 +135,11 @@ export class DeReverbModule extends TransformModule {
 	}
 }
 
-function estimatePower(real: Array<Float32Array>, imag: Array<Float32Array>, numFrames: number, numBins: number): Array<Float32Array> {
-	const power: Array<Float32Array> = [];
-
+function estimatePower(real: Array<Float32Array>, imag: Array<Float32Array>, numFrames: number, numBins: number, output: Array<Float32Array>): Array<Float32Array> {
 	for (let frame = 0; frame < numFrames; frame++) {
-		const framePower = new Float32Array(numBins);
+		const framePower = output[frame];
+
+		if (!framePower) continue;
 		const re = real[frame];
 		const im = imag[frame];
 
@@ -132,12 +149,12 @@ function estimatePower(real: Array<Float32Array>, imag: Array<Float32Array>, num
 				const iVal = im[bin] ?? 0;
 				framePower[bin] = Math.max(rVal * rVal + iVal * iVal, 1e-10);
 			}
+		} else {
+			framePower.fill(1e-10);
 		}
-
-		power.push(framePower);
 	}
 
-	return power;
+	return output;
 }
 
 function solveWpeFilter(
@@ -150,11 +167,19 @@ function solveWpeFilter(
 	filterLength: number,
 	outReal: Float32Array,
 	outImag: Float32Array,
+	corrRealReal: Float32Array,
+	corrRealImag: Float32Array,
+	crossReal: Float32Array,
+	crossImag: Float32Array,
+	arWork: Float32Array,
+	aiWork: Float32Array,
+	brWork: Float32Array,
+	biWork: Float32Array,
 ): void {
-	const corrRealReal = new Float32Array(filterLength * filterLength);
-	const corrRealImag = new Float32Array(filterLength * filterLength);
-	const crossReal = new Float32Array(filterLength);
-	const crossImag = new Float32Array(filterLength);
+	corrRealReal.fill(0);
+	corrRealImag.fill(0);
+	crossReal.fill(0);
+	crossImag.fill(0);
 
 	for (let frame = predictionDelay + filterLength; frame < numFrames; frame++) {
 		const weight = 1 / (power[frame]?.[bin] ?? 1);
@@ -185,16 +210,14 @@ function solveWpeFilter(
 		corrRealReal[tap * filterLength + tap] = (corrRealReal[tap * filterLength + tap] ?? 0) + 1e-6;
 	}
 
-	solveLinearSystem(corrRealReal, corrRealImag, crossReal, crossImag, filterLength, outReal, outImag);
+	solveLinearSystem(corrRealReal, corrRealImag, crossReal, crossImag, filterLength, outReal, outImag, arWork, aiWork, brWork, biWork);
 }
 
-function solveLinearSystem(aReal: Float32Array, aImag: Float32Array, bReal: Float32Array, bImag: Float32Array, size: number, outReal: Float32Array, outImag: Float32Array): void {
-	// Gaussian elimination with partial pivoting for complex system
-	// Work on copies to avoid mutating inputs
-	const ar = Float32Array.from(aReal);
-	const ai = Float32Array.from(aImag);
-	const br = Float32Array.from(bReal);
-	const bi = Float32Array.from(bImag);
+function solveLinearSystem(aReal: Float32Array, aImag: Float32Array, bReal: Float32Array, bImag: Float32Array, size: number, outReal: Float32Array, outImag: Float32Array, ar: Float32Array, ai: Float32Array, br: Float32Array, bi: Float32Array): void {
+	ar.set(aReal);
+	ai.set(aImag);
+	br.set(bReal);
+	bi.set(bImag);
 
 	for (let col = 0; col < size; col++) {
 		// Partial pivoting: find row with largest magnitude in this column

@@ -32,7 +32,7 @@
     "lint:fix": "eslint . --fix",
     "build": "tsup",
     "unit": "vitest run unit",
-    "benchmark": "vitest run benchmark"
+    "benchmark": "vitest run benchmark --fileParallelism=false"
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
