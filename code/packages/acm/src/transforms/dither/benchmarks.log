@@ -1,0 +1,2 @@
+2026-03-09T15:10:26.162Z |     3039.9ms |              0 samples/sec |    10.05x RT | Node v22.20.0 win32
+2026-03-09T16:00:09.261Z |     6104.5ms |              0 samples/sec |     5.00x RT | Node v22.20.0 win32

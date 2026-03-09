@@ -1,0 +1,28 @@
+{
+  "private": true,
+  "name": "engineering",
+  "packageManager": "npm@10.9.3",
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "check": "turbo check",
+    "lint": "turbo lint",
+    "unit": "turbo unit",
+    "build": "turbo build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "check-dependency-version-consistency": "^4.1.0",
+    "concurrently": "^9.0.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-barrel-files": "^2.1.0",
+    "eslint-plugin-check-file": "^2.8.0",
+    "eslint-plugin-import-x": "^4.0.0",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "globals": "^15.0.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
