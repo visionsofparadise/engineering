@@ -27,9 +27,6 @@ export class DeClipModule extends TransformModule {
 	readonly latency = 0;
 
 	private clipSampleRate = 44100;
-	private readonly autocorrBuf = new Float32Array(17);
-	private readonly coeffsBuf = new Float32Array(16);
-	private readonly prevBuf = new Float32Array(16);
 
 	constructor(properties: AudioChainModuleInput<DeClipProperties>) {
 		super(properties);
@@ -47,8 +44,6 @@ export class DeClipModule extends TransformModule {
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
-		const { autocorrBuf, coeffsBuf, prevBuf } = this;
-
 		const samples = chunk.samples.map((channel) => {
 			const output = new Float32Array(channel);
 			const clipThreshold = this.properties.threshold ?? detectClipThreshold(channel);
@@ -56,7 +51,7 @@ export class DeClipModule extends TransformModule {
 			const regions = detectClippedRegions(channel, clipThreshold);
 
 			for (const region of regions) {
-				reconstructClippedRegion(output, region.start, region.end, clipThreshold, autocorrBuf, coeffsBuf, prevBuf);
+				reconstructClippedRegion(output, region.start, region.end, clipThreshold);
 			}
 
 			return output;
@@ -109,13 +104,13 @@ function detectClippedRegions(signal: Float32Array, threshold: number): Array<Cl
 	return regions;
 }
 
-function reconstructClippedRegion(signal: Float32Array, start: number, end: number, threshold: number, autocorrBuf: Float32Array, coeffsBuf: Float32Array, prevBuf: Float32Array): void {
+function reconstructClippedRegion(signal: Float32Array, start: number, end: number, threshold: number): void {
 	const arOrder = 16;
 	const contextBefore = Math.max(0, start - arOrder * 4);
 	const contextAfter = Math.min(signal.length, end + arOrder * 4);
 
 	const contextSignal = signal.slice(contextBefore, contextAfter);
-	const arCoeffs = fitArModelForDeclip(contextSignal, arOrder, autocorrBuf, coeffsBuf, prevBuf);
+	const arCoeffs = fitArModelForDeclip(contextSignal, arOrder);
 
 	const iterations = 5;
 	const localStart = start - contextBefore;
@@ -145,8 +140,8 @@ function reconstructClippedRegion(signal: Float32Array, start: number, end: numb
 	}
 }
 
-function fitArModelForDeclip(signal: Float32Array, order: number, autocorr: Float32Array, coeffs: Float32Array, prev: Float32Array): Float32Array {
-	autocorr.fill(0);
+function fitArModelForDeclip(signal: Float32Array, order: number): Float32Array {
+	const autocorr = new Float32Array(order + 1);
 
 	for (let lag = 0; lag <= order; lag++) {
 		let sum = 0;
@@ -158,12 +153,12 @@ function fitArModelForDeclip(signal: Float32Array, order: number, autocorr: Floa
 		autocorr[lag] = sum / signal.length;
 	}
 
-	return levinsonDurbin(autocorr, order, coeffs, prev);
+	return levinsonDurbin(autocorr, order);
 }
 
-function levinsonDurbin(autocorr: Float32Array, order: number, coeffs: Float32Array, prev: Float32Array): Float32Array {
-	coeffs.fill(0);
-	prev.fill(0);
+function levinsonDurbin(autocorr: Float32Array, order: number): Float32Array {
+	const coeffs = new Float32Array(order);
+	const prev = new Float32Array(order);
 
 	const r0 = autocorr[0] ?? 1;
 
