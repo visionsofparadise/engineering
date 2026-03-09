@@ -112,53 +112,64 @@ export class MusicRebalanceModule extends TransformModule {
 			weight[SEGMENT_SAMPLES - 1 - index] = weight[index] ?? 0;
 		}
 
+			// Pre-allocate segment buffers (constant sizes across all segments)
+		const pad = Math.floor(HOP_SIZE / 2) * 3; // 1536
+		const le = Math.ceil(SEGMENT_SAMPLES / HOP_SIZE);
+		const padEnd = pad + le * HOP_SIZE - SEGMENT_SAMPLES;
+		const paddedLen = SEGMENT_SAMPLES + pad + padEnd;
+		const stftPadConst = FFT_SIZE / 2;
+		const stftLenConst = paddedLen + FFT_SIZE;
+		const nbBinsConst = FFT_SIZE / 2 + 1;
+		const nbFramesConst = Math.floor((stftLenConst - FFT_SIZE) / HOP_SIZE) + 1;
+		const xBinsConst = nbBinsConst - 1;
+		const xFramesConst = nbFramesConst - 4;
+
+		const segLeft = new Float32Array(SEGMENT_SAMPLES);
+		const segRight = new Float32Array(SEGMENT_SAMPLES);
+		const inputData = new Float32Array(2 * SEGMENT_SAMPLES);
+		const xData = new Float32Array(4 * xBinsConst * xFramesConst);
+
+		// Pre-allocate per-stem frequency arrays (reused across stem-channel iterations)
+		const freqRealBuffers: Array<Float32Array> = [];
+		const freqImagBuffers: Array<Float32Array> = [];
+
+		for (let frame = 0; frame < nbFramesConst; frame++) {
+			freqRealBuffers.push(new Float32Array(nbBinsConst));
+			freqImagBuffers.push(new Float32Array(nbBinsConst));
+		}
+
 		for (let segmentOffset = 0; segmentOffset < frames; segmentOffset += stridesamples) {
 			const chunkLength = Math.min(SEGMENT_SAMPLES, frames - segmentOffset);
 
 			// Extract segment (zero-pad if shorter than SEGMENT_SAMPLES)
-			const segLeft = new Float32Array(SEGMENT_SAMPLES);
-			const segRight = new Float32Array(SEGMENT_SAMPLES);
+			segLeft.fill(0);
+			segRight.fill(0);
 
 			for (let index = 0; index < chunkLength; index++) {
 				segLeft[index] = normalizedLeft[segmentOffset + index] ?? 0;
 				segRight[index] = normalizedRight[segmentOffset + index] ?? 0;
 			}
 
-			// Pad for STFT boundary effects
-			const pad = Math.floor(HOP_SIZE / 2) * 3; // 1536
-			const le = Math.ceil(SEGMENT_SAMPLES / HOP_SIZE);
-			const padEnd = pad + le * HOP_SIZE - SEGMENT_SAMPLES;
-			const paddedLen = SEGMENT_SAMPLES + pad + padEnd;
-
 			const paddedLeft = reflectPad(segLeft, pad, padEnd, paddedLen);
 			const paddedRight = reflectPad(segRight, pad, padEnd, paddedLen);
 
 			// Compute STFT for both channels
-			// Center-pad with reflect for STFT boundary effects (like torch center=True)
-			const stftPad = FFT_SIZE / 2;
-			const stftLen = paddedLen + FFT_SIZE;
-			const stftInputLeft = reflectPad(paddedLeft, stftPad, stftPad, stftLen);
-			const stftInputRight = reflectPad(paddedRight, stftPad, stftPad, stftLen);
+			const stftInputLeft = reflectPad(paddedLeft, stftPadConst, stftPadConst, stftLenConst);
+			const stftInputRight = reflectPad(paddedRight, stftPadConst, stftPadConst, stftLenConst);
 			const stftLeft = computeStft(stftInputLeft);
 			const stftRight = computeStft(stftInputRight);
 
-			const nbFrames = stftLeft.real.length;
-			const nbBins = FFT_SIZE / 2 + 1; // 2049
-
 			// Build x tensor: complex-as-channels [1, 4, 2048, nbFrames-4]
-			// Drop last freq bin (2049→2048), drop first 2 and last 2 time frames
-			const xBins = nbBins - 1; // 2048
-			const xFrames = nbFrames - 4; // drop 2 from each end
-			const xData = new Float32Array(4 * xBins * xFrames);
+			xData.fill(0);
 
 			for (let ch = 0; ch < 2; ch++) {
 				const stftCh = ch === 0 ? stftLeft : stftRight;
 
-				for (let freq = 0; freq < xBins; freq++) {
-					for (let frame = 0; frame < xFrames; frame++) {
-						const realIdx = 2 * ch * xBins * xFrames + freq * xFrames + frame;
-						const imagIdx = (2 * ch + 1) * xBins * xFrames + freq * xFrames + frame;
-						const srcFrame = frame + 2; // skip first 2 frames
+				for (let freq = 0; freq < xBinsConst; freq++) {
+					for (let frame = 0; frame < xFramesConst; frame++) {
+						const realIdx = 2 * ch * xBinsConst * xFramesConst + freq * xFramesConst + frame;
+						const imagIdx = (2 * ch + 1) * xBinsConst * xFramesConst + freq * xFramesConst + frame;
+						const srcFrame = frame + 2;
 
 						xData[realIdx] = stftCh.real[srcFrame]?.[freq] ?? 0;
 						xData[imagIdx] = stftCh.imag[srcFrame]?.[freq] ?? 0;
@@ -167,15 +178,13 @@ export class MusicRebalanceModule extends TransformModule {
 			}
 
 			// Build input tensor: [1, 2, SEGMENT_SAMPLES]
-			const inputData = new Float32Array(2 * SEGMENT_SAMPLES);
-
 			inputData.set(segLeft, 0);
 			inputData.set(segRight, SEGMENT_SAMPLES);
 
 			// Run inference
 			const result = await this.session.run({
 				input: { data: inputData, dims: [1, 2, SEGMENT_SAMPLES] },
-				x: { data: xData, dims: [1, 4, xBins, xFrames] },
+				x: { data: xData, dims: [1, 4, xBinsConst, xFramesConst] },
 			});
 
 			// Extract time-branch output: add_67 [1, 4, 2, SEGMENT_SAMPLES]
@@ -190,27 +199,24 @@ export class MusicRebalanceModule extends TransformModule {
 					// Time branch component
 					const xtIndex = source * 2 * SEGMENT_SAMPLES + ch * SEGMENT_SAMPLES;
 
-					// Reconstruct freq branch via iSTFT
-					const freqReal: Array<Float32Array> = [];
-					const freqImag: Array<Float32Array> = [];
-
-					for (let frame = 0; frame < nbFrames; frame++) {
-						freqReal.push(new Float32Array(nbBins));
-						freqImag.push(new Float32Array(nbBins));
+					// Zero freq buffers for reuse
+					for (let frame = 0; frame < nbFramesConst; frame++) {
+						freqRealBuffers[frame]?.fill(0);
+						freqImagBuffers[frame]?.fill(0);
 					}
 
 					// Unpack CaC from x_out [1, 4, 4, xBins, xFrames]
 					if (xOut) {
 						const srcCh = ch; // 0 or 1
-						const baseOffset = source * 4 * xBins * xFrames;
+						const baseOffset = source * 4 * xBinsConst * xFramesConst;
 
-						for (let freq = 0; freq < xBins; freq++) {
-							for (let frame = 0; frame < xFrames; frame++) {
-								const realIdx = baseOffset + 2 * srcCh * xBins * xFrames + freq * xFrames + frame;
-								const imagIdx = baseOffset + (2 * srcCh + 1) * xBins * xFrames + freq * xFrames + frame;
+						for (let freq = 0; freq < xBinsConst; freq++) {
+							for (let frame = 0; frame < xFramesConst; frame++) {
+								const realIdx = baseOffset + 2 * srcCh * xBinsConst * xFramesConst + freq * xFramesConst + frame;
+								const imagIdx = baseOffset + (2 * srcCh + 1) * xBinsConst * xFramesConst + freq * xFramesConst + frame;
 								const destFrame = frame + 2;
-								const realArr = freqReal[destFrame];
-								const imagArr = freqImag[destFrame];
+								const realArr = freqRealBuffers[destFrame];
+								const imagArr = freqImagBuffers[destFrame];
 
 								if (realArr && imagArr) {
 									realArr[freq] = xOut.data[realIdx] ?? 0;
@@ -220,11 +226,10 @@ export class MusicRebalanceModule extends TransformModule {
 						}
 					}
 
-					const freqWaveform = computeIstft(freqReal, freqImag, FFT_SIZE, HOP_SIZE, stftLen);
+					const freqWaveform = computeIstft(freqRealBuffers, freqImagBuffers, FFT_SIZE, HOP_SIZE, stftLenConst);
 
 					// Sum time + freq branches, accumulate with crossfade
-					// Strip center padding (stftPad) then segment padding (pad)
-					const freqOffset = stftPad + pad;
+					const freqOffset = stftPadConst + pad;
 
 					for (let index = 0; index < chunkLength; index++) {
 						const timeVal = xtOut ? (xtOut.data[xtIndex + index] ?? 0) : 0;
@@ -349,12 +354,20 @@ function reflectPad(signal: Float32Array, padLeft: number, padRight: number, tot
 	return result;
 }
 
+const periodicHannCache = new Map<number, Float32Array>();
+
 function periodicHannWindow(size: number): Float32Array {
+	const cached = periodicHannCache.get(size);
+
+	if (cached) return cached;
+
 	const window = new Float32Array(size);
 
 	for (let index = 0; index < size; index++) {
 		window[index] = 0.5 * (1 - Math.cos((2 * Math.PI * index) / size));
 	}
+
+	periodicHannCache.set(size, window);
 
 	return window;
 }
@@ -370,15 +383,17 @@ function computeStft(signal: Float32Array): ComplexStft {
 	const real: Array<Float32Array> = [];
 	const imag: Array<Float32Array> = [];
 	const nbBins = FFT_SIZE / 2 + 1;
+	const windowed = new Float32Array(FFT_SIZE);
+	const fftRe = new Float32Array(FFT_SIZE);
+	const fftIm = new Float32Array(FFT_SIZE);
 
 	for (let start = 0; start + FFT_SIZE <= signal.length; start += HOP_SIZE) {
-		const windowed = new Float32Array(FFT_SIZE);
 
 		for (let index = 0; index < FFT_SIZE; index++) {
 			windowed[index] = (signal[start + index] ?? 0) * (window[index] ?? 0);
 		}
 
-		const { re, im } = fftForward(windowed);
+		const { re, im } = fftForward(windowed, fftRe, fftIm);
 		const frameReal = new Float32Array(nbBins);
 		const frameImag = new Float32Array(nbBins);
 
@@ -400,6 +415,10 @@ function computeIstft(real: Array<Float32Array>, imag: Array<Float32Array>, fftS
 	const output = new Float32Array(outputLength);
 	const windowSum = new Float32Array(outputLength);
 	const nbBins = fftSize / 2 + 1;
+	const fullRe = new Float32Array(fftSize);
+	const fullIm = new Float32Array(fftSize);
+	const ifftOutRe = new Float32Array(fftSize);
+	const ifftOutIm = new Float32Array(fftSize);
 
 	for (let frame = 0; frame < real.length; frame++) {
 		const re = real[frame];
@@ -408,8 +427,8 @@ function computeIstft(real: Array<Float32Array>, imag: Array<Float32Array>, fftS
 		if (!re || !im) continue;
 
 		// Reconstruct full spectrum
-		const fullRe = new Float32Array(fftSize);
-		const fullIm = new Float32Array(fftSize);
+		fullRe.fill(0);
+		fullIm.fill(0);
 
 		for (let index = 0; index < nbBins; index++) {
 			fullRe[index] = (re[index] ?? 0) * scale;
@@ -421,7 +440,7 @@ function computeIstft(real: Array<Float32Array>, imag: Array<Float32Array>, fftS
 			fullIm[fftSize - index] = -(fullIm[index] ?? 0);
 		}
 
-		const timeDomain = fftInverse(fullRe, fullIm);
+		const timeDomain = fftInverse(fullRe, fullIm, ifftOutRe, ifftOutIm);
 		const offset = frame * hopSize;
 
 		for (let index = 0; index < fftSize; index++) {
@@ -448,12 +467,14 @@ function computeIstft(real: Array<Float32Array>, imag: Array<Float32Array>, fftS
 
 // --- Minimal FFT implementation ---
 
-function fftForward(input: Float32Array): { re: Float32Array; im: Float32Array } {
+function fftForward(input: Float32Array, wRe?: Float32Array, wIm?: Float32Array): { re: Float32Array; im: Float32Array } {
 	const size = input.length;
-	const re = new Float32Array(size);
-	const im = new Float32Array(size);
+	const re = wRe ?? new Float32Array(size);
+	const im = wIm ?? new Float32Array(size);
 
 	re.set(input);
+
+	if (wIm) im.fill(0);
 
 	if (size <= 1) return { re, im };
 
@@ -463,10 +484,12 @@ function fftForward(input: Float32Array): { re: Float32Array; im: Float32Array }
 	return { re, im };
 }
 
-function fftInverse(re: Float32Array, im: Float32Array): Float32Array {
+function fftInverse(re: Float32Array, im: Float32Array, wOutRe?: Float32Array, wOutIm?: Float32Array): Float32Array {
 	const size = re.length;
-	const outRe = Float32Array.from(re);
-	const outIm = new Float32Array(size);
+	const outRe = wOutRe ?? Float32Array.from(re);
+	const outIm = wOutIm ?? new Float32Array(size);
+
+	if (wOutRe) outRe.set(re);
 
 	for (let index = 0; index < size; index++) {
 		outIm[index] = -(im[index] ?? 0);

@@ -2,3 +2,7 @@
 2026-03-09T16:22:55.195Z |       79.7ms |       16889394 samples/sec |   382.98x RT | Node v22.20.0 win32
 2026-03-09T16:32:55.177Z |      136.3ms |       19755523 samples/sec |   447.97x RT | Node v22.20.0 win32
 2026-03-09T16:54:14.869Z |      143.7ms |       18738688 samples/sec |   424.91x RT | Node v22.20.0 win32
+2026-03-09T17:12:32.879Z |      293.4ms |        9180956 samples/sec |   208.18x RT | Node v22.20.0 win32
+2026-03-09T17:56:11.530Z |     2433.2ms |        1107050 samples/sec |    25.10x RT | Node v22.20.0 win32
+2026-03-09T17:59:33.687Z |     1860.1ms |        1448092 samples/sec |    32.84x RT | Node v22.20.0 win32
+2026-03-09T18:14:25.655Z |      144.3ms |       18668622 samples/sec |   423.32x RT | Node v22.20.0 win32

@@ -64,8 +64,9 @@ export class BreathControlModule extends TransformModule {
 			breathBandEnv[index] = bp * bp;
 		}
 
-		smoothEnvelope(widebandEnv, envSmooth);
-		smoothEnvelope(breathBandEnv, envSmooth);
+		const smoothSource = new Float32Array(frames);
+		smoothEnvelope(widebandEnv, envSmooth, smoothSource);
+		smoothEnvelope(breathBandEnv, envSmooth, smoothSource);
 
 		for (let index = 0; index < frames; index++) {
 			widebandEnv[index] = Math.sqrt(widebandEnv[index] ?? 0);
@@ -164,10 +165,10 @@ interface Region {
 	end: number;
 }
 
-function smoothEnvelope(envelope: Float32Array, windowSize: number): void {
+function smoothEnvelope(envelope: Float32Array, windowSize: number, source: Float32Array): void {
 	const halfWin = Math.floor(windowSize / 2);
 	const len = envelope.length;
-	const source = Float32Array.from(envelope);
+	source.set(envelope);
 
 	let sum = 0;
 	let count = 0;
