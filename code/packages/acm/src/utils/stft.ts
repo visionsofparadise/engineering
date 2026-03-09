@@ -5,13 +5,18 @@ export interface StftResult {
 	readonly fftSize: number;
 }
 
-export function stft(signal: Float32Array, fftSize: number, hopSize: number): StftResult {
+export interface StftOutput {
+	readonly real: Array<Float32Array>;
+	readonly imag: Array<Float32Array>;
+}
+
+export function stft(signal: Float32Array, fftSize: number, hopSize: number, output?: StftOutput): StftResult {
 	const window = hanningWindow(fftSize);
 	const numFrames = Math.floor((signal.length - fftSize) / hopSize) + 1;
 	const halfSize = fftSize / 2 + 1;
 
-	const real: Array<Float32Array> = [];
-	const imag: Array<Float32Array> = [];
+	const real = output?.real ?? [];
+	const imag = output?.imag ?? [];
 	const windowed = new Float32Array(fftSize);
 	const workspace = createFftWorkspace(fftSize);
 
@@ -24,8 +29,13 @@ export function stft(signal: Float32Array, fftSize: number, hopSize: number): St
 
 		const { re, im } = fft(windowed, workspace);
 
-		real.push(re.slice(0, halfSize));
-		imag.push(im.slice(0, halfSize));
+		if (output) {
+			output.real[frame]?.set(re.subarray(0, halfSize));
+			output.imag[frame]?.set(im.subarray(0, halfSize));
+		} else {
+			real.push(re.slice(0, halfSize));
+			imag.push(im.slice(0, halfSize));
+		}
 	}
 
 	return { real, imag, frames: numFrames, fftSize };
@@ -84,7 +94,7 @@ export function istft(result: StftResult, hopSize: number, outputLength: number)
 
 const hanningWindowCache = new Map<number, Float32Array>();
 
-function hanningWindow(size: number): Float32Array {
+export function hanningWindow(size: number): Float32Array {
 	const cached = hanningWindowCache.get(size);
 
 	if (cached) return cached;
@@ -100,14 +110,14 @@ function hanningWindow(size: number): Float32Array {
 	return window;
 }
 
-interface FftWorkspace {
+export interface FftWorkspace {
 	re: Float32Array;
 	im: Float32Array;
 	outRe: Float32Array;
 	outIm: Float32Array;
 }
 
-function createFftWorkspace(size: number): FftWorkspace {
+export function createFftWorkspace(size: number): FftWorkspace {
 	return {
 		re: new Float32Array(size),
 		im: new Float32Array(size),
@@ -116,7 +126,7 @@ function createFftWorkspace(size: number): FftWorkspace {
 	};
 }
 
-function fft(input: Float32Array, workspace?: FftWorkspace): { re: Float32Array; im: Float32Array } {
+export function fft(input: Float32Array, workspace?: FftWorkspace): { re: Float32Array; im: Float32Array } {
 	const size = input.length;
 	const re = workspace ? workspace.re : new Float32Array(size);
 	const im = workspace ? workspace.im : new Float32Array(size);
@@ -133,7 +143,7 @@ function fft(input: Float32Array, workspace?: FftWorkspace): { re: Float32Array;
 	return { re, im };
 }
 
-function ifft(re: Float32Array, im: Float32Array, workspace?: FftWorkspace): Float32Array {
+export function ifft(re: Float32Array, im: Float32Array, workspace?: FftWorkspace): Float32Array {
 	const size = re.length;
 	const outRe = workspace ? workspace.outRe : Float32Array.from(re);
 	const outIm = workspace ? workspace.outIm : new Float32Array(size);

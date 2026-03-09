@@ -2,6 +2,7 @@ import type { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChainModuleInput, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
+import { linearResample } from "../../utils/resample";
 import { istft, stft } from "../../utils/stft";
 
 export interface VoiceDenoiseProperties extends TransformModuleProperties {
@@ -107,6 +108,7 @@ export class VoiceDenoiseModule extends TransformModule {
 			frames: 1,
 			fftSize: BLOCK_LEN,
 		};
+		const stftOutput = { real: [new Float32Array(FFT_BINS)], imag: [new Float32Array(FFT_BINS)] };
 		let outputOffset = 0;
 
 		for (let offset = 0; offset + BLOCK_LEN <= totalFrames; offset += BLOCK_SHIFT) {
@@ -116,7 +118,7 @@ export class VoiceDenoiseModule extends TransformModule {
 			}
 
 			// Step 1: Compute RFFT of the block
-			const stftResult = stft(inputBuffer, BLOCK_LEN, BLOCK_LEN);
+			const stftResult = stft(inputBuffer, BLOCK_LEN, BLOCK_LEN, stftOutput);
 			const realFrame = stftResult.real[0];
 			const imagFrame = stftResult.imag[0];
 
@@ -212,23 +214,3 @@ export function voiceDenoise(
 	});
 }
 
-function linearResample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
-	if (fromRate === toRate) return input;
-
-	const ratio = toRate / fromRate;
-	const outputLength = Math.round(input.length * ratio);
-	const output = new Float32Array(outputLength);
-
-	for (let index = 0; index < outputLength; index++) {
-		const srcPos = index / ratio;
-		const srcIndex = Math.floor(srcPos);
-		const fraction = srcPos - srcIndex;
-
-		const sample0 = input[srcIndex] ?? 0;
-		const sample1 = input[srcIndex + 1] ?? sample0;
-
-		output[index] = sample0 + fraction * (sample1 - sample0);
-	}
-
-	return output;
-}

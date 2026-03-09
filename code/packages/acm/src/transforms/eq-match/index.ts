@@ -63,6 +63,12 @@ export class EqMatchModule extends TransformModule {
 		const channels = buffer.channels;
 		const fftSize = 2048;
 		const hopSize = fftSize / 4;
+		const halfSize = fftSize / 2 + 1;
+		const numStftFrames = Math.floor((frames - fftSize) / hopSize) + 1;
+		const stftOutput = numStftFrames > 0 ? {
+			real: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
+			imag: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
+		} : undefined;
 
 		for (let ch = 0; ch < channels; ch++) {
 			const chunk = await buffer.read(0, frames);
@@ -74,7 +80,7 @@ export class EqMatchModule extends TransformModule {
 			const correctionDb = computeCorrection(this.referenceSpectrum, inputSpectrum, this.properties.smoothing);
 			const correctionLinear = correctionDb.map((db) => Math.pow(10, db / 20));
 
-			const stftResult = stft(channel, fftSize, hopSize);
+			const stftResult = stft(channel, fftSize, hopSize, stftOutput);
 
 			for (let frame = 0; frame < stftResult.frames; frame++) {
 				const realFrame = stftResult.real[frame];

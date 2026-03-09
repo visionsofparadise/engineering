@@ -1,6 +1,7 @@
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { biquadFilter, preFilterCoefficients, rlbFilterCoefficients } from "../../utils/biquad";
 
 export interface LoudnessStats {
 	readonly integrated: number;
@@ -104,11 +105,6 @@ async function applyKWeighting(buffer: ChunkBuffer, channels: number, frames: nu
 	return result;
 }
 
-interface BiquadCoefficients {
-	fb: [number, number, number];
-	fa: [number, number, number];
-}
-
 function applyPreFilter(samples: Float32Array, sampleRate: number): Float32Array {
 	const { fb, fa } = preFilterCoefficients(sampleRate);
 	return biquadFilter(samples, fb, fa);
@@ -117,70 +113,6 @@ function applyPreFilter(samples: Float32Array, sampleRate: number): Float32Array
 function applyRlbFilter(samples: Float32Array, sampleRate: number): Float32Array {
 	const { fb, fa } = rlbFilterCoefficients(sampleRate);
 	return biquadFilter(samples, fb, fa);
-}
-
-function preFilterCoefficients(sampleRate: number): BiquadCoefficients {
-	if (sampleRate === 48000) {
-		return {
-			fb: [1.53512485958697, -2.69169618940638, 1.19839281085285],
-			fa: [1.0, -1.69065929318241, 0.73248077421585],
-		};
-	}
-
-	const freq = 1681.974450955533;
-	const gain = 3.999843853973347;
-	const quality = 0.7071752369554196;
-
-	const kk = Math.tan((Math.PI * freq) / sampleRate);
-	const vh = Math.pow(10, gain / 20);
-	const vb = Math.pow(vh, 0.4996667741545416);
-	const a0 = 1 + kk / quality + kk * kk;
-
-	return {
-		fb: [(vh + (vb * kk) / quality + kk * kk) / a0, (2 * (kk * kk - vh)) / a0, (vh - (vb * kk) / quality + kk * kk) / a0],
-		fa: [1.0, (2 * (kk * kk - 1)) / a0, (1 - kk / quality + kk * kk) / a0],
-	};
-}
-
-function rlbFilterCoefficients(sampleRate: number): BiquadCoefficients {
-	if (sampleRate === 48000) {
-		return {
-			fb: [1.0, -2.0, 1.0],
-			fa: [1.0, -1.99004745483398, 0.99007225036621],
-		};
-	}
-
-	const freq = 38.13547087602444;
-	const quality = 0.5003270373238773;
-
-	const kk = Math.tan((Math.PI * freq) / sampleRate);
-	const a0 = 1 + kk / quality + kk * kk;
-
-	return {
-		fb: [1 / a0, -2 / a0, 1 / a0],
-		fa: [1.0, (2 * (kk * kk - 1)) / a0, (1 - kk / quality + kk * kk) / a0],
-	};
-}
-
-function biquadFilter(samples: Float32Array, fb: [number, number, number], fa: [number, number, number]): Float32Array {
-	const output = new Float32Array(samples.length);
-	let x1 = 0;
-	let x2 = 0;
-	let y1 = 0;
-	let y2 = 0;
-
-	for (let index = 0; index < samples.length; index++) {
-		const x0 = samples[index] ?? 0;
-		const y0 = fb[0] * x0 + fb[1] * x1 + fb[2] * x2 - fa[1] * y1 - fa[2] * y2;
-
-		output[index] = y0;
-		x2 = x1;
-		x1 = x0;
-		y2 = y1;
-		y1 = y0;
-	}
-
-	return output;
 }
 
 function computeBlockLoudness(kWeighted: Array<Float32Array>, channels: number, frames: number, blockSize: number, stepSize: number): Array<number> {
