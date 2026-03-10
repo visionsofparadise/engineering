@@ -9,7 +9,7 @@ const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/
 
 describe("music-rebalance", () => {
 	it("processes voice audio", async () => {
-		const transform = musicRebalance("D:/Code/demucs.onnx/htdemucs.onnx", { vocals: 1, drums: 0, bass: 0, other: 0 });
+		const transform = musicRebalance("D:/Models/htdemucs.onnx", { vocals: 1, drums: 0, bass: 0, other: 0 });
 		const { input, output, context } = await runTransform(testVoice, transform);
 
 		expect(notSilent(output).pass).toBe(true);
