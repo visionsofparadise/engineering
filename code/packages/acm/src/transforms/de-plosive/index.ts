@@ -1,30 +1,28 @@
-import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../../module";
+import { z } from "zod";
+import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
-export interface DePlosiveProperties extends TransformModuleProperties {
-	readonly sensitivity: number;
-	readonly frequency: number;
-}
+export const schema = z.object({
+	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
+	frequency: z.number().min(50).max(500).multipleOf(10).default(200).describe("Frequency"),
+});
 
-export class DePlosiveModule extends TransformModule {
+export interface DePlosiveProperties extends z.infer<typeof schema>, TransformModuleProperties {}
+
+export class DePlosiveModule extends TransformModule<DePlosiveProperties> {
+	static override readonly moduleName = "De-Plosive";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is DePlosiveModule {
 		return TransformModule.is(value) && value.type[2] === "de-plosive";
 	}
 
-	readonly type = ["async-module", "transform", "de-plosive"] as const;
-	readonly properties: DePlosiveProperties;
-	readonly latency = 0;
+	override readonly type = ["async-module", "transform", "de-plosive"] as const;
+	override readonly latency = 0;
 
 	private sampleRate = 44100;
 	private lpState: Array<number> = [];
 
-	constructor(properties: AudioChainModuleInput<DePlosiveProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
-
-	get bufferSize(): number {
+	override get bufferSize(): number {
 		return Math.round(this.sampleRate * 0.02);
 	}
 

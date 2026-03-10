@@ -1,28 +1,29 @@
-import type { AudioChainModuleInput, AudioChunk } from "../../module";
+import { z } from "zod";
+import type { AudioChunk } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
+
+export const schema = z.object({
+	bitDepth: z.enum(["16", "24"]).default("16").describe("Bit Depth"),
+	noiseShaping: z.boolean().default(false).describe("Noise Shaping"),
+});
 
 export interface DitherProperties extends TransformModuleProperties {
 	readonly bitDepth: 16 | 24;
 	readonly noiseShaping?: boolean;
 }
 
-export class DitherModule extends TransformModule {
+export class DitherModule extends TransformModule<DitherProperties> {
+	static override readonly moduleName = "Dither";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is DitherModule {
 		return TransformModule.is(value) && value.type[2] === "dither";
 	}
 
-	readonly type = ["async-module", "transform", "dither"] as const;
-	readonly properties: DitherProperties;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	override readonly type = ["async-module", "transform", "dither"] as const;
+	override readonly bufferSize = 0;
+	override readonly latency = 0;
 
 	private lastError = 0;
-
-	constructor(properties: AudioChainModuleInput<DitherProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
 		const { bitDepth, noiseShaping } = this.properties;

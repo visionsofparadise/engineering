@@ -1,16 +1,19 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { applyTransform } from "../../utils/apply-transform";
 import { highPassCoefficients, lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
 import { resample } from "../resample";
 
-export interface DialogueIsolateProperties extends TransformModuleProperties {
-	readonly modelPath: string;
-	readonly highPass?: number;
-	readonly lowPass?: number;
-}
+export const schema = z.object({
+	modelPath: z.string().default("").describe("Model Path"),
+	highPass: z.number().min(20).max(500).multipleOf(10).default(80).describe("High Pass"),
+	lowPass: z.number().min(1000).max(22050).multipleOf(100).default(20000).describe("Low Pass"),
+});
+
+export interface DialogueIsolateProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 const SAMPLE_RATE = 44100;
 const N_FFT = 7680;
@@ -24,23 +27,19 @@ const OVERLAP = 0.25;
 const TRANSITION_POWER = 1.0;
 const CHANNEL_STRIDE = DIM_F * DIM_T;
 
-export class DialogueIsolateModule extends TransformModule {
+export class DialogueIsolateModule extends TransformModule<DialogueIsolateProperties> {
+	static override readonly moduleName = "Dialogue Isolate";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is DialogueIsolateModule {
 		return TransformModule.is(value) && value.type[2] === "dialogue-isolate";
 	}
 
-	readonly type = ["async-module", "transform", "dialogue-isolate"] as const;
-	readonly properties: DialogueIsolateProperties;
+	override readonly type = ["async-module", "transform", "dialogue-isolate"] as const;
 	readonly bufferSize = Infinity;
 	readonly latency = Infinity;
 
 	private session?: OnnxSession;
 	private sourceSampleRate = SAMPLE_RATE;
-
-	constructor(properties: AudioChainModuleInput<DialogueIsolateProperties>) {
-		super(properties);
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);

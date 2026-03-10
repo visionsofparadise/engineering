@@ -1,34 +1,32 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../../module";
+import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
-export interface LevelerProperties extends TransformModuleProperties {
-	readonly target: number;
-	readonly window: number;
-	readonly speed: number;
-	readonly maxGain: number;
-	readonly maxCut: number;
-}
+export const schema = z.object({
+	target: z.number().min(-60).max(0).multipleOf(1).default(-20).describe("Target"),
+	window: z.number().min(0.01).max(5).multipleOf(0.01).default(0.5).describe("Window"),
+	speed: z.number().min(0.01).max(1).multipleOf(0.01).default(0.1).describe("Speed"),
+	maxGain: z.number().min(0).max(40).multipleOf(1).default(12).describe("Max Gain"),
+	maxCut: z.number().min(0).max(40).multipleOf(1).default(12).describe("Max Cut"),
+});
 
-export class LevelerModule extends TransformModule {
+export interface LevelerProperties extends z.infer<typeof schema>, TransformModuleProperties {}
+
+export class LevelerModule extends TransformModule<LevelerProperties> {
+	static override readonly moduleName = "Leveler";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is LevelerModule {
 		return TransformModule.is(value) && value.type[2] === "leveler";
 	}
 
-	readonly type = ["async-module", "transform", "leveler"] as const;
-	readonly properties: LevelerProperties;
-	readonly latency = 0;
+	override readonly type = ["async-module", "transform", "leveler"] as const;
+	override readonly latency = 0;
 
 	private windowSamples = 22050;
 	private currentGainDb = 0;
 
-	constructor(properties: AudioChainModuleInput<LevelerProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
-
-	get bufferSize(): number {
+	override get bufferSize(): number {
 		return this.windowSamples;
 	}
 

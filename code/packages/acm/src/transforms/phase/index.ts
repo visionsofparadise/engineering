@@ -1,29 +1,30 @@
-import type { AudioChainModuleInput, AudioChunk } from "../../module";
+import { z } from "zod";
+import type { AudioChunk } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
+
+export const schema = z.object({
+	invert: z.boolean().default(true).describe("Invert"),
+	angle: z.number().min(-180).max(180).multipleOf(1).default(0).describe("Angle"),
+});
 
 export interface PhaseProperties extends TransformModuleProperties {
 	readonly invert: boolean;
 	readonly angle?: number;
 }
 
-export class PhaseModule extends TransformModule {
+export class PhaseModule extends TransformModule<PhaseProperties> {
+	static override readonly moduleName = "Phase";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is PhaseModule {
 		return TransformModule.is(value) && value.type[2] === "phase";
 	}
 
-	readonly type = ["async-module", "transform", "phase"] as const;
-	readonly properties: PhaseProperties;
+	override readonly type = ["async-module", "transform", "phase"] as const;
 
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	override readonly bufferSize = 0;
+	override readonly latency = 0;
 
 	private allpassState: Array<number> = [];
-
-	constructor(properties: AudioChainModuleInput<PhaseProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
 		const { invert, angle } = this.properties;

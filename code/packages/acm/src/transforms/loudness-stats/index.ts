@@ -1,5 +1,5 @@
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../../module";
+import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { biquadFilter, preFilterCoefficients, rlbFilterCoefficients } from "../../utils/biquad";
 
@@ -12,12 +12,12 @@ export interface LoudnessStats {
 }
 
 export class LoudnessStatsModule extends TransformModule {
+	static override readonly moduleName = "Loudness Stats";
 	static override is(value: unknown): value is LoudnessStatsModule {
 		return TransformModule.is(value) && value.type[2] === "loudness-stats";
 	}
 
-	readonly type = ["async-module", "transform", "loudness-stats"] as const;
-	readonly properties: TransformModuleProperties;
+	override readonly type = ["async-module", "transform", "loudness-stats"] as const;
 	readonly bufferSize = Infinity;
 	readonly latency = Infinity;
 
@@ -25,12 +25,6 @@ export class LoudnessStatsModule extends TransformModule {
 	private truePeakValue = 0;
 
 	stats?: LoudnessStats;
-
-	constructor(properties?: AudioChainModuleInput<TransformModuleProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties?.targets ?? [] };
-	}
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);

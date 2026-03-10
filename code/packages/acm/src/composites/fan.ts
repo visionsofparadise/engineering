@@ -1,24 +1,18 @@
-import type { AudioChainModuleInput, AudioChunk } from "../module";
+import type { AudioChunk } from "../module";
 import { TransformModule, type TransformModuleProperties } from "../transform";
 
 export interface FanTransformProperties extends TransformModuleProperties {
 	readonly branches: ReadonlyArray<TransformModule>;
 }
 
-export class FanTransform extends TransformModule {
-	readonly type = ["async-module", "transform", "fan"] as const;
+export class FanTransform extends TransformModule<FanTransformProperties> {
+	static override readonly moduleName = "Fan";
+	override readonly type = ["async-module", "transform", "fan"] as const;
 
-	readonly properties: FanTransformProperties;
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
 	private readonly writers: Array<WritableStreamDefaultWriter<AudioChunk>> = [];
-
-	constructor(properties: AudioChainModuleInput<FanTransformProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	override createTransform(): TransformStream<AudioChunk, AudioChunk> {
 		const branchStreams = this.properties.branches.map((unit) => unit.createTransform());

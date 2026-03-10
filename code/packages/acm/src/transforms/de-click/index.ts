@@ -1,11 +1,15 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChainModuleInput, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
 
-export interface DeClickProperties extends TransformModuleProperties {
-	readonly sensitivity: number;
-	readonly maxClickDuration: number;
-}
+export const schema = z.object({
+	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
+	maxClickDuration: z.number().min(1).max(1000).multipleOf(1).default(200).describe("Max Click Duration"),
+});
+
+export interface DeClickProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 /**
  * Detects impulsive noise (clicks, pops) and removes them by momentarily
@@ -13,22 +17,22 @@ export interface DeClickProperties extends TransformModuleProperties {
  * transients, so the LPF removes the click energy while preserving the
  * underlying speech signal.
  */
-export class DeClickModule extends TransformModule {
+export class DeClickModule<P extends DeClickProperties = DeClickProperties> extends TransformModule<P> {
+	static override readonly moduleName: string = "De-Click";
+	static override readonly schema: z.ZodType = schema;
+
 	static override is(value: unknown): value is DeClickModule {
 		return TransformModule.is(value) && value.type[2] === "de-click";
 	}
 
-	readonly type = ["async-module", "transform", "de-click"] as const;
-	readonly properties: DeClickProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type = ["async-module", "transform", "de-click"];
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private processSampleRate = 44100;
 
-	constructor(properties: AudioChainModuleInput<DeClickProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
+	constructor(properties: AudioChainModuleInput<P>) {
+		super({ ...properties, ...schema.encode(properties) });
 	}
 
 	protected override _setup(context: StreamContext): void {
@@ -44,19 +48,15 @@ export class DeClickModule extends TransformModule {
 
 		const allAudio = await buffer.read(0, frames);
 
-		// Detect clicks on first channel
 		const refChannel = allAudio.samples[0];
 
 		if (!refChannel) return;
 
 		const clickMask = detectClickMask(refChannel, sampleRate, sensitivity, maxClickDuration);
 
-		// Build a per-sample blend envelope: 0 = original, 1 = low-passed
-		// Expand click mask with fade margins
-		const fadeSamples = Math.round(sampleRate * 0.001); // 1ms fade
+		const fadeSamples = Math.round(sampleRate * 0.001);
 		const blendEnv = buildBlendEnvelope(clickMask, frames, fadeSamples);
 
-		// Check if there are any clicks to process
 		let hasClicks = false;
 
 		for (let index = 0; index < frames; index++) {
@@ -68,18 +68,17 @@ export class DeClickModule extends TransformModule {
 
 		if (!hasClicks) return;
 
-		// Apply per-channel: low-pass filter the whole signal, then blend
-		const lpfCutoff = 2500; // Hz — preserves speech fundamentals, removes click energy
+		const lpfCutoff = 2500;
+		const lpfCoeffs = lowPassCoefficients(sampleRate, lpfCutoff);
 
 		for (let ch = 0; ch < channels; ch++) {
 			const channel = allAudio.samples[ch];
 
 			if (!channel) continue;
 
-			// Compute low-passed version using 2nd-order Butterworth
-			const filtered = applyLowPass(channel, sampleRate, lpfCutoff);
+			const filtered = Float32Array.from(channel);
+			zeroPhaseBiquadFilter(filtered, lpfCoeffs);
 
-			// Blend: where blendEnv=1, use filtered; where 0, use original
 			for (let index = 0; index < frames; index++) {
 				const blend = blendEnv[index] ?? 0;
 
@@ -98,10 +97,14 @@ export class DeClickModule extends TransformModule {
 	}
 }
 
+export function deClick(options?: { sensitivity?: number; maxClickDuration?: number; id?: string }): DeClickModule {
+	const parsed = schema.parse(options ?? {});
+	return new DeClickModule({ ...parsed, id: options?.id });
+}
+
 function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: number, maxClickDuration: number): Uint8Array {
 	const mask = new Uint8Array(signal.length);
 
-	// High-pass filter to isolate click energy (> ~4kHz)
 	const hpCutoff = 4000;
 	const rc = 1 / (2 * Math.PI * hpCutoff);
 	const dt = 1 / sampleRate;
@@ -118,8 +121,7 @@ function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: 
 		prevHP = highPassed[index] ?? 0;
 	}
 
-	// Compute envelope of high-passed signal (rectify + smooth)
-	const envSmooth = Math.round(sampleRate * 0.0005); // 0.5ms smoothing
+	const envSmooth = Math.round(sampleRate * 0.0005);
 	const envelope = new Float32Array(signal.length);
 
 	for (let index = 0; index < signal.length; index++) {
@@ -132,20 +134,17 @@ function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: 
 		envelope[index] = Math.sqrt(envelope[index] ?? 0);
 	}
 
-	// Adaptive threshold based on median envelope level
 	const sorted = Float32Array.from(envelope);
 	sorted.sort();
 	const median = sorted[Math.floor(sorted.length * 0.5)] ?? 0;
 	const threshold = median * (5 + 20 * (1 - sensitivity));
 
-	// Mark click samples
 	for (let index = 0; index < signal.length; index++) {
 		if ((envelope[index] ?? 0) > threshold) {
 			mask[index] = 1;
 		}
 	}
 
-	// Remove regions longer than maxClickDuration (those are likely speech transients, not clicks)
 	let regionStart = -1;
 
 	for (let index = 0; index <= signal.length; index++) {
@@ -155,7 +154,6 @@ function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: 
 			regionStart = index;
 		} else if (!active && regionStart !== -1) {
 			if (index - regionStart > maxClickDuration) {
-				// Too long — not a click, clear it
 				for (let clear = regionStart; clear < index; clear++) {
 					mask[clear] = 0;
 				}
@@ -171,18 +169,15 @@ function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: 
 function buildBlendEnvelope(mask: Uint8Array, length: number, fadeSamples: number): Float32Array {
 	const envelope = new Float32Array(length);
 
-	// Set click regions to 1
 	for (let index = 0; index < length; index++) {
 		if ((mask[index] ?? 0) > 0) {
 			envelope[index] = 1;
 		}
 	}
 
-	// Add fade-in before each click region and fade-out after
 	for (let index = 0; index < length; index++) {
 		if ((mask[index] ?? 0) === 0) continue;
 
-		// Find region boundaries
 		const start = index;
 		let end = index;
 
@@ -190,7 +185,6 @@ function buildBlendEnvelope(mask: Uint8Array, length: number, fadeSamples: numbe
 			end++;
 		}
 
-		// Fade in before start
 		for (let fade = 0; fade < fadeSamples; fade++) {
 			const pos = start - fadeSamples + fade;
 
@@ -200,7 +194,6 @@ function buildBlendEnvelope(mask: Uint8Array, length: number, fadeSamples: numbe
 			}
 		}
 
-		// Fade out after end
 		for (let fade = 0; fade < fadeSamples; fade++) {
 			const pos = end + fade;
 
@@ -210,68 +203,10 @@ function buildBlendEnvelope(mask: Uint8Array, length: number, fadeSamples: numbe
 			}
 		}
 
-		index = end - 1; // Skip to end of region
+		index = end - 1;
 	}
 
 	return envelope;
-}
-
-function applyLowPass(signal: Float32Array, sampleRate: number, cutoff: number): Float32Array {
-	const output = new Float32Array(signal.length);
-
-	// 2nd-order Butterworth low-pass (biquad)
-	const w0 = (2 * Math.PI * cutoff) / sampleRate;
-	const cosW0 = Math.cos(w0);
-	const sinW0 = Math.sin(w0);
-	const alpha = sinW0 / Math.SQRT2; // Q = 1/sqrt(2) for Butterworth
-
-	const b0 = (1 - cosW0) / 2;
-	const b1 = 1 - cosW0;
-	const b2 = (1 - cosW0) / 2;
-	const a0 = 1 + alpha;
-	const a1 = -2 * cosW0;
-	const a2 = 1 - alpha;
-
-	// Normalize
-	const nb0 = b0 / a0;
-	const nb1 = b1 / a0;
-	const nb2 = b2 / a0;
-	const na1 = a1 / a0;
-	const na2 = a2 / a0;
-
-	let x1 = 0,
-		x2 = 0,
-		y1 = 0,
-		y2 = 0;
-
-	// Forward pass
-	for (let index = 0; index < signal.length; index++) {
-		const x0 = signal[index] ?? 0;
-		const y0 = nb0 * x0 + nb1 * x1 + nb2 * x2 - na1 * y1 - na2 * y2;
-		output[index] = y0;
-		x2 = x1;
-		x1 = x0;
-		y2 = y1;
-		y1 = y0;
-	}
-
-	// Backward pass for zero-phase filtering (eliminates phase distortion)
-	x1 = 0;
-	x2 = 0;
-	y1 = 0;
-	y2 = 0;
-
-	for (let index = signal.length - 1; index >= 0; index--) {
-		const x0 = output[index] ?? 0;
-		const y0 = nb0 * x0 + nb1 * x1 + nb2 * x2 - na1 * y1 - na2 * y2;
-		output[index] = y0;
-		x2 = x1;
-		x1 = x0;
-		y2 = y1;
-		y1 = y0;
-	}
-
-	return output;
 }
 
 function smoothEnvelopeInPlace(envelope: Float32Array, windowSize: number): void {
@@ -304,28 +239,4 @@ function smoothEnvelopeInPlace(envelope: Float32Array, windowSize: number): void
 
 		envelope[index] = sum / Math.max(count, 1);
 	}
-}
-
-export function deClick(options?: { sensitivity?: number; maxClickDuration?: number; id?: string }): DeClickModule {
-	return new DeClickModule({
-		sensitivity: options?.sensitivity ?? 0.5,
-		maxClickDuration: options?.maxClickDuration ?? 200,
-		id: options?.id,
-	});
-}
-
-export function mouthDeClick(options?: { sensitivity?: number; id?: string }): DeClickModule {
-	return new DeClickModule({
-		sensitivity: options?.sensitivity ?? 0.7,
-		maxClickDuration: 50,
-		id: options?.id,
-	});
-}
-
-export function deCrackle(options?: { sensitivity?: number; id?: string }): DeClickModule {
-	return new DeClickModule({
-		sensitivity: options?.sensitivity ?? 0.5,
-		maxClickDuration: 20,
-		id: options?.id,
-	});
 }

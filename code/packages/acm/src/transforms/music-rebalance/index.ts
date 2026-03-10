@@ -1,5 +1,6 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { highPassCoefficients, lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
@@ -11,6 +12,12 @@ export interface StemGains {
 	readonly bass: number;
 	readonly other: number;
 }
+
+export const schema = z.object({
+	modelPath: z.string().default("").describe("Model Path"),
+	highPass: z.number().min(0).max(500).multipleOf(10).default(0).describe("High Pass"),
+	lowPass: z.number().min(0).max(22050).multipleOf(100).default(0).describe("Low Pass"),
+});
 
 export interface MusicRebalanceProperties extends TransformModuleProperties {
 	readonly modelPath: string;
@@ -25,23 +32,18 @@ const SEGMENT_SAMPLES = 343980; // 7.8s at 44100Hz
 const OVERLAP = 0.25;
 const TRANSITION_POWER = 1.0;
 
-export class MusicRebalanceModule extends TransformModule {
+export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperties> {
+	static override readonly moduleName = "Music Rebalance";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is MusicRebalanceModule {
 		return TransformModule.is(value) && value.type[2] === "music-rebalance";
 	}
 
-	readonly type = ["async-module", "transform", "music-rebalance"] as const;
-	readonly properties: MusicRebalanceProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type = ["async-module", "transform", "music-rebalance"] as const;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private session?: OnnxSession;
-
-	constructor(properties: AudioChainModuleInput<MusicRebalanceProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);
@@ -501,5 +503,4 @@ function fftInverse(re: Float32Array, im: Float32Array, wOutRe?: Float32Array, w
 
 	return outRe;
 }
-
 

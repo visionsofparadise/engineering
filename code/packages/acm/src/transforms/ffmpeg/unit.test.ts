@@ -1,9 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { resolve, dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runTransform } from "../../utils/test-pipeline";
-import { notSilent, somethingChanged, notAnomalous } from "../../utils/test-audio";
+import { describe, expect, it } from "vitest";
 import { ffmpeg } from ".";
+import { notAnomalous, notSilent, somethingChanged } from "../../utils/test-audio";
+import { runTransform } from "../../utils/test-pipeline";
 
 const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/test-voice.wav");
 

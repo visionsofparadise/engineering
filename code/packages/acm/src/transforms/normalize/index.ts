@@ -1,29 +1,27 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, AudioChunk } from "../../module";
+import type { AudioChunk } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
-export interface NormalizeProperties extends TransformModuleProperties {
-	readonly ceiling: number;
-}
+export const schema = z.object({
+	ceiling: z.number().min(0).max(1).multipleOf(0.01).default(1.0).describe("Ceiling"),
+});
 
-export class NormalizeModule extends TransformModule {
+export interface NormalizeProperties extends z.infer<typeof schema>, TransformModuleProperties {}
+
+export class NormalizeModule extends TransformModule<NormalizeProperties> {
+	static override readonly moduleName = "Normalize";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is NormalizeModule {
 		return TransformModule.is(value) && value.type[2] === "normalize";
 	}
 
-	readonly type = ["async-module", "transform", "normalize"] as const;
-	readonly properties: NormalizeProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type = ["async-module", "transform", "normalize"] as const;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private peak = 0;
 	private scale = 1;
-
-	constructor(properties: AudioChainModuleInput<NormalizeProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {
 		await super._buffer(chunk, buffer);

@@ -1,5 +1,11 @@
-import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../../module";
+import { z } from "zod";
+import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
+
+export const schema = z.object({
+	threshold: z.number().min(0).max(1).multipleOf(0.01).default(0.99).describe("Threshold"),
+	method: z.enum(["ar", "sparse"]).default("ar").describe("Method"),
+});
 
 export interface DeClipProperties extends TransformModuleProperties {
 	readonly threshold?: number;
@@ -17,24 +23,19 @@ export interface DeClipProperties extends TransformModuleProperties {
  *   Evaluation of Popular Audio Declipping Methods."
  *   IEEE JSTSP, 15(1), 5-24. https://doi.org/10.1109/JSTSP.2020.3042071
  */
-export class DeClipModule extends TransformModule {
+export class DeClipModule extends TransformModule<DeClipProperties> {
+	static override readonly moduleName = "De-Clip";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is DeClipModule {
 		return TransformModule.is(value) && value.type[2] === "de-clip";
 	}
 
-	readonly type = ["async-module", "transform", "de-clip"] as const;
-	readonly properties: DeClipProperties;
+	override readonly type = ["async-module", "transform", "de-clip"] as const;
 	readonly latency = 0;
 
 	private clipSampleRate = 44100;
 
-	constructor(properties: AudioChainModuleInput<DeClipProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
-
-	get bufferSize(): number {
+	override get bufferSize(): number {
 		return Math.round(this.clipSampleRate * 0.05);
 	}
 

@@ -1,13 +1,15 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { istft, stft } from "../../utils/stft";
 
-export interface DeReverbProperties extends TransformModuleProperties {
-	readonly predictionDelay: number;
-	readonly filterLength: number;
-	readonly iterations: number;
-}
+export const schema = z.object({
+	predictionDelay: z.number().min(1).max(10).multipleOf(1).default(4).describe("Prediction Delay"),
+	filterLength: z.number().min(5).max(30).multipleOf(1).default(12).describe("Filter Length"),
+	iterations: z.number().min(1).max(10).multipleOf(1).default(4).describe("Iterations"),
+});
+
+export interface DeReverbProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 /**
  * Reduces late reverberation from speech using the Weighted Prediction Error (WPE) algorithm.
@@ -16,21 +18,16 @@ export interface DeReverbProperties extends TransformModuleProperties {
  *   "Speech Dereverberation Based on Variance-Normalized Delayed Linear Prediction."
  *   IEEE TASLP, 18(7), 1717-1731. https://doi.org/10.1109/TASL.2010.2052251
  */
-export class DeReverbModule extends TransformModule {
+export class DeReverbModule extends TransformModule<DeReverbProperties> {
+	static override readonly moduleName = "De-Reverb";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is DeReverbModule {
 		return TransformModule.is(value) && value.type[2] === "de-reverb";
 	}
 
-	readonly type = ["async-module", "transform", "de-reverb"] as const;
-	readonly properties: DeReverbProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
-
-	constructor(properties: AudioChainModuleInput<DeReverbProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
+	override readonly type = ["async-module", "transform", "de-reverb"] as const;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const { frames, channels } = buffer;

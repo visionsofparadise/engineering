@@ -1,30 +1,31 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
+
+export const schema = z.object({
+	before: z.number().min(0).multipleOf(0.001).default(0).describe("Before"),
+	after: z.number().min(0).multipleOf(0.001).default(0).describe("After"),
+});
 
 export interface PadProperties extends TransformModuleProperties {
 	readonly before?: number;
 	readonly after?: number;
 }
 
-export class PadModule extends TransformModule {
+export class PadModule extends TransformModule<PadProperties> {
+	static override readonly moduleName = "Pad";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is PadModule {
 		return TransformModule.is(value) && value.type[2] === "pad";
 	}
 
-	readonly type = ["async-module", "transform", "pad"] as const;
-	readonly properties: PadProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type = ["async-module", "transform", "pad"] as const;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private padSampleRate = 44100;
 	private padChannels = 1;
-
-	constructor(properties: AudioChainModuleInput<PadProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);

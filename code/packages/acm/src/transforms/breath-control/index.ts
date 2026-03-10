@@ -1,30 +1,29 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
-export interface BreathControlProperties extends TransformModuleProperties {
-	readonly sensitivity: number;
-	readonly reduction: number;
-	readonly mode: "remove" | "attenuate";
-}
+export const schema = z.object({
+	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
+	reduction: z.number().min(-60).max(0).multipleOf(1).default(-12).describe("Reduction"),
+	mode: z.enum(["remove", "attenuate"]).default("attenuate").describe("Mode"),
+});
 
-export class BreathControlModule extends TransformModule {
+export interface BreathControlProperties extends z.infer<typeof schema>, TransformModuleProperties {}
+
+export class BreathControlModule extends TransformModule<BreathControlProperties> {
+	static override readonly moduleName = "Breath Control";
+	static override readonly schema = schema;
+
 	static override is(value: unknown): value is BreathControlModule {
 		return TransformModule.is(value) && value.type[2] === "breath-control";
 	}
 
-	readonly type = ["async-module", "transform", "breath-control"] as const;
-	readonly properties: BreathControlProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type = ["async-module", "transform", "breath-control"] as const;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private controlSampleRate = 44100;
-
-	constructor(properties: AudioChainModuleInput<BreathControlProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);

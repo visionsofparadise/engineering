@@ -37,8 +37,8 @@ export async function createOnnxSession(modelPath: string): Promise<OnnxSession>
 				const ortTensor = tensor as { data: Float32Array; dims: ReadonlyArray<number> };
 
 				output[name] = {
-					data: Float32Array.from(ortTensor.data),
-					dims: [...ortTensor.dims],
+					data: ortTensor.data instanceof Float32Array ? ortTensor.data : Float32Array.from(ortTensor.data),
+					dims: ortTensor.dims,
 				};
 			}
 

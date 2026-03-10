@@ -15,18 +15,25 @@ export async function applyTransform(
 
 		const frames = samples[0]?.length ?? 0;
 
-		await writer.write({ samples, offset: 0, duration: frames });
-		await writer.close();
-
 		const outputChunks: Array<AudioChunk> = [];
 
-		for (;;) {
-			const { value, done } = await reader.read();
+		// Write and read concurrently to avoid TransformStream backpressure deadlock
+		const writePromise = (async () => {
+			await writer.write({ samples, offset: 0, duration: frames });
+			await writer.close();
+		})();
 
-			if (done) break;
+		const readPromise = (async () => {
+			for (;;) {
+				const { value, done } = await reader.read();
 
-			outputChunks.push(value);
-		}
+				if (done) break;
+
+				outputChunks.push(value);
+			}
+		})();
+
+		await Promise.all([writePromise, readPromise]);
 
 		const totalFrames = outputChunks.reduce((sum, chunk) => sum + chunk.duration, 0);
 		const outChannels = outputChunks[0]?.samples.length ?? samples.length;
