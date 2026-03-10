@@ -14,6 +14,7 @@ export interface AppContext {
 	readonly logger: Logger;
 	readonly main: MainWithEvents;
 	readonly queryClient: QueryClient;
+	readonly userDataPath: string;
 	readonly windowId: string;
 }
 

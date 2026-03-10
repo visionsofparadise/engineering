@@ -1,20 +1,20 @@
-import type { ChainModuleReference } from "@engineering/acm";
+import type { ChainDefinition, ChainModuleReference } from "@engineering/acm";
 import { useCallback, useEffect } from "react";
 import { useSaveChain } from "../../../hooks/useChain";
 import type { SessionContext } from "../../../models/Context";
 import { useJobState } from "../../../models/State/Job";
 import { Button } from "../../ui/button";
 import { ScrollArea } from "../../ui/scroll-area";
+import { ChainManagerMenu } from "./ChainManager/ChainManagerMenu";
 import { ChainSlots } from "./ChainSlots";
 import { JobView } from "./JobView";
-import { ModuleMenu } from "./ModuleMenu";
 
 interface ChainPanelProps {
 	readonly context: SessionContext;
 }
 
 export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
-	const { chain, sessionPath, queryClient } = context;
+	const { chain, sessionPath, queryClient, userDataPath } = context;
 	const saveChain = useSaveChain(sessionPath);
 	const { jobState, startJob } = useJobState();
 
@@ -25,6 +25,13 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 	}, [jobState?.status, queryClient, sessionPath]);
 
 	const transforms = chain.transforms;
+
+	const handleChainChange = useCallback(
+		(updated: ChainDefinition) => {
+			saveChain.mutate(updated);
+		},
+		[saveChain],
+	);
 
 	const handleAdd = useCallback(
 		(moduleName: string) => {
@@ -66,10 +73,10 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 		<div className="flex h-full flex-col">
 			<div className="flex items-center justify-between border-b border-border px-3 py-2">
 				<span className="text-xs font-medium text-muted-foreground">Chain</span>
-				<ModuleMenu onSelect={handleAdd} />
+				<ChainManagerMenu chain={chain} onChainChange={handleChainChange} userDataPath={userDataPath} />
 			</div>
 			<ScrollArea className="flex-1">
-				<ChainSlots context={context} />
+				<ChainSlots onAdd={handleAdd} context={context} />
 			</ScrollArea>
 			<div className="flex justify-end border-t border-border px-3 py-2">
 				<Button

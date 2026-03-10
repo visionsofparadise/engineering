@@ -2,12 +2,14 @@ import { useCallback, useRef, useState } from "react";
 import { useSaveChain } from "../../../hooks/useChain";
 import type { SessionContext } from "../../../models/Context";
 import { ChainSlot } from "./ChainSlot";
+import { ModuleMenu } from "./ModuleMenu";
 
 interface ChainSlotsProps {
+	readonly onAdd: (moduleName: string) => void;
 	readonly context: SessionContext;
 }
 
-export const ChainSlots: React.FC<ChainSlotsProps> = ({ context }) => {
+export const ChainSlots: React.FC<ChainSlotsProps> = ({ onAdd, context }) => {
 	const { chain, sessionPath } = context;
 	const transforms = chain.transforms;
 	const saveChain = useSaveChain(sessionPath);
@@ -42,14 +44,6 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ context }) => {
 		dragOverIndex.current = undefined;
 	}, [dragIndex, transforms, chain, saveChain]);
 
-	if (transforms.length === 0) {
-		return (
-			<div className="flex items-center justify-center p-4">
-				<p className="text-xs text-muted-foreground">No modules added</p>
-			</div>
-		);
-	}
-
 	return (
 		<div className="flex flex-col gap-1 p-2">
 			{transforms.map((transform, index) => (
@@ -67,6 +61,7 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ context }) => {
 					/>
 				</div>
 			))}
+			<ModuleMenu onSelect={onAdd} />
 		</div>
 	);
 };
