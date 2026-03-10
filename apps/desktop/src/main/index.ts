@@ -1,23 +1,11 @@
 import { app, BrowserWindow } from "electron";
-import path from "node:path";
+import { Logger } from "../shared/models/Logger/Logger";
+import { createWindow } from "./createWindow";
 
-function createWindow(): void {
-	const mainWindow = new BrowserWindow({
-		width: 1200,
-		height: 800,
-		webPreferences: {
-			preload: path.join(__dirname, "preload.js"),
-		},
-	});
+const logger = new Logger("main");
+Logger.level = "debug";
 
-	if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-		void mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-	} else {
-		void mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
-	}
-}
-
-app.whenReady().then(createWindow).catch(console.error);
+app.whenReady().then(() => createWindow({ logger })).catch(console.error);
 
 app.on("window-all-closed", () => {
 	if (process.platform !== "darwin") {
@@ -27,6 +15,6 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
 	if (BrowserWindow.getAllWindows().length === 0) {
-		createWindow();
+		void createWindow({ logger });
 	}
 });
