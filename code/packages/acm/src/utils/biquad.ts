@@ -24,6 +24,66 @@ export function biquadFilter(samples: Float32Array, fb: [number, number, number]
 	return output;
 }
 
+export function zeroPhaseBiquadFilter(signal: Float32Array, coefficients: BiquadCoefficients): void {
+	const { fb, fa } = coefficients;
+
+	let x1 = 0,
+		x2 = 0,
+		y1 = 0,
+		y2 = 0;
+
+	for (let index = 0; index < signal.length; index++) {
+		const x0 = signal[index] ?? 0;
+		const y0 = fb[0] * x0 + fb[1] * x1 + fb[2] * x2 - fa[1] * y1 - fa[2] * y2;
+		signal[index] = y0;
+		x2 = x1;
+		x1 = x0;
+		y2 = y1;
+		y1 = y0;
+	}
+
+	x1 = 0;
+	x2 = 0;
+	y1 = 0;
+	y2 = 0;
+
+	for (let index = signal.length - 1; index >= 0; index--) {
+		const x0 = signal[index] ?? 0;
+		const y0 = fb[0] * x0 + fb[1] * x1 + fb[2] * x2 - fa[1] * y1 - fa[2] * y2;
+		signal[index] = y0;
+		x2 = x1;
+		x1 = x0;
+		y2 = y1;
+		y1 = y0;
+	}
+}
+
+export function lowPassCoefficients(sampleRate: number, frequency: number): BiquadCoefficients {
+	const w0 = (2 * Math.PI * frequency) / sampleRate;
+	const cosW0 = Math.cos(w0);
+	const sinW0 = Math.sin(w0);
+	const alpha = sinW0 / Math.SQRT2;
+	const a0 = 1 + alpha;
+
+	return {
+		fb: [(1 - cosW0) / 2 / a0, (1 - cosW0) / a0, (1 - cosW0) / 2 / a0],
+		fa: [1.0, (-2 * cosW0) / a0, (1 - alpha) / a0],
+	};
+}
+
+export function highPassCoefficients(sampleRate: number, frequency: number): BiquadCoefficients {
+	const w0 = (2 * Math.PI * frequency) / sampleRate;
+	const cosW0 = Math.cos(w0);
+	const sinW0 = Math.sin(w0);
+	const alpha = sinW0 / Math.SQRT2;
+	const a0 = 1 + alpha;
+
+	return {
+		fb: [(1 + cosW0) / 2 / a0, (-(1 + cosW0)) / a0, (1 + cosW0) / 2 / a0],
+		fa: [1.0, (-2 * cosW0) / a0, (1 - alpha) / a0],
+	};
+}
+
 export function preFilterCoefficients(sampleRate: number): BiquadCoefficients {
 	if (sampleRate === 48000) {
 		return {

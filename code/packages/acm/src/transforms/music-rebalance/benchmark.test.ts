@@ -9,7 +9,7 @@ const testVoice = resolve(here, "../../utils/test-voice.wav");
 
 describe("music-rebalance benchmark", () => {
 	it("benchmarks music-rebalance", async () => {
-		const result = await runBenchmark("music-rebalance", musicRebalance("D:/Code/demucs.onnx/htdemucs.onnx", { vocals: 1, drums: 0, bass: 0, other: 0 }), testVoice);
+		const result = await runBenchmark("music-rebalance", musicRebalance("D:/Models/htdemucs.onnx", { vocals: 1, drums: 0, bass: 0, other: 0 }), testVoice);
 		await appendBenchmarkLog(here, result);
 	}, 240_000);
 });

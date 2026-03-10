@@ -2,8 +2,9 @@ import type { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChainModuleInput, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
-import { linearResample } from "../../utils/resample";
 import { istft, stft } from "../../utils/stft";
+import { applyTransform } from "../../utils/apply-transform";
+import { resample } from "../resample";
 
 export interface VoiceDenoiseProperties extends TransformModuleProperties {
 	readonly modelPath1: string;
@@ -60,12 +61,30 @@ export class VoiceDenoiseModule extends TransformModule {
 			if (!channel) continue;
 
 			// Resample to 16kHz if needed
-			const input16k = this.sourceSampleRate !== DTLN_SAMPLE_RATE ? linearResample(channel, this.sourceSampleRate, DTLN_SAMPLE_RATE) : channel;
+			let input16k: Float32Array = channel;
+
+			if (this.sourceSampleRate !== DTLN_SAMPLE_RATE) {
+				const resampled = await applyTransform(
+					[channel],
+					{ sampleRate: this.sourceSampleRate, channels: 1 },
+					resample(DTLN_SAMPLE_RATE),
+				);
+				input16k = resampled[0] ?? channel;
+			}
 
 			const denoised16k = await this.processDtln(input16k);
 
 			// Resample back to original sample rate if needed
-			const output = this.sourceSampleRate !== DTLN_SAMPLE_RATE ? linearResample(denoised16k, DTLN_SAMPLE_RATE, this.sourceSampleRate) : denoised16k;
+			let output: Float32Array = denoised16k;
+
+			if (this.sourceSampleRate !== DTLN_SAMPLE_RATE) {
+				const resampled = await applyTransform(
+					[denoised16k],
+					{ sampleRate: DTLN_SAMPLE_RATE, channels: 1 },
+					resample(this.sourceSampleRate),
+				);
+				output = resampled[0] ?? denoised16k;
+			}
 
 			// Ensure output matches input length
 			const finalOutput = new Float32Array(frames);

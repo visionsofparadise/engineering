@@ -164,7 +164,7 @@ export function ifft(re: Float32Array, im: Float32Array, workspace?: FftWorkspac
 	return outRe;
 }
 
-function bitReverse(re: Float32Array, im: Float32Array, size: number): void {
+export function bitReverse(re: Float32Array, im: Float32Array, size: number): void {
 	let rev = 0;
 
 	for (let index = 0; index < size - 1; index++) {
@@ -188,15 +188,51 @@ function bitReverse(re: Float32Array, im: Float32Array, size: number): void {
 	}
 }
 
-function butterflyStages(re: Float32Array, im: Float32Array, size: number): void {
+const twiddleCache = new Map<number, { re: Float32Array; im: Float32Array }>();
+
+function getTwiddleFactors(size: number): { re: Float32Array; im: Float32Array } {
+	let cached = twiddleCache.get(size);
+
+	if (cached) return cached;
+
+	// Total twiddle factors needed: sum of halfStep for each stage = size/2 * log2(size)
+	// Layout: for step=2,4,8,...,size, store halfStep entries contiguously
+	const totalFactors = (size / 2) * Math.log2(size);
+	const twRe = new Float32Array(totalFactors);
+	const twIm = new Float32Array(totalFactors);
+	let offset = 0;
+
 	for (let step = 2; step <= size; step *= 2) {
 		const halfStep = step / 2;
 		const angle = (-2 * Math.PI) / step;
 
+		for (let pair = 0; pair < halfStep; pair++) {
+			twRe[offset + pair] = Math.cos(angle * pair);
+			twIm[offset + pair] = Math.sin(angle * pair);
+		}
+
+		offset += halfStep;
+	}
+
+	cached = { re: twRe, im: twIm };
+	twiddleCache.set(size, cached);
+
+	return cached;
+}
+
+export function butterflyStages(re: Float32Array, im: Float32Array, size: number): void {
+	const twiddle = getTwiddleFactors(size);
+	const twRe = twiddle.re;
+	const twIm = twiddle.im;
+	let twOffset = 0;
+
+	for (let step = 2; step <= size; step *= 2) {
+		const halfStep = step / 2;
+
 		for (let group = 0; group < size; group += step) {
 			for (let pair = 0; pair < halfStep; pair++) {
-				const twiddleRe = Math.cos(angle * pair);
-				const twiddleIm = Math.sin(angle * pair);
+				const twiddleRe = twRe[twOffset + pair] ?? 0;
+				const twiddleIm = twIm[twOffset + pair] ?? 0;
 				const evenIdx = group + pair;
 				const oddIdx = group + pair + halfStep;
 
@@ -209,5 +245,7 @@ function butterflyStages(re: Float32Array, im: Float32Array, size: number): void
 				im[evenIdx] = (im[evenIdx] ?? 0) + tIm;
 			}
 		}
+
+		twOffset += halfStep;
 	}
 }

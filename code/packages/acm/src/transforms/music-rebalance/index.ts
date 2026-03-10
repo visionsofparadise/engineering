@@ -1,8 +1,9 @@
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChainModuleInput, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
-import { dbToLinear } from "../../utils/db";
+import { highPassCoefficients, lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
+import { bitReverse, butterflyStages } from "../../utils/stft";
 
 export interface StemGains {
 	readonly vocals: number;
@@ -290,11 +291,11 @@ export class MusicRebalanceModule extends TransformModule {
 
 			for (const channel of outputChannels) {
 				if (highPass) {
-					applyBiquadFilter(channel, sampleRate, highPass, "highpass");
+					zeroPhaseBiquadFilter(channel, highPassCoefficients(sampleRate, highPass));
 				}
 
 				if (lowPass) {
-					applyBiquadFilter(channel, sampleRate, lowPass, "lowpass");
+					zeroPhaseBiquadFilter(channel, lowPassCoefficients(sampleRate, lowPass));
 				}
 			}
 		}
@@ -501,137 +502,4 @@ function fftInverse(re: Float32Array, im: Float32Array, wOutRe?: Float32Array, w
 	return outRe;
 }
 
-function bitReverse(re: Float32Array, im: Float32Array, size: number): void {
-	let rev = 0;
 
-	for (let index = 0; index < size - 1; index++) {
-		if (index < rev) {
-			const tempRe = re[index] ?? 0;
-			const tempIm = im[index] ?? 0;
-			re[index] = re[rev] ?? 0;
-			im[index] = im[rev] ?? 0;
-			re[rev] = tempRe;
-			im[rev] = tempIm;
-		}
-
-		let bit = size >> 1;
-
-		while (bit <= rev) {
-			rev -= bit;
-			bit >>= 1;
-		}
-
-		rev += bit;
-	}
-}
-
-function butterflyStages(re: Float32Array, im: Float32Array, size: number): void {
-	for (let step = 2; step <= size; step *= 2) {
-		const halfStep = step / 2;
-		const angle = (-2 * Math.PI) / step;
-
-		for (let group = 0; group < size; group += step) {
-			for (let pair = 0; pair < halfStep; pair++) {
-				const twiddleRe = Math.cos(angle * pair);
-				const twiddleIm = Math.sin(angle * pair);
-				const evenIdx = group + pair;
-				const oddIdx = group + pair + halfStep;
-
-				const tRe = (re[oddIdx] ?? 0) * twiddleRe - (im[oddIdx] ?? 0) * twiddleIm;
-				const tIm = (re[oddIdx] ?? 0) * twiddleIm + (im[oddIdx] ?? 0) * twiddleRe;
-
-				re[oddIdx] = (re[evenIdx] ?? 0) - tRe;
-				im[oddIdx] = (im[evenIdx] ?? 0) - tIm;
-				re[evenIdx] = (re[evenIdx] ?? 0) + tRe;
-				im[evenIdx] = (im[evenIdx] ?? 0) + tIm;
-			}
-		}
-	}
-}
-
-export function dialogueIsolate(
-	modelPath: string,
-	options?: {
-		dialogueGain?: number;
-		noiseGain?: number;
-		highPass?: number;
-		lowPass?: number;
-		id?: string;
-	},
-): MusicRebalanceModule {
-	const dialogueLinear = dbToLinear(options?.dialogueGain ?? 0);
-	const noiseLinear = dbToLinear(options?.noiseGain ?? -Infinity);
-
-	return new MusicRebalanceModule({
-		modelPath,
-		stems: {
-			vocals: dialogueLinear,
-			drums: noiseLinear,
-			bass: noiseLinear,
-			other: noiseLinear,
-		},
-		highPass: options?.highPass ?? 80,
-		lowPass: options?.lowPass ?? 20000,
-		id: options?.id,
-	});
-}
-
-function applyBiquadFilter(signal: Float32Array, sampleRate: number, frequency: number, type: "lowpass" | "highpass"): void {
-	const w0 = (2 * Math.PI * frequency) / sampleRate;
-	const cosW0 = Math.cos(w0);
-	const sinW0 = Math.sin(w0);
-	const alpha = sinW0 / Math.SQRT2; // Butterworth Q
-
-	let b0: number, b1: number, b2: number;
-
-	if (type === "lowpass") {
-		b0 = (1 - cosW0) / 2;
-		b1 = 1 - cosW0;
-		b2 = (1 - cosW0) / 2;
-	} else {
-		b0 = (1 + cosW0) / 2;
-		b1 = -(1 + cosW0);
-		b2 = (1 + cosW0) / 2;
-	}
-
-	const a0 = 1 + alpha;
-	const a1 = -2 * cosW0;
-	const a2 = 1 - alpha;
-
-	const nb0 = b0 / a0;
-	const nb1 = b1 / a0;
-	const nb2 = b2 / a0;
-	const na1 = a1 / a0;
-	const na2 = a2 / a0;
-
-	// Zero-phase: forward then backward pass
-	let x1 = 0,
-		x2 = 0,
-		y1 = 0,
-		y2 = 0;
-
-	for (let index = 0; index < signal.length; index++) {
-		const x0 = signal[index] ?? 0;
-		const y0 = nb0 * x0 + nb1 * x1 + nb2 * x2 - na1 * y1 - na2 * y2;
-		signal[index] = y0;
-		x2 = x1;
-		x1 = x0;
-		y2 = y1;
-		y1 = y0;
-	}
-
-	x1 = 0;
-	x2 = 0;
-	y1 = 0;
-	y2 = 0;
-
-	for (let index = signal.length - 1; index >= 0; index--) {
-		const x0 = signal[index] ?? 0;
-		const y0 = nb0 * x0 + nb1 * x1 + nb2 * x2 - na1 * y1 - na2 * y2;
-		signal[index] = y0;
-		x2 = x1;
-		x1 = x0;
-		y2 = y1;
-		y1 = y0;
-	}
-}

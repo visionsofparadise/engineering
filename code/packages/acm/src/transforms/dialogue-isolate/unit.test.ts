@@ -3,13 +3,13 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runTransform } from "../../utils/test-pipeline";
 import { notSilent, expectedDuration, somethingChanged, notAnomalous } from "../../utils/test-audio";
-import { voiceDenoise } from ".";
+import { dialogueIsolate } from ".";
 
 const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/test-voice.wav");
 
-describe("voice-denoise", () => {
+describe("dialogue-isolate", () => {
 	it("processes voice audio", async () => {
-		const transform = voiceDenoise("D:/Models");
+		const transform = dialogueIsolate("D:/Models/Kim_Vocal_2.onnx");
 		const { input, output, context } = await runTransform(testVoice, transform);
 
 		expect(notSilent(output).pass).toBe(true);
