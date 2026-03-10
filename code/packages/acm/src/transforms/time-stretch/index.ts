@@ -10,6 +10,7 @@ export interface TimeStretchProperties extends z.infer<typeof schema>, FfmpegPro
 
 export class TimeStretchModule extends FfmpegModule<TimeStretchProperties> {
 	static override readonly moduleName = "Time Stretch";
+	static override readonly moduleDescription = "Change duration without affecting pitch";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is TimeStretchModule {
 		return FfmpegModule.is(value) && value.type[3] === "time-stretch";

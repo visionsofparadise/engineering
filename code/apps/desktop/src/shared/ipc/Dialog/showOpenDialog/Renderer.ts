@@ -1,8 +1,14 @@
 import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 
+export interface FileFilter {
+	name: string;
+	extensions: Array<string>;
+}
+
 export interface ShowOpenDialogOptions {
 	title?: string;
 	defaultPath?: string;
+	filters?: Array<FileFilter>;
 	properties?: Array<"openFile" | "openDirectory" | "multiSelections">;
 }
 

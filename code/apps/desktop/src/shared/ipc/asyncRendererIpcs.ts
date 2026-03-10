@@ -1,4 +1,7 @@
 import type { IpcHandlerAction, IpcHandlerParameters, IpcHandlerReturn } from "../models/AsyncRendererIpc";
+import { AbortJobRendererIpc } from "./Audio/abortJob/Renderer";
+import { ApplyAllRendererIpc } from "./Audio/applyAll/Renderer";
+import { ApplyChainRendererIpc } from "./Audio/applyChain/Renderer";
 import { ShowOpenDialogRendererIpc } from "./Dialog/showOpenDialog/Renderer";
 import { EnsureDirectoryRendererIpc } from "./FileSystem/ensureDirectory/Renderer";
 import { ReadDirectoryRendererIpc } from "./FileSystem/readDirectory/Renderer";
@@ -14,6 +17,9 @@ import { GetWindowIdRendererIpc } from "./System/getWindowId/Renderer";
 import { SetBoundsRendererIpc } from "./System/setBounds/Renderer";
 
 export const ASYNC_RENDERER_IPCS = [
+	AbortJobRendererIpc,
+	ApplyAllRendererIpc,
+	ApplyChainRendererIpc,
 	EnsureDirectoryRendererIpc,
 	ReadDirectoryRendererIpc,
 	ReadFileRendererIpc,

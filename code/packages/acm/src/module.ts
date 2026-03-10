@@ -16,6 +16,7 @@ export interface StreamContext {
 export interface RenderOptions {
 	readonly chunkSize?: number;
 	readonly highWaterMark?: number;
+	readonly signal?: AbortSignal;
 }
 
 export interface AudioChainModuleProperties {
@@ -39,6 +40,7 @@ type EventListener<K extends keyof ModuleEventMap> = (...args: ModuleEventMap[K]
 
 export abstract class AudioChainModule<P extends AudioChainModuleProperties = AudioChainModuleProperties> {
 	static readonly moduleName: string;
+	static readonly moduleDescription: string = "";
 	static readonly schema: z.ZodType = z.object({});
 
 	static is(value: unknown): value is AudioChainModule {

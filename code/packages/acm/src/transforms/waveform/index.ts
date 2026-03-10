@@ -15,6 +15,7 @@ const HEADER_SIZE = 16;
 
 export class WaveformModule extends TransformModule<WaveformProperties> {
 	static override readonly moduleName = "Waveform";
+	static override readonly moduleDescription = "Generate waveform visualization data";
 	static override readonly schema = schema;
 
 	static override is(value: unknown): value is WaveformModule {

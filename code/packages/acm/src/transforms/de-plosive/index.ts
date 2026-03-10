@@ -11,6 +11,7 @@ export interface DePlosiveProperties extends z.infer<typeof schema>, TransformMo
 
 export class DePlosiveModule extends TransformModule<DePlosiveProperties> {
 	static override readonly moduleName = "De-Plosive";
+	static override readonly moduleDescription = "Reduce plosive bursts (p, b, t, d sounds)";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DePlosiveModule {
 		return TransformModule.is(value) && value.type[2] === "de-plosive";

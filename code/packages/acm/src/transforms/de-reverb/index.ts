@@ -20,6 +20,7 @@ export interface DeReverbProperties extends z.infer<typeof schema>, TransformMod
  */
 export class DeReverbModule extends TransformModule<DeReverbProperties> {
 	static override readonly moduleName = "De-Reverb";
+	static override readonly moduleDescription = "Reduce room reverb and echo";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DeReverbModule {
 		return TransformModule.is(value) && value.type[2] === "de-reverb";

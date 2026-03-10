@@ -14,6 +14,7 @@ export interface DeBleedProperties extends z.infer<typeof schema>, TransformModu
 
 export class DeBleedModule extends TransformModule<DeBleedProperties> {
 	static override readonly moduleName = "De-Bleed";
+	static override readonly moduleDescription = "Reduce microphone bleed between channels";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DeBleedModule {
 		return TransformModule.is(value) && value.type[2] === "de-bleed";

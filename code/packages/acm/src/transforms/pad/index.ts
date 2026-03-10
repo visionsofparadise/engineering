@@ -15,6 +15,7 @@ export interface PadProperties extends TransformModuleProperties {
 
 export class PadModule extends TransformModule<PadProperties> {
 	static override readonly moduleName = "Pad";
+	static override readonly moduleDescription = "Add silence to start or end of audio";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is PadModule {
 		return TransformModule.is(value) && value.type[2] === "pad";

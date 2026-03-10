@@ -25,6 +25,7 @@ export interface DeClipProperties extends TransformModuleProperties {
  */
 export class DeClipModule extends TransformModule<DeClipProperties> {
 	static override readonly moduleName = "De-Clip";
+	static override readonly moduleDescription = "Restore clipped audio peaks";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DeClipModule {
 		return TransformModule.is(value) && value.type[2] === "de-clip";

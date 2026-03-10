@@ -21,6 +21,7 @@ export interface EqMatchProperties extends z.infer<typeof schema>, TransformModu
  */
 export class EqMatchModule extends TransformModule<EqMatchProperties> {
 	static override readonly moduleName = "EQ Match";
+	static override readonly moduleDescription = "Match frequency response to a reference profile";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is EqMatchModule {
 		return TransformModule.is(value) && value.type[2] === "eq-match";

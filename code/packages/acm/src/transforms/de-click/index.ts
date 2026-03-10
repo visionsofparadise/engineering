@@ -19,6 +19,7 @@ export interface DeClickProperties extends z.infer<typeof schema>, TransformModu
  */
 export class DeClickModule<P extends DeClickProperties = DeClickProperties> extends TransformModule<P> {
 	static override readonly moduleName: string = "De-Click";
+	static override readonly moduleDescription = "Remove clicks, pops, and impulse artifacts";
 	static override readonly schema: z.ZodType = schema;
 
 	static override is(value: unknown): value is DeClickModule {

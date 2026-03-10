@@ -16,6 +16,7 @@ export interface FfmpegProperties extends TransformModuleProperties {
 
 export class FfmpegModule<P extends FfmpegProperties = FfmpegProperties> extends TransformModule<P> {
 	static override readonly moduleName: string = "FFmpeg";
+	static override readonly moduleDescription: string = "Process audio through FFmpeg filters";
 	static override readonly schema: z.ZodType = schema;
 	static override is(value: unknown): value is FfmpegModule {
 		return TransformModule.is(value) && value.type[2] === "ffmpeg";

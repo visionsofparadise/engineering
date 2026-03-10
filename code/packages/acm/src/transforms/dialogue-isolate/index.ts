@@ -29,6 +29,7 @@ const CHANNEL_STRIDE = DIM_F * DIM_T;
 
 export class DialogueIsolateModule extends TransformModule<DialogueIsolateProperties> {
 	static override readonly moduleName = "Dialogue Isolate";
+	static override readonly moduleDescription = "Isolate dialogue from background using MDX-Net vocal separation";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DialogueIsolateModule {
 		return TransformModule.is(value) && value.type[2] === "dialogue-isolate";

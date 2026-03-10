@@ -46,7 +46,7 @@ export { loudnessStats, LoudnessStatsModule as LoudnessStatsTransformModule, typ
 export { musicRebalance, MusicRebalanceModule as MusicRebalanceTransformModule, type MusicRebalanceProperties, type StemGains } from "./transforms/music-rebalance";
 export { invert, phase, PhaseModule as PhaseTransformModule, type PhaseProperties } from "./transforms/phase";
 export { spectralRepair, SpectralRepairModule as SpectralRepairTransformModule, type SpectralRegion, type SpectralRepairProperties } from "./transforms/spectral-repair";
-export { spectrogram, SpectrogramModule as SpectrogramTransformModule, type SpectrogramProperties } from "./transforms/spectrogram";
+export { spectrogram, SpectrogramModule as SpectrogramTransformModule, type FrequencyScale, type SpectrogramProperties } from "./transforms/spectrogram";
 export { splice, SpliceModule as SpliceTransformModule, type SpliceProperties } from "./transforms/splice";
 export { voiceDenoise, VoiceDenoiseModule as VoiceDenoiseTransformModule, type VoiceDenoiseProperties } from "./transforms/voice-denoise";
 export { waveform, WaveformModule as WaveformTransformModule, type WaveformProperties } from "./transforms/waveform";

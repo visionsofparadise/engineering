@@ -22,6 +22,7 @@ const LSTM_UNITS = 128;
 
 export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> {
 	static override readonly moduleName = "Voice Denoise";
+	static override readonly moduleDescription = "Remove background noise from speech using DTLN neural network";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is VoiceDenoiseModule {
 		return TransformModule.is(value) && value.type[2] === "voice-denoise";

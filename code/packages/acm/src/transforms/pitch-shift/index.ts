@@ -14,6 +14,7 @@ export interface PitchShiftProperties extends FfmpegProperties {
 
 export class PitchShiftModule extends FfmpegModule<PitchShiftProperties> {
 	static override readonly moduleName = "Pitch Shift";
+	static override readonly moduleDescription = "Change pitch without affecting duration";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is PitchShiftModule {
 		return FfmpegModule.is(value) && value.type[3] === "pitch-shift";

@@ -9,10 +9,13 @@ export const schema = z.object({
 	insertAt: z.number().min(0).default(0).describe("Insert At (frames)"),
 });
 
-export interface SpliceProperties extends z.infer<typeof schema>, TransformModuleProperties {}
+export interface SpliceProperties extends z.infer<typeof schema>, TransformModuleProperties {
+	readonly channels?: ReadonlyArray<number>;
+}
 
 export class SpliceModule extends TransformModule<SpliceProperties> {
 	static override readonly moduleName = "Splice";
+	static override readonly moduleDescription = "Replace a region of audio with processed content";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is SpliceModule {
 		return TransformModule.is(value) && value.type[2] === "splice";
@@ -41,8 +44,19 @@ export class SpliceModule extends TransformModule<SpliceProperties> {
 			throw new Error(`Splice: insert file sample rate ${fmt.sampleRate} does not match stream sample rate ${context.sampleRate}`);
 		}
 
-		if (fmt.numChannels !== context.channels) {
-			throw new Error(`Splice: insert file channels ${fmt.numChannels} does not match stream channels ${context.channels}`);
+		const targetChannels = this.properties.channels;
+		const expectedChannels = targetChannels ? targetChannels.length : context.channels;
+
+		if (fmt.numChannels !== expectedChannels) {
+			throw new Error(`Splice: insert file channels ${fmt.numChannels} does not match expected channels ${expectedChannels}`);
+		}
+
+		if (targetChannels) {
+			for (const ch of targetChannels) {
+				if (ch < 0 || ch >= context.channels) {
+					throw new Error(`Splice: target channel ${ch} is out of range [0, ${context.channels})`);
+				}
+			}
 		}
 
 		if (fmt.numChannels === 1) {
@@ -71,16 +85,36 @@ export class SpliceModule extends TransformModule<SpliceProperties> {
 		const overlapEnd = Math.min(chunk.duration, insertEnd - chunkStart);
 		const insertOffset = Math.max(0, chunkStart - this.properties.insertAt);
 
-		for (let ch = 0; ch < samples.length; ch++) {
-			const channelSamples = samples[ch];
-			const insertChannel = this.insertSamples[ch];
-			if (!channelSamples || !insertChannel) continue;
+		const targetChannels = this.properties.channels;
 
-			for (let frame = overlapStart; frame < overlapEnd; frame++) {
-				const insertIndex = insertOffset + frame - overlapStart;
-				const insertSample = insertChannel[insertIndex];
-				if (insertSample !== undefined) {
-					channelSamples[frame] = insertSample;
+		if (targetChannels) {
+			for (let insertCh = 0; insertCh < targetChannels.length; insertCh++) {
+				const primaryCh = targetChannels[insertCh];
+				if (primaryCh === undefined) continue;
+				const channelSamples = samples[primaryCh];
+				const insertChannel = this.insertSamples[insertCh];
+				if (!channelSamples || !insertChannel) continue;
+
+				for (let frame = overlapStart; frame < overlapEnd; frame++) {
+					const insertIndex = insertOffset + frame - overlapStart;
+					const insertSample = insertChannel[insertIndex];
+					if (insertSample !== undefined) {
+						channelSamples[frame] = insertSample;
+					}
+				}
+			}
+		} else {
+			for (let ch = 0; ch < samples.length; ch++) {
+				const channelSamples = samples[ch];
+				const insertChannel = this.insertSamples[ch];
+				if (!channelSamples || !insertChannel) continue;
+
+				for (let frame = overlapStart; frame < overlapEnd; frame++) {
+					const insertIndex = insertOffset + frame - overlapStart;
+					const insertSample = insertChannel[insertIndex];
+					if (insertSample !== undefined) {
+						channelSamples[frame] = insertSample;
+					}
 				}
 			}
 		}
@@ -97,6 +131,6 @@ export class SpliceModule extends TransformModule<SpliceProperties> {
 	}
 }
 
-export function splice(insertPath: string, insertAt: number): SpliceModule {
-	return new SpliceModule({ insertPath, insertAt });
+export function splice(insertPath: string, insertAt: number, options?: { channels?: ReadonlyArray<number> }): SpliceModule {
+	return new SpliceModule({ insertPath, insertAt, channels: options?.channels });
 }

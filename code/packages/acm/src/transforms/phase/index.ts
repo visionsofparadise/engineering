@@ -14,6 +14,7 @@ export interface PhaseProperties extends TransformModuleProperties {
 
 export class PhaseModule extends TransformModule<PhaseProperties> {
 	static override readonly moduleName = "Phase";
+	static override readonly moduleDescription = "Invert or rotate signal phase";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is PhaseModule {
 		return TransformModule.is(value) && value.type[2] === "phase";

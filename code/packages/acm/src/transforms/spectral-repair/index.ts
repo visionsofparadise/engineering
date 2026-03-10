@@ -28,6 +28,7 @@ export interface SpectralRepairProperties extends z.infer<typeof schema>, Transf
  */
 export class SpectralRepairModule extends TransformModule<SpectralRepairProperties> {
 	static override readonly moduleName = "Spectral Repair";
+	static override readonly moduleDescription = "Repair spectral artifacts by interpolating from surrounding content";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is SpectralRepairModule {
 		return TransformModule.is(value) && value.type[2] === "spectral-repair";

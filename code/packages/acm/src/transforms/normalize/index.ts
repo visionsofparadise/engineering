@@ -11,6 +11,7 @@ export interface NormalizeProperties extends z.infer<typeof schema>, TransformMo
 
 export class NormalizeModule extends TransformModule<NormalizeProperties> {
 	static override readonly moduleName = "Normalize";
+	static override readonly moduleDescription = "Adjust peak or loudness level to a target ceiling";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is NormalizeModule {
 		return TransformModule.is(value) && value.type[2] === "normalize";
