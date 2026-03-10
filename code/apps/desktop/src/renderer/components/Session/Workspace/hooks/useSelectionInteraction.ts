@@ -110,6 +110,13 @@ export function useSelectionInteraction(context: SessionContext): SelectionHandl
 				sessionStore.mutate(selection, (proxy) => {
 					proxy.active = false;
 				});
+
+				if (startPosRef.current) {
+					const rect = target.getBoundingClientRect();
+					const localX = event.clientX - rect.left;
+					const ms = pixelsToMs(localX + workspace.scrollX.value, workspace.pixelsPerSecond.value);
+					context.playbackEngine.seek(Math.max(0, ms));
+				}
 			} else if (selection.active) {
 				const committedEnd = selection.endFrame.value;
 				const startVal = selection.startFrame.committed.value;
@@ -126,7 +133,7 @@ export function useSelectionInteraction(context: SessionContext): SelectionHandl
 			startPosRef.current = undefined;
 			draggingRef.current = false;
 		},
-		[selection, sessionStore],
+		[context, selection, sessionStore, workspace.scrollX, workspace.pixelsPerSecond],
 	);
 
 	return { onPointerDown, onPointerMove, onPointerUp };

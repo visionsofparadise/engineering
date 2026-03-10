@@ -3,6 +3,7 @@ import type { SessionContext } from "../../../models/Context";
 import { clampPixelsPerSecond, getMinPixelsPerSecond } from "../../../utils/time";
 import { AmplitudeAxis, AMPLITUDE_AXIS_WIDTH } from "./Channel/AmplitudeAxis";
 import { CursorIndicator } from "./Channel/CursorIndicator";
+import { Playhead } from "./Channel/Playhead";
 import { FrequencyAxis, FREQUENCY_AXIS_WIDTH } from "./Channel/FrequencyAxis";
 import { ChannelLane } from "./Channel/Lane";
 import { SelectionOverlay } from "./Channel/SelectionOverlay";
@@ -121,6 +122,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ context }) => {
 							/>
 						))}
 					</div>
+					<Playhead context={context} />
 					<SelectionOverlay
 						laneHeight={laneHeight}
 						context={context}
