@@ -1,13 +1,16 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { istft, stft } from "../../utils/stft";
 
-export interface EqMatchProperties extends TransformModuleProperties {
-	readonly referencePath: string;
-	readonly smoothing: number;
-}
+export const schema = z.object({
+	referencePath: z.string().default("").describe("Reference Path"),
+	smoothing: z.number().min(0).max(1).multipleOf(0.01).default(1 / 3).describe("Smoothing"),
+});
+
+export interface EqMatchProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 /**
  * Analyzes a reference file's spectral profile and applies a correction filter
@@ -16,24 +19,19 @@ export interface EqMatchProperties extends TransformModuleProperties {
  * @see Valimaki, V., Reiss, J.D. (2016). "All About Audio Equalization: Solutions and
  *   Frontiers." Applied Sciences, 6(5), 129. https://doi.org/10.3390/app6050129
  */
-export class EqMatchModule extends TransformModule {
+export class EqMatchModule extends TransformModule<EqMatchProperties> {
+	static override readonly moduleName = "EQ Match";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is EqMatchModule {
 		return TransformModule.is(value) && value.type[2] === "eq-match";
 	}
 
-	readonly type = ["async-module", "transform", "eq-match"] as const;
-	readonly properties: EqMatchProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type = ["async-module", "transform", "eq-match"] as const;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private matchSampleRate = 44100;
 	private referenceSpectrum?: Float32Array;
-
-	constructor(properties: AudioChainModuleInput<EqMatchProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);

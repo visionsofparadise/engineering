@@ -1,80 +1,182 @@
-import { writeFile } from "node:fs/promises";
-import { WaveFile } from "wavefile";
-import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../module";
+import { spawn } from "node:child_process";
+import { open, type FileHandle } from "node:fs/promises";
+import { z } from "zod";
+import type { AudioChunk, StreamContext } from "../module";
 import { TargetModule, type TargetModuleProperties } from "../target";
+import { resolveBinary } from "../utils/resolve-binary";
 
 export type WavBitDepth = "16" | "24" | "32" | "32f";
+
+export interface EncodingOptions {
+	readonly format: "wav" | "flac" | "mp3" | "aac";
+	readonly bitrate?: string;
+	readonly vbr?: number;
+}
+
+export const schema = z.object({
+	path: z.string().default(""),
+	bitDepth: z.enum(["16", "24", "32", "32f"]).default("16"),
+});
 
 export interface WriteProperties extends TargetModuleProperties {
 	readonly path: string;
 	readonly bitDepth: WavBitDepth;
+	readonly encoding?: EncodingOptions;
+	readonly binaryPath?: string;
 }
 
-export class WriteModule extends TargetModule {
-	readonly type = ["async-module", "target", "write"] as const;
+const WAV_HEADER_SIZE = 44;
 
-	readonly properties: WriteProperties;
+export class WriteModule extends TargetModule<WriteProperties> {
+	static override readonly moduleName = "Write";
+	static override readonly schema = schema;
+	override readonly type = ["async-module", "target", "write"] as const;
+
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
-	private channelBuffers: Array<Array<Float32Array>> = [];
-	private context?: StreamContext;
+	private fileHandle?: FileHandle;
+	private ffmpegStdin?: NodeJS.WritableStream;
+	private ffmpegDone?: Promise<void>;
+	private sampleRate = 44100;
+	private channels = 1;
+	private bytesWritten = 0;
+	private useEncoding = false;
+	private headerWritten = false;
 
-	constructor(properties: AudioChainModuleInput<WriteProperties>) {
-		super(properties);
+	override async _setup(context: StreamContext): Promise<void> {
+		this.sampleRate = context.sampleRate;
+		this.channels = context.channels;
+		this.bytesWritten = 0;
+		this.headerWritten = false;
 
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
+		const encoding = this.properties.encoding;
+		this.useEncoding = encoding !== undefined && encoding.format !== "wav";
 
-	override _setup(context: StreamContext): void {
-		this.context = context;
-		this.channelBuffers = [];
+		if (this.useEncoding && encoding) {
+			const binaryPath = await resolveBinary("ffmpeg", this.properties.binaryPath);
+			const args = this.buildFfmpegArgs(encoding);
 
-		for (let channel = 0; channel < context.channels; channel++) {
-			this.channelBuffers.push([]);
+			const proc = spawn(binaryPath, args, {
+				stdio: ["pipe", "ignore", "pipe"],
+			});
+
+			this.ffmpegStdin = proc.stdin;
+
+			this.ffmpegStdin.on("error", () => {
+				// Ignore EPIPE — expected when ffmpeg closes early
+			});
+
+			this.ffmpegDone = new Promise<void>((resolve, reject) => {
+				proc.on("close", (code) => {
+					if (code !== 0) {
+						reject(new Error(`ffmpeg exited with code ${code}`));
+					} else {
+						resolve();
+					}
+				});
+
+				proc.on("error", (error) => {
+					reject(new Error(`Failed to spawn ffmpeg: ${error.message}`));
+				});
+			});
+		} else {
+			this.fileHandle = await open(this.properties.path, "w");
+			const header = buildWavHeader(0, this.sampleRate, this.channels, this.properties.bitDepth);
+			await this.fileHandle.write(header, 0, WAV_HEADER_SIZE, 0);
 		}
 	}
 
-	_write(chunk: AudioChunk): Promise<void> {
-		for (let channel = 0; channel < chunk.samples.length; channel++) {
-			const channelSamples = chunk.samples[channel];
-			const channelBuffer = this.channelBuffers[channel];
+	async _write(chunk: AudioChunk): Promise<void> {
+		const bytes = this.convertChunk(chunk);
 
-			if (channelSamples && channelBuffer) {
-				channelBuffer.push(channelSamples);
+		if (this.useEncoding && this.ffmpegStdin) {
+			if (!this.headerWritten) {
+				const header = buildWavHeader(0xFFFFFFFF, this.sampleRate, this.channels, this.properties.bitDepth);
+				await this.writeToStdin(header);
+				this.headerWritten = true;
 			}
+			await this.writeToStdin(bytes);
+		} else if (this.fileHandle) {
+			await this.fileHandle.write(bytes, 0, bytes.length, WAV_HEADER_SIZE + this.bytesWritten);
 		}
 
-		return Promise.resolve();
+		this.bytesWritten += bytes.length;
 	}
 
 	async _close(): Promise<void> {
-		if (!this.context) return;
-
-		const channels = this.channelBuffers.map((chunks) => {
-			const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-			const merged = new Float32Array(totalLength);
-			let offset = 0;
-
-			for (const chunk of chunks) {
-				merged.set(chunk, offset);
-				offset += chunk.length;
+		if (this.useEncoding) {
+			if (this.ffmpegStdin) {
+				this.ffmpegStdin.end();
 			}
+			if (this.ffmpegDone) {
+				await this.ffmpegDone;
+			}
+			this.ffmpegStdin = undefined;
+			this.ffmpegDone = undefined;
+		} else if (this.fileHandle) {
+			const header = buildWavHeader(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth);
+			await this.fileHandle.write(header, 0, WAV_HEADER_SIZE, 0);
+			await this.fileHandle.close();
+			this.fileHandle = undefined;
+		}
+	}
 
-			return merged;
-		});
+	private convertChunk(chunk: AudioChunk): Buffer {
+		const frames = chunk.duration;
+		const channels = chunk.samples.length;
+		const bytesPerSample = getBytesPerSample(this.properties.bitDepth);
+		const buffer = Buffer.alloc(frames * channels * bytesPerSample);
 
-		const wav = new WaveFile();
-		wav.fromScratch(this.context.channels, this.context.sampleRate, "32f", channels);
+		let offset = 0;
 
-		if (this.properties.bitDepth !== "32f") {
-			wav.toBitDepth(this.properties.bitDepth);
+		for (let frame = 0; frame < frames; frame++) {
+			for (let ch = 0; ch < channels; ch++) {
+				const sample = chunk.samples[ch]?.[frame] ?? 0;
+				offset = writeSample(buffer, offset, sample, this.properties.bitDepth);
+			}
 		}
 
-		const bytes = wav.toBuffer();
-		await writeFile(this.properties.path, bytes);
+		return buffer;
+	}
 
-		this.channelBuffers = [];
+	private buildFfmpegArgs(encoding: EncodingOptions): Array<string> {
+		const args = ["-f", "wav", "-i", "pipe:0"];
+
+		switch (encoding.format) {
+			case "flac":
+				args.push("-codec:a", "flac");
+				break;
+			case "mp3":
+				args.push("-codec:a", "libmp3lame");
+				if (encoding.vbr !== undefined) {
+					args.push("-q:a", String(encoding.vbr));
+				} else {
+					args.push("-b:a", encoding.bitrate ?? "192k");
+				}
+				break;
+			case "aac":
+				args.push("-codec:a", "aac", "-b:a", encoding.bitrate ?? "192k");
+				break;
+		}
+
+		args.push("-y", this.properties.path);
+		return args;
+	}
+
+	private writeToStdin(data: Buffer): Promise<void> {
+		const stdin = this.ffmpegStdin;
+		if (!stdin) return Promise.resolve();
+
+		const canWrite = stdin.write(data);
+
+		if (!canWrite) {
+			return new Promise<void>((resolve) => {
+				stdin.once("drain", resolve);
+			});
+		}
+
+		return Promise.resolve();
 	}
 
 	clone(overrides?: Partial<WriteProperties>): WriteModule {
@@ -82,9 +184,76 @@ export class WriteModule extends TargetModule {
 	}
 }
 
-export function write(path: string, options?: { bitDepth?: WavBitDepth }): WriteModule {
+function getBytesPerSample(bitDepth: WavBitDepth): number {
+	switch (bitDepth) {
+		case "16":
+			return 2;
+		case "24":
+			return 3;
+		case "32":
+		case "32f":
+			return 4;
+	}
+}
+
+function writeSample(buffer: Buffer, offset: number, sample: number, bitDepth: WavBitDepth): number {
+	switch (bitDepth) {
+		case "16": {
+			const clamped = Math.max(-1, Math.min(1, sample));
+			const value = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
+			buffer.writeInt16LE(Math.round(value), offset);
+			return offset + 2;
+		}
+		case "24": {
+			const clamped = Math.max(-1, Math.min(1, sample));
+			const value = Math.round(clamped < 0 ? clamped * 0x800000 : clamped * 0x7FFFFF);
+			buffer[offset] = value & 0xFF;
+			buffer[offset + 1] = (value >> 8) & 0xFF;
+			buffer[offset + 2] = (value >> 16) & 0xFF;
+			return offset + 3;
+		}
+		case "32": {
+			const clamped = Math.max(-1, Math.min(1, sample));
+			const value = clamped < 0 ? clamped * 0x80000000 : clamped * 0x7FFFFFFF;
+			buffer.writeInt32LE(Math.round(value), offset);
+			return offset + 4;
+		}
+		case "32f": {
+			buffer.writeFloatLE(sample, offset);
+			return offset + 4;
+		}
+	}
+}
+
+function buildWavHeader(dataSize: number, sampleRate: number, channels: number, bitDepth: WavBitDepth): Buffer {
+	const header = Buffer.alloc(WAV_HEADER_SIZE);
+	const bytesPerSample = getBytesPerSample(bitDepth);
+	const blockAlign = channels * bytesPerSample;
+	const byteRate = sampleRate * blockAlign;
+	const bitsPerSample = bytesPerSample * 8;
+	const audioFormat = bitDepth === "32f" ? 3 : 1;
+
+	header.write("RIFF", 0);
+	header.writeUInt32LE(dataSize + 36, 4);
+	header.write("WAVE", 8);
+	header.write("fmt ", 12);
+	header.writeUInt32LE(16, 16);
+	header.writeUInt16LE(audioFormat, 20);
+	header.writeUInt16LE(channels, 22);
+	header.writeUInt32LE(sampleRate, 24);
+	header.writeUInt32LE(byteRate, 28);
+	header.writeUInt16LE(blockAlign, 32);
+	header.writeUInt16LE(bitsPerSample, 34);
+	header.write("data", 36);
+	header.writeUInt32LE(dataSize, 40);
+
+	return header;
+}
+
+export function write(path: string, options?: { bitDepth?: WavBitDepth; encoding?: EncodingOptions }): WriteModule {
 	return new WriteModule({
 		path,
 		bitDepth: options?.bitDepth ?? "16",
+		encoding: options?.encoding,
 	});
 }

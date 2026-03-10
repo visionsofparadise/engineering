@@ -1,15 +1,18 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { istft, stft } from "../../utils/stft";
 import { applyTransform } from "../../utils/apply-transform";
 import { resample } from "../resample";
 
-export interface VoiceDenoiseProperties extends TransformModuleProperties {
-	readonly modelPath1: string;
-	readonly modelPath2: string;
-}
+export const schema = z.object({
+	modelPath1: z.string().default("").describe("Model Path 1"),
+	modelPath2: z.string().default("").describe("Model Path 2"),
+});
+
+export interface VoiceDenoiseProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 const DTLN_SAMPLE_RATE = 16000;
 const BLOCK_LEN = 512;
@@ -17,26 +20,21 @@ const BLOCK_SHIFT = 128;
 const FFT_BINS = BLOCK_LEN / 2 + 1; // 257
 const LSTM_UNITS = 128;
 
-export class VoiceDenoiseModule extends TransformModule {
+export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> {
+	static override readonly moduleName = "Voice Denoise";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is VoiceDenoiseModule {
 		return TransformModule.is(value) && value.type[2] === "voice-denoise";
 	}
 
-	readonly type = ["async-module", "transform", "voice-denoise"] as const;
-	readonly properties: VoiceDenoiseProperties;
+	override readonly type = ["async-module", "transform", "voice-denoise"] as const;
 
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private session1?: OnnxSession;
 	private session2?: OnnxSession;
 	private sourceSampleRate = DTLN_SAMPLE_RATE;
-
-	constructor(properties: AudioChainModuleInput<VoiceDenoiseProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);
@@ -132,9 +130,7 @@ export class VoiceDenoiseModule extends TransformModule {
 
 		for (let offset = 0; offset + BLOCK_LEN <= totalFrames; offset += BLOCK_SHIFT) {
 			// Extract block
-			for (let index = 0; index < BLOCK_LEN; index++) {
-				inputBuffer[index] = signal[offset + index] ?? 0;
-			}
+			inputBuffer.set(signal.subarray(offset, offset + BLOCK_LEN));
 
 			// Step 1: Compute RFFT of the block
 			const stftResult = stft(inputBuffer, BLOCK_LEN, BLOCK_LEN, stftOutput);
@@ -232,4 +228,3 @@ export function voiceDenoise(
 		id: options?.id,
 	});
 }
-

@@ -2,14 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import { AudioChainModule } from "./module";
 import type { ChunkBuffer } from "./chunk-buffer";
 import { SourceModule, type SourceModuleProperties } from "./source";
-import { TransformModule, type TransformModuleProperties } from "./transform";
-import { TargetModule, type TargetModuleProperties } from "./target";
+import { TransformModule } from "./transform";
+import { TargetModule } from "./target";
 import type { AudioChunk, StreamContext } from "./module";
 
 class MockSource extends SourceModule {
 	readonly type = ["async-module", "source", "mock"] as const;
-	declare readonly properties: SourceModuleProperties;
-	readonly chunks: Array<AudioChunk>;
+readonly chunks: Array<AudioChunk>;
 	private chunkIndex = 0;
 	private readonly streamContext: StreamContext;
 
@@ -54,8 +53,7 @@ class MockSource extends SourceModule {
 
 class MockTransform extends TransformModule {
 	readonly type = ["async-module", "transform", "mock"] as const;
-	declare readonly properties: TransformModuleProperties;
-	readonly processedChunks: Array<AudioChunk> = [];
+readonly processedChunks: Array<AudioChunk> = [];
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
@@ -71,8 +69,7 @@ class MockTransform extends TransformModule {
 
 class MockTarget extends TargetModule {
 	readonly type = ["async-module", "target", "mock"] as const;
-	declare readonly properties: TargetModuleProperties;
-	readonly receivedChunks: Array<AudioChunk> = [];
+readonly receivedChunks: Array<AudioChunk> = [];
 	closed = false;
 
 	get bufferSize(): number {

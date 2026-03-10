@@ -1,6 +1,14 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
+
+export const schema = z.object({
+	threshold: z.number().min(0).max(1).multipleOf(0.001).default(0.001).describe("Threshold"),
+	margin: z.number().min(0).max(1).multipleOf(0.001).default(0.01).describe("Margin"),
+	start: z.boolean().default(true).describe("Start"),
+	end: z.boolean().default(true).describe("End"),
+});
 
 export interface TrimProperties extends TransformModuleProperties {
 	readonly threshold?: number;
@@ -9,23 +17,18 @@ export interface TrimProperties extends TransformModuleProperties {
 	readonly end?: boolean;
 }
 
-export class TrimModule extends TransformModule {
+export class TrimModule extends TransformModule<TrimProperties> {
+	static override readonly moduleName = "Trim";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is TrimModule {
 		return TransformModule.is(value) && value.type[2] === "trim";
 	}
 
-	readonly type = ["async-module", "transform", "trim"] as const;
-	readonly properties: TrimProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type = ["async-module", "transform", "trim"] as const;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private trimSampleRate = 44100;
-
-	constructor(properties?: AudioChainModuleInput<TrimProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties?.targets ?? [] };
-	}
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);

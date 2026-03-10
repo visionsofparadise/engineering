@@ -1,18 +1,22 @@
 import { readFile } from "node:fs/promises";
 import { WaveFile } from "wavefile";
-import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../module";
+import { z } from "zod";
+import type { AudioChunk, StreamContext } from "../module";
 import { SourceModule, type SourceModuleProperties } from "../source";
 
-export interface ReadProperties extends SourceModuleProperties {
-	readonly path: string;
-}
+export const schema = z.object({
+	path: z.string().default(""),
+});
+
+export interface ReadProperties extends z.infer<typeof schema>, SourceModuleProperties {}
 
 const DEFAULT_CHUNK_SIZE = 44100;
 
-export class ReadModule extends SourceModule {
-	readonly type = ["async-module", "source", "read"] as const;
+export class ReadModule extends SourceModule<ReadProperties> {
+	static override readonly moduleName = "Read";
+	static override readonly schema = schema;
+	override readonly type = ["async-module", "source", "read"] as const;
 
-	readonly properties: ReadProperties;
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
@@ -20,12 +24,6 @@ export class ReadModule extends SourceModule {
 	private sampleRate = 0;
 	private frameOffset = 0;
 	private totalFrames = 0;
-
-	constructor(properties: AudioChainModuleInput<ReadProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	async _init(): Promise<StreamContext> {
 		const data = await readFile(this.properties.path);

@@ -1,27 +1,38 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import type { ChunkBuffer } from "./chunk-buffer";
-import type { StreamContext } from "./module";
-import { TransformModule, type TransformModuleProperties } from "./transform";
-import { resolveBinary } from "./utils/resolve-binary";
+import { z } from "zod";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { StreamContext } from "../../module";
+import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { resolveBinary } from "../../utils/resolve-binary";
+
+export const schema = z.object({
+	args: z.array(z.string()).default([]),
+});
 
 export interface FfmpegProperties extends TransformModuleProperties {
+	readonly args?: Array<string> | ((context: StreamContext) => Array<string>);
 	readonly binaryPath?: string;
 }
 
-export abstract class FfmpegModule extends TransformModule {
+export class FfmpegModule<P extends FfmpegProperties = FfmpegProperties> extends TransformModule<P> {
+	static override readonly moduleName: string = "FFmpeg";
+	static override readonly schema: z.ZodType = schema;
 	static override is(value: unknown): value is FfmpegModule {
 		return TransformModule.is(value) && value.type[2] === "ffmpeg";
 	}
 
-	declare readonly properties: FfmpegProperties;
-
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type: ReadonlyArray<string> = ["async-module", "transform", "ffmpeg"];
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private resolvedBinaryPath?: string;
 	private ffmpegContext?: StreamContext;
 
-	protected abstract _buildArgs(context: StreamContext): Array<string>;
+	protected _buildArgs(context: StreamContext): Array<string> {
+		const { args } = this.properties;
+		if (!args) return [];
+		return typeof args === "function" ? args(context) : args;
+	}
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
@@ -59,6 +70,18 @@ export abstract class FfmpegModule extends TransformModule {
 		if (!this.ffmpegContext) throw new Error("FfmpegTransformModule not set up");
 		return this.ffmpegContext;
 	}
+
+	clone(overrides?: Partial<P>): FfmpegModule<P> {
+		return new FfmpegModule({ ...this.properties, previousProperties: this.properties, ...overrides });
+	}
+}
+
+export function ffmpeg(options: { args: Array<string> | ((context: StreamContext) => Array<string>); binaryPath?: string; id?: string }): FfmpegModule {
+	return new FfmpegModule({
+		args: options.args,
+		binaryPath: options.binaryPath,
+		id: options.id,
+	});
 }
 
 function buildInputArgs(context: StreamContext): Array<string> {

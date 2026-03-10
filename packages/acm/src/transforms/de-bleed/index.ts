@@ -1,31 +1,29 @@
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { readToBuffer } from "../../utils/read-to-buffer";
 
-export interface DeBleedProperties extends TransformModuleProperties {
-	readonly referencePath: string;
-	readonly filterLength: number;
-	readonly stepSize: number;
-}
+export const schema = z.object({
+	referencePath: z.string().default("").describe("Reference Path"),
+	filterLength: z.number().min(64).max(8192).multipleOf(64).default(1024).describe("Filter Length"),
+	stepSize: z.number().min(0.001).max(1).multipleOf(0.001).default(0.1).describe("Step Size"),
+});
 
-export class DeBleedModule extends TransformModule {
+export interface DeBleedProperties extends z.infer<typeof schema>, TransformModuleProperties {}
+
+export class DeBleedModule extends TransformModule<DeBleedProperties> {
+	static override readonly moduleName = "De-Bleed";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is DeBleedModule {
 		return TransformModule.is(value) && value.type[2] === "de-bleed";
 	}
 
-	readonly type = ["async-module", "transform", "de-bleed"] as const;
-	readonly properties: DeBleedProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type = ["async-module", "transform", "de-bleed"] as const;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private referenceSignal?: Float32Array;
-
-	constructor(properties: AudioChainModuleInput<DeBleedProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);

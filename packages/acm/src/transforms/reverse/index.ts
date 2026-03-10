@@ -1,25 +1,19 @@
 import { ChunkBuffer } from "../../chunk-buffer";
-import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../../module";
+import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
 export class ReverseModule extends TransformModule {
+	static override readonly moduleName = "Reverse";
 	static override is(value: unknown): value is ReverseModule {
 		return TransformModule.is(value) && value.type[2] === "reverse";
 	}
 
-	readonly type = ["async-module", "transform", "reverse"] as const;
-	readonly properties: TransformModuleProperties;
-	readonly bufferSize = Infinity;
-	readonly latency = Infinity;
+	override readonly type = ["async-module", "transform", "reverse"] as const;
+	override readonly bufferSize = Infinity;
+	override readonly latency = Infinity;
 
 	private spareBuffer?: ChunkBuffer;
 	private spareChunkSize = 44100;
-
-	constructor(properties?: AudioChainModuleInput<TransformModuleProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties?.targets ?? [] };
-	}
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);

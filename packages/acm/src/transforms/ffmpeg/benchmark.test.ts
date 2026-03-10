@@ -1,8 +1,8 @@
-import { describe, it } from "vitest";
-import { resolve, dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runBenchmark, appendBenchmarkLog } from "../../utils/test-benchmark";
+import { describe, it } from "vitest";
 import { ffmpeg } from ".";
+import { appendBenchmarkLog, runBenchmark } from "../../utils/test-benchmark";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const testVoice = resolve(here, "../../utils/test-voice.wav");

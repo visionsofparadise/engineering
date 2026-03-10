@@ -1,4 +1,4 @@
-import { AudioChainModule, type AudioChainModuleInput, type AudioChainModuleProperties, type AudioChunk, type RenderOptions, type StreamContext } from "./module";
+import { AudioChainModule, type AudioChainModuleProperties, type AudioChunk, type RenderOptions, type StreamContext } from "./module";
 import type { TargetModule } from "./target";
 import type { TransformModule, TransformTiming } from "./transform";
 
@@ -10,24 +10,14 @@ export interface RenderTiming {
 
 export interface SourceModuleProperties extends AudioChainModuleProperties {}
 
-export abstract class SourceModule extends AudioChainModule {
-	static is(value: unknown): value is SourceModule {
+export abstract class SourceModule<P extends SourceModuleProperties = SourceModuleProperties> extends AudioChainModule<P> {
+	static override is(value: unknown): value is SourceModule {
 		return AudioChainModule.is(value) && value.type[1] === "source";
 	}
 
-	readonly properties: SourceModuleProperties;
-
 	private renderTimingData?: RenderTiming;
+	private framesRead = 0;
 	protected readable?: ReadableStream<AudioChunk>;
-
-	constructor(properties?: AudioChainModuleInput<SourceModuleProperties>) {
-		super(properties);
-
-		this.properties = {
-			...properties,
-			targets: properties?.targets ?? [],
-		};
-	}
 
 	abstract _read(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void>;
 	abstract _flush(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void>;
@@ -45,8 +35,10 @@ export abstract class SourceModule extends AudioChainModule {
 
 		try {
 			this.readable = this.createReadable(options);
+			this.emit("started");
 			const pipeline = this.buildPipeline(this, options);
 			await pipeline;
+			this.emit("finished");
 		} finally {
 			const totalMs = performance.now() - start;
 			const audioDurationMs = meta.duration !== undefined ? (meta.duration / meta.sampleRate) * 1000 : 0;
@@ -63,12 +55,18 @@ export abstract class SourceModule extends AudioChainModule {
 
 	private createReadable(options?: RenderOptions): ReadableStream<AudioChunk> {
 		let done = false;
+		this.framesRead = 0;
 		return new ReadableStream<AudioChunk>(
 			{
 				pull: async (controller) => {
 					if (done) return;
 					try {
-						await this._read(controller);
+						const framesBefore = this.framesRead;
+						const wrappedController = this.wrapController(controller);
+						await this._read(wrappedController);
+						if (this.framesRead > framesBefore) {
+							this.emit("progress", { framesProcessed: this.framesRead, sourceTotalFrames: this.sourceTotalFrames });
+						}
 					} catch (error) {
 						done = true;
 						controller.error(error);
@@ -82,6 +80,24 @@ export abstract class SourceModule extends AudioChainModule {
 				highWaterMark: options?.highWaterMark ?? 1,
 			},
 		);
+	}
+
+	private wrapController(controller: ReadableStreamDefaultController<AudioChunk>): ReadableStreamDefaultController<AudioChunk> {
+		return {
+			get desiredSize() {
+				return controller.desiredSize;
+			},
+			enqueue: (chunk: AudioChunk) => {
+				this.framesRead += chunk.duration;
+				controller.enqueue(chunk);
+			},
+			close: () => {
+				controller.close();
+			},
+			error: (reason?: unknown) => {
+				controller.error(reason);
+			},
+		};
 	}
 
 	private buildPipeline(source: SourceModule, _options?: RenderOptions): Promise<void> {

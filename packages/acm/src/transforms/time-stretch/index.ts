@@ -1,30 +1,28 @@
-import { FfmpegModule, type FfmpegProperties } from "../../ffmpeg";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import { z } from "zod";
+import type { StreamContext } from "../../module";
+import { FfmpegModule, type FfmpegProperties } from "../ffmpeg";
 
-export interface TimeStretchProperties extends FfmpegProperties {
-	readonly rate: number;
-}
+export const schema = z.object({
+	rate: z.number().min(0.25).max(4).multipleOf(0.01).default(1).describe("Rate"),
+});
 
-export class TimeStretchModule extends FfmpegModule {
+export interface TimeStretchProperties extends z.infer<typeof schema>, FfmpegProperties {}
+
+export class TimeStretchModule extends FfmpegModule<TimeStretchProperties> {
+	static override readonly moduleName = "Time Stretch";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is TimeStretchModule {
 		return FfmpegModule.is(value) && value.type[3] === "time-stretch";
 	}
 
-	readonly type = ["async-module", "transform", "ffmpeg", "time-stretch"] as const;
-	readonly properties: TimeStretchProperties;
+	override readonly type = ["async-module", "transform", "ffmpeg", "time-stretch"] as const;
 
-	constructor(properties: AudioChainModuleInput<TimeStretchProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
-
-	protected _buildArgs(_context: StreamContext): Array<string> {
+	protected override _buildArgs(_context: StreamContext): Array<string> {
 		const filters = buildAtempoChain(this.properties.rate);
 		return ["-af", filters.join(",")];
 	}
 
-	clone(overrides?: Partial<TimeStretchProperties>): TimeStretchModule {
+	override clone(overrides?: Partial<TimeStretchProperties>): TimeStretchModule {
 		return new TimeStretchModule({ ...this.properties, previousProperties: this.properties, ...overrides });
 	}
 }

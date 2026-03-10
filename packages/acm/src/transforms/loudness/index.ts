@@ -1,8 +1,15 @@
 import { spawn } from "node:child_process";
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
-import { FfmpegModule, type FfmpegProperties } from "../../ffmpeg";
-import type { AudioChainModuleInput, StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { resolveBinary } from "../../utils/resolve-binary";
+import { FfmpegModule, type FfmpegProperties } from "../ffmpeg";
+
+export const schema = z.object({
+	target: z.number().min(-50).max(0).multipleOf(0.1).default(-14).describe("Target"),
+	truePeak: z.number().min(-10).max(0).multipleOf(0.1).default(-1).describe("True Peak"),
+	lra: z.number().min(0).max(20).multipleOf(0.1).default(0).describe("LRA"),
+});
 
 export interface LoudnessProperties extends FfmpegProperties {
 	readonly target: number;
@@ -10,13 +17,14 @@ export interface LoudnessProperties extends FfmpegProperties {
 	readonly lra?: number;
 }
 
-export class LoudnessModule extends FfmpegModule {
+export class LoudnessModule extends FfmpegModule<LoudnessProperties> {
+	static override readonly moduleName = "Loudness";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is LoudnessModule {
 		return FfmpegModule.is(value) && value.type[3] === "loudness";
 	}
 
-	readonly type = ["async-module", "transform", "ffmpeg", "loudness"] as const;
-	readonly properties: LoudnessProperties;
+	override readonly type = ["async-module", "transform", "ffmpeg", "loudness"] as const;
 
 	private measuredValues?: {
 		inputI: string;
@@ -26,13 +34,7 @@ export class LoudnessModule extends FfmpegModule {
 		targetOffset: string;
 	};
 
-	constructor(properties: AudioChainModuleInput<LoudnessProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
-
-	protected _buildArgs(_context: StreamContext): Array<string> {
+	protected override _buildArgs(_context: StreamContext): Array<string> {
 		const { target, truePeak, lra } = this.properties;
 
 		if (this.measuredValues) {
@@ -66,7 +68,7 @@ export class LoudnessModule extends FfmpegModule {
 		this.measuredValues = undefined;
 	}
 
-	clone(overrides?: Partial<LoudnessProperties>): LoudnessModule {
+	override clone(overrides?: Partial<LoudnessProperties>): LoudnessModule {
 		return new LoudnessModule({ ...this.properties, previousProperties: this.properties, ...overrides });
 	}
 }

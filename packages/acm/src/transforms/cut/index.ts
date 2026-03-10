@@ -1,4 +1,4 @@
-import type { AudioChainModuleInput, AudioChunk, StreamContext } from "../../module";
+import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
 export interface CutRegion {
@@ -10,24 +10,18 @@ export interface CutProperties extends TransformModuleProperties {
 	readonly regions: Array<CutRegion>;
 }
 
-export class CutModule extends TransformModule {
+export class CutModule extends TransformModule<CutProperties> {
+	static override readonly moduleName = "Cut";
 	static override is(value: unknown): value is CutModule {
 		return TransformModule.is(value) && value.type[2] === "cut";
 	}
 
-	readonly type = ["async-module", "transform", "cut"] as const;
-	readonly properties: CutProperties;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	override readonly type = ["async-module", "transform", "cut"] as const;
+	override readonly bufferSize = 0;
+	override readonly latency = 0;
 
 	private cutSampleRate = 44100;
 	private sortedRegions: Array<CutRegion> = [];
-
-	constructor(properties: AudioChainModuleInput<CutProperties>) {
-		super(properties);
-
-		this.properties = { ...properties, targets: properties.targets ?? [] };
-	}
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
