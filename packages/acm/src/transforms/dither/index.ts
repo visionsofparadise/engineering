@@ -14,6 +14,7 @@ export interface DitherProperties extends TransformModuleProperties {
 
 export class DitherModule extends TransformModule<DitherProperties> {
 	static override readonly moduleName = "Dither";
+	static override readonly moduleDescription = "Add shaped noise to reduce quantization distortion";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DitherModule {
 		return TransformModule.is(value) && value.type[2] === "dither";

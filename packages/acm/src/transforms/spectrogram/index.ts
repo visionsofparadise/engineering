@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { open, type FileHandle } from "node:fs/promises";
+import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
@@ -11,13 +11,29 @@ export const schema = z.object({
 	hopSize: z.number().min(64).max(4096).multipleOf(64).default(512).describe("Hop Size"),
 });
 
-export interface SpectrogramProperties extends z.infer<typeof schema>, TransformModuleProperties {}
+export type FrequencyScale = "linear" | "log";
 
-const HEADER_SIZE = 24;
+export interface SpectrogramProperties extends z.infer<typeof schema>, TransformModuleProperties {
+	readonly frequencyScale?: FrequencyScale;
+	readonly numBands?: number;
+	readonly minFrequency?: number;
+	readonly maxFrequency?: number;
+}
+
+const HEADER_SIZE = 33;
+
+interface BandMapping {
+	readonly binStart: number;
+	readonly binEnd: number;
+	readonly weightStart: number;
+	readonly weightEnd: number;
+}
 
 export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 	static override readonly moduleName = "Spectrogram";
+	static override readonly moduleDescription = "Generate spectrogram visualization data";
 	static override readonly schema = schema;
+
 	static override is(value: unknown): value is SpectrogramModule {
 		return TransformModule.is(value) && value.type[2] === "spectrogram";
 	}
@@ -28,7 +44,8 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 
 	private fileHandle?: FileHandle;
 	private channels = 1;
-	private numBins = 0;
+	private linearBins = 0;
+	private outputBins = 0;
 	private numFrames = 0;
 	private fileOffset = HEADER_SIZE;
 
@@ -38,11 +55,12 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 	private channelBufferPositions: Array<number> = [];
 	private totalSamplesReceived = 0;
 	private nextHopAt = 0;
+	private bandMappings?: ReadonlyArray<BandMapping>;
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
 		this.channels = context.channels;
-		this.numBins = this.properties.fftSize / 2 + 1;
+		this.linearBins = this.properties.fftSize / 2 + 1;
 		this.numFrames = 0;
 		this.fileOffset = HEADER_SIZE;
 		this.totalSamplesReceived = 0;
@@ -53,6 +71,20 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 
 		this.channelBuffers = [];
 		this.channelBufferPositions = [];
+
+		const isLog = (this.properties.frequencyScale ?? "log") === "log";
+
+		if (isLog) {
+			const numBands = this.properties.numBands ?? 512;
+			const minFreq = this.properties.minFrequency ?? 20;
+			const maxFreq = this.properties.maxFrequency ?? context.sampleRate / 2;
+			this.bandMappings = computeBandMappings(numBands, minFreq, maxFreq, context.sampleRate, this.properties.fftSize);
+			this.outputBins = numBands;
+		} else {
+			this.bandMappings = undefined;
+			this.outputBins = this.linearBins;
+		}
+
 		for (let ch = 0; ch < context.channels; ch++) {
 			this.channelBuffers.push(new Float32Array(this.properties.fftSize));
 			this.channelBufferPositions.push(0);
@@ -64,18 +96,27 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 
 		this.fileHandle = await open(this.properties.outputPath, "w");
 
+		const isLog = (this.properties.frequencyScale ?? "log") === "log";
+		const minFreq = this.properties.minFrequency ?? 20;
+		const maxFreq = this.properties.maxFrequency ?? context.sampleRate / 2;
+
 		const header = Buffer.alloc(HEADER_SIZE);
 		header.writeUInt32LE(context.sampleRate, 0);
 		header.writeUInt32LE(context.channels, 4);
 		header.writeUInt32LE(this.properties.fftSize, 8);
 		header.writeUInt32LE(this.properties.hopSize, 12);
 		header.writeUInt32LE(0, 16);
-		header.writeUInt32LE(this.numBins, 20);
+		header.writeUInt32LE(this.outputBins, 20);
+		header.writeUInt8(isLog ? 1 : 0, 24);
+		header.writeFloatLE(minFreq, 25);
+		header.writeFloatLE(maxFreq, 29);
+
 		await this.fileHandle.write(header, 0, HEADER_SIZE, 0);
 	}
 
 	override _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> | void {
 		this.processSpectrogramData(chunk);
+
 		return buffer.append(chunk.samples);
 	}
 
@@ -108,6 +149,7 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 
 			if (this.totalSamplesReceived >= this.nextHopAt) {
 				this.computeFrame();
+
 				this.nextHopAt += hopSize;
 			}
 		}
@@ -117,24 +159,55 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 		if (!this.fileHandle || !this.workspace) return;
 
 		const { fftSize } = this.properties;
-		const frameData = Buffer.alloc(this.numBins * this.channels * 4);
+		const frameData = Buffer.alloc(this.outputBins * this.channels * 4);
 
 		for (let ch = 0; ch < this.channels; ch++) {
 			const channelBuffer = this.channelBuffers[ch];
+
 			if (!channelBuffer) continue;
 
 			const windowed = new Float32Array(fftSize);
+
 			for (let index = 0; index < fftSize; index++) {
 				windowed[index] = (channelBuffer[index] ?? 0) * (this.windowCoefficients[index] ?? 0);
 			}
 
 			const { re, im } = fft(windowed, this.workspace);
 
-			for (let bin = 0; bin < this.numBins; bin++) {
-				const real = re[bin] ?? 0;
-				const imag = im[bin] ?? 0;
-				const magnitude = Math.sqrt(real * real + imag * imag);
-				frameData.writeFloatLE(magnitude, (ch * this.numBins + bin) * 4);
+			if (this.bandMappings) {
+				const magnitudes = new Float32Array(this.linearBins);
+				for (let bin = 0; bin < this.linearBins; bin++) {
+					const real = re[bin] ?? 0;
+					const imag = im[bin] ?? 0;
+					magnitudes[bin] = Math.sqrt(real * real + imag * imag);
+				}
+
+				for (let band = 0; band < this.outputBins; band++) {
+					const mapping = this.bandMappings[band];
+					if (!mapping) continue;
+
+					let sum = 0;
+					let weightSum = 0;
+
+					for (let bin = mapping.binStart; bin <= mapping.binEnd; bin++) {
+						let weight = 1;
+						if (bin === mapping.binStart) weight = mapping.weightStart;
+						else if (bin === mapping.binEnd) weight = mapping.weightEnd;
+
+						sum += (magnitudes[bin] ?? 0) * weight;
+						weightSum += weight;
+					}
+
+					frameData.writeFloatLE(weightSum > 0 ? sum / weightSum : 0, (ch * this.outputBins + band) * 4);
+				}
+			} else {
+				for (let bin = 0; bin < this.outputBins; bin++) {
+					const real = re[bin] ?? 0;
+					const imag = im[bin] ?? 0;
+					const magnitude = Math.sqrt(real * real + imag * imag);
+
+					frameData.writeFloatLE(magnitude, (ch * this.outputBins + bin) * 4);
+				}
 			}
 		}
 
@@ -158,10 +231,63 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 	}
 }
 
-export function spectrogram(outputPath: string, options?: { fftSize?: number; hopSize?: number }): SpectrogramModule {
+function computeBandMappings(
+	numBands: number,
+	minFreq: number,
+	maxFreq: number,
+	sampleRate: number,
+	fftSize: number,
+): ReadonlyArray<BandMapping> {
+	const logMin = Math.log(minFreq);
+	const logMax = Math.log(maxFreq);
+	const logStep = (logMax - logMin) / numBands;
+	const binWidth = sampleRate / fftSize;
+	const numLinearBins = fftSize / 2 + 1;
+
+	const mappings: Array<BandMapping> = [];
+
+	for (let band = 0; band < numBands; band++) {
+		const freqLow = Math.exp(logMin + band * logStep);
+		const freqHigh = Math.exp(logMin + (band + 1) * logStep);
+
+		const exactBinLow = freqLow / binWidth;
+		const exactBinHigh = freqHigh / binWidth;
+
+		const binStart = Math.max(0, Math.floor(exactBinLow));
+		const binEnd = Math.min(numLinearBins - 1, Math.ceil(exactBinHigh));
+
+		const weightStart = 1 - (exactBinLow - binStart);
+		const weightEnd = 1 - (binEnd - exactBinHigh);
+
+		mappings.push({
+			binStart,
+			binEnd: Math.max(binStart, binEnd),
+			weightStart: Math.max(0, Math.min(1, weightStart)),
+			weightEnd: Math.max(0, Math.min(1, weightEnd)),
+		});
+	}
+
+	return mappings;
+}
+
+export function spectrogram(
+	outputPath: string,
+	options?: {
+		fftSize?: number;
+		hopSize?: number;
+		frequencyScale?: FrequencyScale;
+		numBands?: number;
+		minFrequency?: number;
+		maxFrequency?: number;
+	},
+): SpectrogramModule {
 	return new SpectrogramModule({
 		outputPath,
 		fftSize: options?.fftSize ?? 2048,
 		hopSize: options?.hopSize ?? 512,
+		frequencyScale: options?.frequencyScale,
+		numBands: options?.numBands,
+		minFrequency: options?.minFrequency,
+		maxFrequency: options?.maxFrequency,
 	});
 }

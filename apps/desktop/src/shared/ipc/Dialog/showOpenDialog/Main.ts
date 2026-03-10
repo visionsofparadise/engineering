@@ -14,6 +14,7 @@ export class ShowOpenDialogMainIpc extends AsyncMainIpc<ShowOpenDialogIpcParamet
 		const result = await dialog.showOpenDialog(dependencies.browserWindow, {
 			title: options.title,
 			defaultPath: options.defaultPath,
+			filters: options.filters,
 			properties: options.properties,
 		});
 

@@ -12,6 +12,7 @@ export interface CutProperties extends TransformModuleProperties {
 
 export class CutModule extends TransformModule<CutProperties> {
 	static override readonly moduleName = "Cut";
+	static override readonly moduleDescription = "Remove a region of audio";
 	static override is(value: unknown): value is CutModule {
 		return TransformModule.is(value) && value.type[2] === "cut";
 	}

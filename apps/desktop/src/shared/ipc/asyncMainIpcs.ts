@@ -1,3 +1,6 @@
+import { AbortJobMainIpc } from "./Audio/abortJob/Main";
+import { ApplyAllMainIpc } from "./Audio/applyAll/Main";
+import { ApplyChainMainIpc } from "./Audio/applyChain/Main";
 import { ShowOpenDialogMainIpc } from "./Dialog/showOpenDialog/Main";
 import { EnsureDirectoryMainIpc } from "./FileSystem/ensureDirectory/Main";
 import { ReadDirectoryMainIpc } from "./FileSystem/readDirectory/Main";
@@ -13,6 +16,9 @@ import { GetWindowIdMainIpc } from "./System/getWindowId/Main";
 import { SetBoundsMainIpc } from "./System/setBounds/Main";
 
 export const ASYNC_MAIN_IPCS = [
+	AbortJobMainIpc,
+	ApplyAllMainIpc,
+	ApplyChainMainIpc,
 	EnsureDirectoryMainIpc,
 	ReadDirectoryMainIpc,
 	ReadFileMainIpc,

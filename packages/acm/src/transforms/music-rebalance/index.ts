@@ -34,6 +34,7 @@ const TRANSITION_POWER = 1.0;
 
 export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperties> {
 	static override readonly moduleName = "Music Rebalance";
+	static override readonly moduleDescription = "Rebalance stem volumes using HTDemucs source separation";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is MusicRebalanceModule {
 		return TransformModule.is(value) && value.type[2] === "music-rebalance";

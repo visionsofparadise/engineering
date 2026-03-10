@@ -9,7 +9,7 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ context }) => (
 	<div className="flex h-screen flex-col">
-		<Toolbar />
+		<Toolbar context={context} />
 		<Tabs context={context} />
 		<div className="flex flex-1 overflow-hidden">
 			<ActiveTab context={context} />

@@ -14,6 +14,7 @@ export interface ResampleProperties extends FfmpegProperties {
 
 export class ResampleModule extends FfmpegModule<ResampleProperties> {
 	static override readonly moduleName = "Resample";
+	static override readonly moduleDescription = "Change sample rate";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is ResampleModule {
 		return FfmpegModule.is(value) && value.type[3] === "resample";

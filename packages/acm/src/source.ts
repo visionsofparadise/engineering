@@ -56,10 +56,16 @@ export abstract class SourceModule<P extends SourceModuleProperties = SourceModu
 	private createReadable(options?: RenderOptions): ReadableStream<AudioChunk> {
 		let done = false;
 		this.framesRead = 0;
+		const signal = options?.signal;
 		return new ReadableStream<AudioChunk>(
 			{
 				pull: async (controller) => {
 					if (done) return;
+					if (signal?.aborted) {
+						done = true;
+						controller.close();
+						return;
+					}
 					try {
 						const framesBefore = this.framesRead;
 						const wrappedController = this.wrapController(controller);

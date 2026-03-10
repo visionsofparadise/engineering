@@ -19,6 +19,7 @@ export interface LoudnessProperties extends FfmpegProperties {
 
 export class LoudnessModule extends FfmpegModule<LoudnessProperties> {
 	static override readonly moduleName = "Loudness";
+	static override readonly moduleDescription = "Measure integrated, short-term, and momentary loudness";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is LoudnessModule {
 		return FfmpegModule.is(value) && value.type[3] === "loudness";

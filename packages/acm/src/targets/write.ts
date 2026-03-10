@@ -29,6 +29,7 @@ const WAV_HEADER_SIZE = 44;
 
 export class WriteModule extends TargetModule<WriteProperties> {
 	static override readonly moduleName = "Write";
+	static override readonly moduleDescription = "Write audio to a file";
 	static override readonly schema = schema;
 	override readonly type = ["async-module", "target", "write"] as const;
 

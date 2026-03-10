@@ -1,10 +1,34 @@
 import { Menu, Monitor, Moon, Sun } from "lucide-react";
+import type { AppContext } from "../models/Context";
+import { useImportFile } from "../hooks/useImportFile";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
-export const Toolbar: React.FC = () => {
+const AUDIO_FILTERS = [
+	{ name: "Audio Files", extensions: ["wav", "mp3", "flac", "aac", "m4a", "ogg"] },
+];
+
+interface ToolbarProps {
+	context: AppContext;
+}
+
+export const Toolbar: React.FC<ToolbarProps> = ({ context }) => {
 	const { theme, setTheme } = useTheme();
+	const importFile = useImportFile(context);
+
+	const handleOpen = async (): Promise<void> => {
+		const paths = await context.main.showOpenDialog({
+			title: "Open Audio File",
+			filters: AUDIO_FILTERS,
+			properties: ["openFile"],
+		});
+
+		const filePath = paths?.[0];
+		if (filePath) {
+			importFile.mutate(filePath);
+		}
+	};
 
 	return (
 		<div
@@ -23,7 +47,12 @@ export const Toolbar: React.FC = () => {
 						</Button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="start">
-						<DropdownMenuItem disabled>Open</DropdownMenuItem>
+						<DropdownMenuItem
+							disabled={importFile.isPending}
+							onClick={() => void handleOpen()}
+						>
+							Open
+						</DropdownMenuItem>
 						<DropdownMenuItem disabled>Save Session</DropdownMenuItem>
 						<DropdownMenuItem disabled>Export</DropdownMenuItem>
 						<DropdownMenuSeparator />

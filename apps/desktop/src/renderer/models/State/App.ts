@@ -12,6 +12,7 @@ export interface TabEntry {
 	readonly label: string;
 	readonly filePath: string;
 	readonly workingDir: string;
+	readonly activeSnapshotFolder: string | undefined;
 }
 
 export interface AppState extends State {

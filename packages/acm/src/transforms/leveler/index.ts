@@ -15,6 +15,7 @@ export interface LevelerProperties extends z.infer<typeof schema>, TransformModu
 
 export class LevelerModule extends TransformModule<LevelerProperties> {
 	static override readonly moduleName = "Leveler";
+	static override readonly moduleDescription = "Smooth volume variations for consistent loudness";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is LevelerModule {
 		return TransformModule.is(value) && value.type[2] === "leveler";

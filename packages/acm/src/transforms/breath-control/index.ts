@@ -13,6 +13,7 @@ export interface BreathControlProperties extends z.infer<typeof schema>, Transfo
 
 export class BreathControlModule extends TransformModule<BreathControlProperties> {
 	static override readonly moduleName = "Breath Control";
+	static override readonly moduleDescription = "Attenuate or remove breath sounds between phrases";
 	static override readonly schema = schema;
 
 	static override is(value: unknown): value is BreathControlModule {

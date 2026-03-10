@@ -4,6 +4,7 @@ import { TransformModule, type TransformModuleProperties } from "../../transform
 
 export class ReverseModule extends TransformModule {
 	static override readonly moduleName = "Reverse";
+	static override readonly moduleDescription = "Reverse audio playback direction";
 	static override is(value: unknown): value is ReverseModule {
 		return TransformModule.is(value) && value.type[2] === "reverse";
 	}
