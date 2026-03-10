@@ -3,8 +3,10 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Snapshot } from "valtio/vanilla";
 import type { Logger } from "../../shared/models/Logger/Logger";
 import type { MainWithEvents } from "./Main";
+import type { PlaybackEngine } from "./PlaybackEngine";
 import type { ProxyStore } from "./ProxyStore/ProxyStore";
 import type { AppState } from "./State/App";
+import type { PlaybackState } from "./State/Playback";
 import type { SelectionState } from "./State/Selection";
 import type { WorkspaceState } from "./State/Workspace";
 
@@ -24,4 +26,6 @@ export interface SessionContext extends AppContext {
 	readonly sessionStore: ProxyStore;
 	readonly workspace: Snapshot<WorkspaceState>;
 	readonly selection: Snapshot<SelectionState>;
+	readonly playback: Snapshot<PlaybackState>;
+	readonly playbackEngine: PlaybackEngine;
 }

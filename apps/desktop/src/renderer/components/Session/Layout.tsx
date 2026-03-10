@@ -45,6 +45,6 @@ export const SessionLayout: React.FC<SessionLayoutProps> = ({ context }) => (
 				</Panel>
 			</Group>
 		</div>
-		<Transport />
+		<Transport context={context} />
 	</div>
 );

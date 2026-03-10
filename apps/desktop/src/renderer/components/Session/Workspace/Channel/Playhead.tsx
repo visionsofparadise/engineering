@@ -4,17 +4,16 @@ import type { SessionContext } from "../../../../models/Context";
 import { msToPixels } from "../../../../utils/time";
 
 interface PlayheadProps {
-	readonly playheadMs: number;
 	readonly context: SessionContext;
 }
 
-export const Playhead: React.FC<PlayheadProps> = ({ playheadMs, context }) => {
-	const { workspace } = context;
+export const Playhead: React.FC<PlayheadProps> = ({ context }) => {
+	const { workspace, playback } = context;
 	const playheadRef = useRef<HTMLDivElement>(null);
 
-	useTransients([workspace.pixelsPerSecond, workspace.scrollX], () => {
+	useTransients([workspace.pixelsPerSecond, workspace.scrollX, playback.currentMs], () => {
 		if (!playheadRef.current) return;
-		const xPosition = msToPixels(playheadMs, workspace.pixelsPerSecond.value) - workspace.scrollX.value;
+		const xPosition = msToPixels(playback.currentMs.value, workspace.pixelsPerSecond.value) - workspace.scrollX.value;
 		playheadRef.current.style.transform = `translateX(${xPosition}px)`;
 	});
 

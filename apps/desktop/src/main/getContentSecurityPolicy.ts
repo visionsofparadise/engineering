@@ -4,7 +4,7 @@ const CSP_DEV = [
 	"worker-src 'self' blob:",
 	"style-src 'self' 'unsafe-inline'",
 	"img-src 'self' data: blob:",
-	"media-src 'self' blob: data: file:",
+	"media-src 'self' blob: data: file: media:",
 	"connect-src 'self' http://localhost:* ws://localhost:*",
 ].join("; ");
 
@@ -14,7 +14,7 @@ const CSP_PROD = [
 	"worker-src 'self' blob:",
 	"style-src 'self' 'unsafe-inline'",
 	"img-src 'self' data: blob:",
-	"media-src 'self' blob: data: file:",
+	"media-src 'self' blob: data: file: media:",
 	"connect-src 'self'",
 ].join("; ");
 
