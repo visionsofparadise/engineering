@@ -7,7 +7,7 @@ export function useImportFile(context: AppContext) {
 
 	return useMutation({
 		mutationFn: async (filePath: string) => {
-			const userDataPath = await context.main.getUserDataPath();
+			const { userDataPath } = context;
 			const sessionId = crypto.randomUUID();
 			const sessionPath = `${userDataPath}/sessions/${sessionId}`;
 

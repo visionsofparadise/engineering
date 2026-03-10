@@ -46,7 +46,6 @@ export const App: React.FC = () => {
 
 	const app = useAppState(initialState ?? {}, appStore);
 
-	useAutosave(app, appStore, mainWithEvents);
 	useWindowState(app, appStore, mainWithEvents);
 
 	const { data: windowId } = useQuery(
@@ -58,7 +57,18 @@ export const App: React.FC = () => {
 		queryClient,
 	);
 
-	const context = useMemo((): AppContext | undefined => (windowId ? { app, appStore, logger, main: mainWithEvents, queryClient, windowId } : undefined), [windowId, app, appStore, mainWithEvents]);
+	const { data: userDataPath } = useQuery(
+		{
+			queryKey: ["userDataPath"],
+			queryFn: () => mainWithEvents.getUserDataPath(),
+			staleTime: Infinity,
+		},
+		queryClient,
+	);
+
+	useAutosave(app, appStore, mainWithEvents, userDataPath);
+
+	const context = useMemo((): AppContext | undefined => (windowId && userDataPath ? { app, appStore, logger, main: mainWithEvents, queryClient, userDataPath, windowId } : undefined), [windowId, userDataPath, app, appStore, mainWithEvents]);
 
 	if (!context) {
 		return (

@@ -2,6 +2,8 @@ import { AbortJobMainIpc } from "./Audio/abortJob/Main";
 import { ApplyAllMainIpc } from "./Audio/applyAll/Main";
 import { ApplyChainMainIpc } from "./Audio/applyChain/Main";
 import { ShowOpenDialogMainIpc } from "./Dialog/showOpenDialog/Main";
+import { ShowSaveDialogMainIpc } from "./Dialog/showSaveDialog/Main";
+import { DeleteFileMainIpc } from "./FileSystem/deleteFile/Main";
 import { EnsureDirectoryMainIpc } from "./FileSystem/ensureDirectory/Main";
 import { ReadDirectoryMainIpc } from "./FileSystem/readDirectory/Main";
 import { ReadFileMainIpc } from "./FileSystem/readFile/Main";
@@ -19,6 +21,7 @@ export const ASYNC_MAIN_IPCS = [
 	AbortJobMainIpc,
 	ApplyAllMainIpc,
 	ApplyChainMainIpc,
+	DeleteFileMainIpc,
 	EnsureDirectoryMainIpc,
 	ReadDirectoryMainIpc,
 	ReadFileMainIpc,
@@ -27,6 +30,7 @@ export const ASYNC_MAIN_IPCS = [
 	StatMainIpc,
 	WriteFileMainIpc,
 	ShowOpenDialogMainIpc,
+	ShowSaveDialogMainIpc,
 	GetAllDisplaysMainIpc,
 	GetUserDataPathMainIpc,
 	GetWindowIdMainIpc,

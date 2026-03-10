@@ -3,6 +3,8 @@ import { AbortJobRendererIpc } from "./Audio/abortJob/Renderer";
 import { ApplyAllRendererIpc } from "./Audio/applyAll/Renderer";
 import { ApplyChainRendererIpc } from "./Audio/applyChain/Renderer";
 import { ShowOpenDialogRendererIpc } from "./Dialog/showOpenDialog/Renderer";
+import { ShowSaveDialogRendererIpc } from "./Dialog/showSaveDialog/Renderer";
+import { DeleteFileRendererIpc } from "./FileSystem/deleteFile/Renderer";
 import { EnsureDirectoryRendererIpc } from "./FileSystem/ensureDirectory/Renderer";
 import { ReadDirectoryRendererIpc } from "./FileSystem/readDirectory/Renderer";
 import { ReadFileRendererIpc } from "./FileSystem/readFile/Renderer";
@@ -20,6 +22,7 @@ export const ASYNC_RENDERER_IPCS = [
 	AbortJobRendererIpc,
 	ApplyAllRendererIpc,
 	ApplyChainRendererIpc,
+	DeleteFileRendererIpc,
 	EnsureDirectoryRendererIpc,
 	ReadDirectoryRendererIpc,
 	ReadFileRendererIpc,
@@ -28,6 +31,7 @@ export const ASYNC_RENDERER_IPCS = [
 	StatRendererIpc,
 	WriteFileRendererIpc,
 	ShowOpenDialogRendererIpc,
+	ShowSaveDialogRendererIpc,
 	GetAllDisplaysRendererIpc,
 	GetUserDataPathRendererIpc,
 	GetWindowIdRendererIpc,
