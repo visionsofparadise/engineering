@@ -6,6 +6,7 @@ import type { MainWithEvents } from "./Main";
 import type { PlaybackEngine } from "./PlaybackEngine";
 import type { ProxyStore } from "./ProxyStore/ProxyStore";
 import type { AppState } from "./State/App";
+import type { JobsState } from "./State/Jobs";
 import type { PlaybackState } from "./State/Playback";
 import type { SelectionState } from "./State/Selection";
 import type { WorkspaceState } from "./State/Workspace";
@@ -13,6 +14,7 @@ import type { WorkspaceState } from "./State/Workspace";
 export interface AppContext {
 	readonly app: Snapshot<AppState>;
 	readonly appStore: ProxyStore;
+	readonly jobs: Snapshot<JobsState>;
 	readonly logger: Logger;
 	readonly main: MainWithEvents;
 	readonly queryClient: QueryClient;

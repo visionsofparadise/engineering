@@ -21,18 +21,10 @@ export interface AudioChainCompleteEvent {
 	readonly targetPath?: string;
 }
 
-export interface AudioModuleCompleteEvent {
-	readonly jobId: string;
-	readonly moduleIndex: number;
-	readonly moduleName: string;
-	readonly snapshotPath: string;
-}
-
 export interface MainEventMap {
 	windowBoundsChanged: [windowState: WindowState];
 	"audio:progress": [event: AudioProgressEvent];
 	"audio:chainComplete": [event: AudioChainCompleteEvent];
-	"audio:moduleComplete": [event: AudioModuleCompleteEvent];
 }
 
 export interface RendererEventMap {}

@@ -1,7 +1,7 @@
+import type { ChainDefinition } from "@engineering/acm";
 import { Settings2 } from "lucide-react";
-import { MODULE_REGISTRY } from "../../../../../shared/ipc/Audio/applyChain/utils";
-import { useSaveChain } from "../../../../hooks/useChain";
-import type { SessionContext } from "../../../../models/Context";
+import { useCallback } from "react";
+import { MODULE_REGISTRY } from "../../../../../shared/ipc/Audio/apply/utils/registry";
 import { Button } from "../../../ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../ui/popover";
 import { ParameterSwitch } from "./ParameterSwitch";
@@ -10,23 +10,29 @@ import { getShape, unwrapDefault } from "./utils/schema";
 interface ParametersProps {
 	readonly module: string;
 	readonly index: number;
-	readonly context: SessionContext;
+	readonly chain: ChainDefinition;
+	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
 	readonly disabled?: boolean;
 }
 
-export const Parameters: React.FC<ParametersProps> = ({ module, index, context, disabled }) => {
+export const Parameters: React.FC<ParametersProps> = ({ module, index, chain, setChain, disabled }) => {
 	const moduleClass = MODULE_REGISTRY.get(module);
 	const shape = moduleClass ? getShape(moduleClass.schema) : undefined;
 	const entries = shape ? Object.entries(shape) : [];
-	const saveChain = useSaveChain(context.sessionPath);
 
-	const options = context.chain.transforms[index]?.options;
+	const options = chain.transforms[index]?.options;
 
-	const commitKey = (key: string, value: unknown) => {
-		const currentOptions = { ...context.chain.transforms[index]?.options, [key]: value };
-		const updated = context.chain.transforms.map((transform, position) => (position === index ? { ...transform, options: currentOptions } : transform));
-		saveChain.mutate({ ...context.chain, transforms: updated });
-	};
+	const commitKey = useCallback(
+		(key: string, value: unknown) => {
+			setChain((current) => ({
+				...current,
+				transforms: current.transforms.map((transform, position) =>
+					position === index ? { ...transform, options: { ...transform.options, [key]: value } } : transform,
+				),
+			}));
+		},
+		[index, setChain],
+	);
 
 	if (entries.length === 0) return null;
 

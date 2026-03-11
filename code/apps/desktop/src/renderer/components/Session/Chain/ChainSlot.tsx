@@ -1,6 +1,6 @@
+import type { ChainDefinition } from "@engineering/acm";
 import { X } from "lucide-react";
 import { useState } from "react";
-import type { SessionContext } from "../../../models/Context";
 import { Button } from "../../ui/button";
 import { Parameters } from "./Parameters/Parameters";
 
@@ -8,10 +8,12 @@ interface ChainSlotProps {
 	readonly module: string;
 	readonly index: number;
 	readonly onRemove: () => void;
-	readonly context: SessionContext;
+	readonly chain: ChainDefinition;
+	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
+	readonly disabled?: boolean;
 }
 
-export const ChainSlot: React.FC<ChainSlotProps> = ({ module, index, onRemove, context }) => {
+export const ChainSlot: React.FC<ChainSlotProps> = ({ module, index, onRemove, chain, setChain, disabled }) => {
 	const [hovered, setHovered] = useState(false);
 
 	return (
@@ -27,10 +29,12 @@ export const ChainSlot: React.FC<ChainSlotProps> = ({ module, index, onRemove, c
 			<Parameters
 				module={module}
 				index={index}
-				context={context}
+				chain={chain}
+				setChain={setChain}
+				disabled={disabled}
 			/>
 
-			{hovered && (
+			{hovered && !disabled && (
 				<Button
 					variant="ghost"
 					size="icon"

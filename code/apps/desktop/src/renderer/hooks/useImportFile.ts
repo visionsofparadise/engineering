@@ -19,10 +19,13 @@ export function useImportFile(context: AppContext) {
 			const snapshotDir = `${sessionPath}/${timestamp}-source`;
 			await context.main.ensureDirectory(snapshotDir);
 
-			await context.main.audioApplyChain({
+			await context.main.audioApply({
 				sourcePath: filePath,
-				transforms: [],
-				targetPath: snapshotDir,
+				transforms: [
+					{ package: "acm", module: "waveform", options: { path: `${snapshotDir}/waveform.bin` } },
+					{ package: "acm", module: "spectrogram", options: { path: `${snapshotDir}/spectrogram.bin`, frequencyScale: "log" } },
+				],
+				targetPath: `${snapshotDir}/audio.wav`,
 			});
 
 			const tabId = crypto.randomUUID();

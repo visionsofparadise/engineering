@@ -1,19 +1,15 @@
-import fs from "node:fs/promises";
-import type { SourceModule, ModuleEventMap } from "@engineering/acm";
+import type { ModuleEventMap, SourceModule } from "@engineering/acm";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
-import { buildChain } from "../../../../main/audio/buildChain";
-import { startJob, completeJob } from "../../../../main/audio/jobManager";
-import { APPLY_CHAIN_ACTION, type ApplyChainIpcParameters, type ApplyChainIpcReturn, type ApplyChainInput } from "./Renderer";
+import { APPLY_ACTION, type ApplyInput, type ApplyIpcParameters, type ApplyIpcReturn } from "./Renderer";
+import { buildChain } from "./utils/buildChain";
 
-export class ApplyChainMainIpc extends AsyncMainIpc<ApplyChainIpcParameters, ApplyChainIpcReturn> {
-	action = APPLY_CHAIN_ACTION;
+export class ApplyMainIpc extends AsyncMainIpc<ApplyIpcParameters, ApplyIpcReturn> {
+	action = APPLY_ACTION;
 
-	async handler(input: ApplyChainInput, dependencies: IpcHandlerDependencies): Promise<ApplyChainIpcReturn> {
-		const { browserWindow, logger } = dependencies;
+	async handler(input: ApplyInput, dependencies: IpcHandlerDependencies): Promise<ApplyIpcReturn> {
+		const { browserWindow, jobManager, logger } = dependencies;
 
-		const { id: jobId, signal } = startJob();
-
-		await fs.mkdir(input.targetPath, { recursive: true });
+		const { id: jobId, signal } = jobManager.startJob();
 
 		const source = buildChain(input) as unknown as SourceModule;
 
@@ -21,12 +17,12 @@ export class ApplyChainMainIpc extends AsyncMainIpc<ApplyChainIpcParameters, App
 			browserWindow.webContents.send("audio:progress", {
 				jobId,
 				moduleIndex: 0,
-				moduleName: input.transforms[0]?.module ?? "",
+				moduleName: input.transforms[0]?.module ?? "apply",
 				...progressEvent,
 			});
 		});
 
-		logger.info("Starting chain execution", {
+		logger.info("Starting apply", {
 			namespace: "audio",
 			sourcePath: input.sourcePath,
 			targetPath: input.targetPath,
@@ -36,7 +32,7 @@ export class ApplyChainMainIpc extends AsyncMainIpc<ApplyChainIpcParameters, App
 		try {
 			await source.render({ signal });
 
-			completeJob(jobId);
+			jobManager.completeJob(jobId);
 
 			browserWindow.webContents.send("audio:chainComplete", {
 				jobId,
@@ -45,13 +41,13 @@ export class ApplyChainMainIpc extends AsyncMainIpc<ApplyChainIpcParameters, App
 				targetPath: input.targetPath,
 			});
 
-			logger.info("Chain execution complete", {
+			logger.info("Apply complete", {
 				namespace: "audio",
 				targetPath: input.targetPath,
 				jobId,
 			});
 		} catch (error) {
-			completeJob(jobId);
+			jobManager.completeJob(jobId);
 
 			if (signal.aborted) {
 				browserWindow.webContents.send("audio:chainComplete", {
@@ -60,7 +56,7 @@ export class ApplyChainMainIpc extends AsyncMainIpc<ApplyChainIpcParameters, App
 					completedModules: 0,
 				});
 
-				logger.info("Chain execution aborted", {
+				logger.info("Apply aborted", {
 					namespace: "audio",
 					jobId,
 				});

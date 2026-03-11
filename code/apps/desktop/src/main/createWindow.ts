@@ -1,5 +1,6 @@
 import { BrowserWindow } from "electron";
 import path from "path";
+import { JobManager } from "../shared/ipc/Audio/apply/utils/jobManager";
 import { ASYNC_MAIN_IPCS } from "../shared/ipc/asyncMainIpcs";
 import type { IpcHandlerDependencies } from "../shared/models/AsyncMainIpc";
 import { Logger } from "../shared/models/Logger/Logger";
@@ -52,8 +53,11 @@ export const createWindow = (dependencies: WindowFactoryDependencies): BrowserWi
 
 	const windowId = crypto.randomUUID();
 
+	const jobManager = new JobManager();
+
 	const ipcDependencies: IpcHandlerDependencies = {
 		browserWindow,
+		jobManager,
 		logger,
 		windowId,
 	};

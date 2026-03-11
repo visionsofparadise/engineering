@@ -1,15 +1,16 @@
+import type { ChainDefinition } from "@engineering/acm";
 import { Check, Loader2 } from "lucide-react";
-import type { SessionContext } from "../../../models/Context";
-import type { ModuleJobState } from "../../../models/State/Job";
+import type { ModuleJobState } from "../../../models/State/Jobs";
 import { Parameters } from "./Parameters/Parameters";
 
 interface JobSlotProps {
 	readonly moduleJob: ModuleJobState;
 	readonly index: number;
-	readonly context: SessionContext;
+	readonly chain: ChainDefinition;
+	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
 }
 
-export const JobSlot: React.FC<JobSlotProps> = ({ moduleJob, index, context }) => (
+export const JobSlot: React.FC<JobSlotProps> = ({ moduleJob, index, chain, setChain }) => (
 	<div className="relative flex items-center gap-1 overflow-hidden rounded border border-border px-2 py-1.5">
 		<div
 			className="absolute inset-0 bg-primary/10 transition-all duration-200"
@@ -20,7 +21,7 @@ export const JobSlot: React.FC<JobSlotProps> = ({ moduleJob, index, context }) =
 		>
 			{moduleJob.moduleName}
 		</span>
-		<Parameters module={moduleJob.moduleName} index={index} context={context} disabled />
+		<Parameters module={moduleJob.moduleName} index={index} chain={chain} setChain={setChain} disabled />
 		<span className="relative shrink-0">
 			{moduleJob.status === "running" && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
 			{moduleJob.status === "completed" && <Check className="h-3 w-3 text-primary" />}

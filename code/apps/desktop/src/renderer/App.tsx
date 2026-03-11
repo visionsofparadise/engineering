@@ -11,6 +11,9 @@ import { main, type MainWithEvents } from "./models/Main";
 import { MainEvents } from "./models/MainEvents";
 import { ProxyStore } from "./models/ProxyStore/ProxyStore";
 import { loadAppState, useAppState } from "./models/State/App";
+import { useJobsState } from "./models/State/Jobs";
+import { useCreateState } from "./models/ProxyStore/hooks/useCreateState";
+import type { JobsState } from "./models/State/Jobs";
 
 const logger = new Logger("renderer");
 Logger.level = "debug";
@@ -45,6 +48,8 @@ export const App: React.FC = () => {
 	);
 
 	const app = useAppState(initialState ?? {}, appStore);
+	const jobs = useCreateState<JobsState>({ jobs: new Map() }, appStore);
+	useJobsState(appStore, jobs);
 
 	useWindowState(app, appStore, mainWithEvents);
 
@@ -68,7 +73,7 @@ export const App: React.FC = () => {
 
 	useAutosave(app, appStore, mainWithEvents, userDataPath);
 
-	const context = useMemo((): AppContext | undefined => (windowId && userDataPath ? { app, appStore, logger, main: mainWithEvents, queryClient, userDataPath, windowId } : undefined), [windowId, userDataPath, app, appStore, mainWithEvents]);
+	const context = useMemo((): AppContext | undefined => (windowId && userDataPath ? { app, appStore, jobs, logger, main: mainWithEvents, queryClient, userDataPath, windowId } : undefined), [windowId, userDataPath, app, appStore, jobs, mainWithEvents]);
 
 	if (!context) {
 		return (
