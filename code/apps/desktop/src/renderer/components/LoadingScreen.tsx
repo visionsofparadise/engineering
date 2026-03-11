@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 interface LoadingScreenProps {
 	readonly context: AppContext;
 	readonly onSkip: (index: number) => void;
+	readonly onRetry: (index: number) => void;
 }
 
 function StatusIcon({ status }: { readonly status: ModulePackageState["status"] }) {
@@ -42,12 +43,18 @@ function statusLabel(status: ModulePackageState["status"]): string {
 	}
 }
 
-export const LoadingScreen: React.FC<LoadingScreenProps> = ({ context, onSkip }) => {
+export const LoadingScreen: React.FC<LoadingScreenProps> = ({ context, onSkip, onRetry }) => {
 	const packages = context.app.packages;
+	const isFirstRun = packages.some((entry) => entry.status === "cloning");
 
 	return (
 		<div className="flex h-screen flex-col items-center justify-center gap-6 bg-background">
-			<div className="text-sm text-muted-foreground">Loading packages...</div>
+			<div className="flex flex-col items-center gap-1">
+				<div className="text-sm text-muted-foreground">
+					{isFirstRun ? "Downloading audio modules..." : "Loading packages..."}
+				</div>
+				{isFirstRun && <div className="text-[10px] text-muted-foreground/60">This is a one-time download</div>}
+			</div>
 			<div className="flex w-80 flex-col gap-2">
 				{packages.map((packageState, index) => (
 					<div
@@ -61,6 +68,16 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({ context, onSkip })
 								{packageState.error ?? statusLabel(packageState.status)}
 							</span>
 						</div>
+						{packageState.status === "error" && (
+							<Button
+								variant="ghost"
+								size="sm"
+								className="h-6 text-[10px]"
+								onClick={() => onRetry(index)}
+							>
+								Retry
+							</Button>
+						)}
 						{packageState.status !== "ready" && packageState.status !== "skipped" && packageState.status !== "error" && packageState.status !== "pending" && (
 							<Button
 								variant="ghost"

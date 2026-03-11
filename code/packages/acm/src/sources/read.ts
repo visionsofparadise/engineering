@@ -1,8 +1,7 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { open, stat, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
 import type { AudioChunk, StreamContext } from "../module";
 import { SourceModule, type SourceModuleProperties } from "../source";
-import { resolveBinary } from "../utils/resolve-binary";
 
 export const schema = z.object({
 	path: z.string().default(""),
@@ -10,15 +9,18 @@ export const schema = z.object({
 
 export interface ReadProperties extends z.infer<typeof schema>, SourceModuleProperties {
 	readonly channels?: ReadonlyArray<number>;
-	readonly binaryPath?: string;
 }
 
 const DEFAULT_CHUNK_SIZE = 44100;
 
-interface ProbeResult {
+interface WavFormat {
 	readonly sampleRate: number;
 	readonly channels: number;
-	readonly duration: number;
+	readonly bitsPerSample: number;
+	readonly audioFormat: number;
+	readonly blockAlign: number;
+	readonly dataOffset: number;
+	readonly dataSize: number;
 }
 
 export class ReadModule extends SourceModule<ReadProperties> {
@@ -30,220 +32,172 @@ export class ReadModule extends SourceModule<ReadProperties> {
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
-	private ffmpegProcess?: ChildProcess;
-	private stdout?: NodeJS.ReadableStream;
+	private fileHandle?: FileHandle;
+	private format?: WavFormat;
 	private outputChannels = 0;
-	private frameOffset = 0;
-	private remainder?: Buffer;
+	private bytesRead = 0;
 
 	async _init(): Promise<StreamContext> {
-		const binaryPath = this.properties.binaryPath;
-		const ffprobePath = await resolveBinary("ffprobe", binaryPath);
-		const ffmpegPath = await resolveBinary("ffmpeg", binaryPath);
+		const fileInfo = await stat(this.properties.path);
+		this.fileHandle = await open(this.properties.path, "r");
 
-		const probe = await this.probe(ffprobePath, this.properties.path);
-		const selectedChannels = this.properties.channels;
-		this.outputChannels = selectedChannels ? selectedChannels.length : probe.channels;
+		const header = Buffer.alloc(44);
+		await this.fileHandle.read(header, 0, 44, 0);
 
-		const args = [
-			"-i", this.properties.path,
-			"-f", "f32le",
-			"-acodec", "pcm_f32le",
-			"-ar", String(probe.sampleRate),
-		];
+		const riff = header.toString("ascii", 0, 4);
+		const wave = header.toString("ascii", 8, 12);
 
-		if (selectedChannels) {
-			const panParts = selectedChannels.map((srcCh, outCh) => `c${outCh}=c${srcCh}`);
-			const layout = this.outputChannels === 1 ? "mono" : `${this.outputChannels}c`;
-			args.push("-af", `pan=${layout}|${panParts.join("|")}`);
-			args.push("-ac", String(this.outputChannels));
-		} else {
-			args.push("-ac", String(probe.channels));
+		if (riff !== "RIFF" || wave !== "WAVE") {
+			throw new Error(`Not a WAV file: "${this.properties.path}"`);
 		}
 
-		args.push("pipe:1");
+		// Find fmt and data chunks
+		let offset = 12;
+		const fileSize = fileInfo.size;
+		let format: WavFormat | undefined;
+		const chunkHeader = Buffer.alloc(8);
 
-		const proc = spawn(ffmpegPath, args, {
-			stdio: ["ignore", "pipe", "pipe"],
-		});
+		while (offset < fileSize) {
+			await this.fileHandle.read(chunkHeader, 0, 8, offset);
+			const chunkId = chunkHeader.toString("ascii", 0, 4);
+			const chunkSize = chunkHeader.readUInt32LE(4);
 
-		this.ffmpegProcess = proc;
-		this.stdout = proc.stdout;
-		this.remainder = undefined;
-		this.frameOffset = 0;
+			if (chunkId === "fmt ") {
+				const fmtData = Buffer.alloc(chunkSize);
+				await this.fileHandle.read(fmtData, 0, chunkSize, offset + 8);
 
-		proc.stderr.resume();
+				const audioFormat = fmtData.readUInt16LE(0);
+				const channels = fmtData.readUInt16LE(2);
+				const sampleRate = fmtData.readUInt32LE(4);
+				const blockAlign = fmtData.readUInt16LE(12);
+				const bitsPerSample = fmtData.readUInt16LE(14);
+
+				format = { sampleRate, channels, bitsPerSample, audioFormat, blockAlign, dataOffset: 0, dataSize: 0 };
+			} else if (chunkId === "data") {
+				if (!format) throw new Error("WAV file has data chunk before fmt chunk");
+				format = { ...format, dataOffset: offset + 8, dataSize: chunkSize };
+				break;
+			}
+
+			offset += 8 + chunkSize;
+			if (chunkSize % 2 !== 0) offset++; // padding byte
+		}
+
+		if (!format || format.dataOffset === 0) {
+			throw new Error(`Invalid WAV file: "${this.properties.path}"`);
+		}
+
+		this.format = format;
+		this.bytesRead = 0;
+
+		const selectedChannels = this.properties.channels;
+		this.outputChannels = selectedChannels ? selectedChannels.length : format.channels;
+
+		const totalFrames = Math.floor(format.dataSize / format.blockAlign);
 
 		return {
-			sampleRate: probe.sampleRate,
+			sampleRate: format.sampleRate,
 			channels: this.outputChannels,
-			duration: probe.duration,
+			duration: totalFrames,
 		};
 	}
 
 	async _read(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void> {
-		const bytesPerFrame = this.outputChannels * 4;
-		const targetBytes = DEFAULT_CHUNK_SIZE * bytesPerFrame;
+		const fh = this.fileHandle;
+		const format = this.format;
 
-		const data = await this.readBytes(targetBytes);
-
-		if (!data || data.length === 0) {
+		if (!fh || !format) {
 			controller.close();
 			return;
 		}
 
-		const usableBytes = Math.floor(data.length / bytesPerFrame) * bytesPerFrame;
-		if (usableBytes === 0) {
+		const remaining = format.dataSize - this.bytesRead;
+
+		if (remaining <= 0) {
 			controller.close();
 			return;
 		}
 
-		const leftover = data.length - usableBytes;
-		if (leftover > 0) {
-			this.remainder = Buffer.from(data.buffer, data.byteOffset + usableBytes, leftover);
+		const framesWanted = DEFAULT_CHUNK_SIZE;
+		const bytesWanted = Math.min(framesWanted * format.blockAlign, remaining);
+		const chunk = Buffer.alloc(bytesWanted);
+		const { bytesRead } = await fh.read(chunk, 0, bytesWanted, format.dataOffset + this.bytesRead);
+
+		if (bytesRead === 0) {
+			controller.close();
+			return;
 		}
 
-		const frames = usableBytes / bytesPerFrame;
-		const floats = new Float32Array(data.buffer, data.byteOffset, usableBytes / 4);
+		const frames = Math.floor(bytesRead / format.blockAlign);
+		this.bytesRead += frames * format.blockAlign;
 
-		const samples: Array<Float32Array> = [];
-		for (let ch = 0; ch < this.outputChannels; ch++) {
-			samples.push(new Float32Array(frames));
+		const fileChannels = format.channels;
+		const selectedChannels = this.properties.channels;
+
+		const allChannels: Array<Float32Array> = [];
+		for (let ch = 0; ch < fileChannels; ch++) {
+			allChannels.push(new Float32Array(frames));
 		}
 
 		for (let frame = 0; frame < frames; frame++) {
-			for (let ch = 0; ch < this.outputChannels; ch++) {
-				const channel = samples[ch];
-				const value = floats[frame * this.outputChannels + ch];
-				if (channel && value !== undefined) {
-					channel[frame] = value;
+			for (let ch = 0; ch < fileChannels; ch++) {
+				const byteOffset = frame * format.blockAlign + ch * (format.bitsPerSample / 8);
+				const channel = allChannels[ch];
+				if (channel) {
+					channel[frame] = readSample(chunk, byteOffset, format.bitsPerSample, format.audioFormat);
 				}
 			}
 		}
 
-		const offset = this.frameOffset;
-		this.frameOffset += frames;
+		let samples: Array<Float32Array>;
+
+		if (selectedChannels) {
+			samples = selectedChannels.map((srcCh) => allChannels[srcCh] ?? new Float32Array(frames));
+		} else {
+			samples = allChannels;
+		}
+
+		const frameOffset = Math.floor((this.bytesRead - frames * format.blockAlign) / format.blockAlign);
 
 		controller.enqueue({
 			samples,
-			offset,
+			offset: frameOffset,
 			duration: frames,
 		});
 	}
 
 	async _flush(_controller: ReadableStreamDefaultController<AudioChunk>): Promise<void> {
-		const proc = this.ffmpegProcess;
-		if (proc) {
-			await new Promise<void>((resolve) => {
-				proc.on("close", () => resolve());
-				if (proc.exitCode !== null) resolve();
-			});
-			this.ffmpegProcess = undefined;
+		if (this.fileHandle) {
+			await this.fileHandle.close();
+			this.fileHandle = undefined;
 		}
-		this.stdout = undefined;
-		this.remainder = undefined;
-	}
-
-	private async probe(ffprobePath: string, filePath: string): Promise<ProbeResult> {
-		const proc = spawn(ffprobePath, [
-			"-v", "quiet",
-			"-print_format", "json",
-			"-show_streams",
-			"-select_streams", "a:0",
-			filePath,
-		], {
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-
-		const chunks: Array<Buffer> = [];
-
-		proc.stdout.on("data", (chunk: Buffer) => {
-			chunks.push(chunk);
-		});
-
-		proc.stderr.resume();
-
-		await new Promise<void>((resolve, reject) => {
-			proc.on("close", (code) => {
-				if (code !== 0) {
-					reject(new Error(`ffprobe exited with code ${code} for "${filePath}"`));
-				} else {
-					resolve();
-				}
-			});
-			proc.on("error", (error) => {
-				reject(new Error(`Failed to spawn ffprobe: ${error.message}`));
-			});
-		});
-
-		const json = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as {
-			streams?: Array<{
-				sample_rate?: string;
-				channels?: number;
-				duration?: string;
-			}>;
-		};
-
-		const stream = json.streams?.[0];
-		if (!stream) {
-			throw new Error(`No audio stream found in "${filePath}"`);
-		}
-
-		return {
-			sampleRate: Number(stream.sample_rate) || 44100,
-			channels: stream.channels ?? 1,
-			duration: Number(stream.duration) || 0,
-		};
-	}
-
-	private readBytes(targetBytes: number): Promise<Buffer | undefined> {
-		return new Promise((resolve) => {
-			const stdout = this.stdout;
-			if (!stdout) {
-				resolve(undefined);
-				return;
-			}
-
-			const existing = this.remainder;
-			this.remainder = undefined;
-
-			const read = (): void => {
-				const raw = stdout.read(targetBytes - (existing?.length ?? 0)) as Buffer | null;
-
-				if (raw) {
-					resolve(existing ? Buffer.concat([existing, raw]) : raw);
-					return;
-				}
-
-				if ((stdout as NodeJS.ReadableStream & { readableEnded?: boolean }).readableEnded) {
-					resolve(existing && existing.length > 0 ? existing : undefined);
-					return;
-				}
-
-				const onReadable = (): void => {
-					cleanup();
-					read();
-				};
-				const onEnd = (): void => {
-					cleanup();
-					resolve(existing && existing.length > 0 ? existing : undefined);
-				};
-				const cleanup = (): void => {
-					stdout.removeListener("readable", onReadable);
-					stdout.removeListener("end", onEnd);
-				};
-
-				stdout.once("readable", onReadable);
-				stdout.once("end", onEnd);
-			};
-
-			read();
-		});
 	}
 
 	clone(overrides?: Partial<ReadProperties>): ReadModule {
 		return new ReadModule({ ...this.properties, previousProperties: this.properties, ...overrides });
 	}
+}
+
+function readSample(data: Buffer, offset: number, bitsPerSample: number, audioFormat: number): number {
+	if (audioFormat === 3) {
+		// IEEE float
+		if (bitsPerSample === 32) return data.readFloatLE(offset);
+		if (bitsPerSample === 64) return data.readDoubleLE(offset);
+	}
+
+	// PCM integer
+	if (bitsPerSample === 16) return data.readInt16LE(offset) / 0x8000;
+	if (bitsPerSample === 24) {
+		const byte0 = data[offset] ?? 0;
+		const byte1 = data[offset + 1] ?? 0;
+		const byte2 = data[offset + 2] ?? 0;
+		const raw = byte0 | (byte1 << 8) | (byte2 << 16);
+		return (raw > 0x7FFFFF ? raw - 0x1000000 : raw) / 0x800000;
+	}
+	if (bitsPerSample === 32) return data.readInt32LE(offset) / 0x80000000;
+	if (bitsPerSample === 8) return ((data[offset] ?? 128) - 128) / 128;
+
+	return 0;
 }
 
 export function read(path: string, options?: { channels?: ReadonlyArray<number> }): ReadModule {

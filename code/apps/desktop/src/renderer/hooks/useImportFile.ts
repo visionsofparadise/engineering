@@ -22,8 +22,8 @@ export function useImportFile(context: AppContext) {
 			await context.main.audioApply({
 				sourcePath: filePath,
 				transforms: [
-					{ package: "acm", module: "waveform", options: { path: `${snapshotDir}/waveform.bin` } },
-					{ package: "acm", module: "spectrogram", options: { path: `${snapshotDir}/spectrogram.bin`, frequencyScale: "log" } },
+					{ package: "acm", module: "Waveform", options: { path: `${snapshotDir}/waveform.bin` } },
+					{ package: "acm", module: "Spectrogram", options: { path: `${snapshotDir}/spectrogram.bin`, frequencyScale: "log" } },
 				],
 				targetPath: `${snapshotDir}/audio.wav`,
 			});
