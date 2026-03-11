@@ -72,13 +72,18 @@ export function useExport(context: SessionContext) {
 
 		setState({ exporting: true, progress: 0 });
 
-		const jobId = await context.main.audioExport({
-			sourcePath,
-			targetPath,
+		const encoding = settings.format === "wav" ? undefined : {
 			format: settings.format,
-			bitDepth: settings.bitDepth,
 			bitrate: settings.bitrate,
 			vbr: settings.vbr,
+		};
+
+		const jobId = await context.main.audioApply({
+			sourcePath,
+			targetPath,
+			transforms: [],
+			bitDepth: settings.bitDepth,
+			encoding,
 		});
 
 		setActiveJobId(jobId);

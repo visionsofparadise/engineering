@@ -16,8 +16,6 @@ export const Tabs: React.FC<TabsProps> = ({ context }) => {
 
 	const sessionTabs = app.tabs;
 
-	// FIX: We need a hook here to delete orphaned sessions based on tab no longer existing
-
 	const [dragIndex, setDragIndex] = useState<number | null>(null);
 	const [dropTarget, setDropTarget] = useState<number | null>(null);
 	const dragIndexRef = useRef<number | null>(null);

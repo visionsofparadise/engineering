@@ -1,25 +1,21 @@
 import { useState } from "react";
+import { MODULE_REGISTRY, type ModuleClass } from "../../../../shared/ipc/Audio/apply/utils/registry";
 import { Button } from "../../ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "../../ui/popover";
 import { Input } from "../../ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "../../ui/popover";
 import { ScrollArea } from "../../ui/scroll-area";
-import { MODULE_REGISTRY, type ModuleClass } from "../../../../shared/ipc/Audio/applyChain/utils";
 
 interface ModuleMenuProps {
 	readonly onSelect: (moduleName: string) => void;
 }
 
-const modules: ReadonlyArray<ModuleClass> = [...MODULE_REGISTRY.values()].sort((left, right) =>
-	left.moduleName.localeCompare(right.moduleName),
-);
+const modules: ReadonlyArray<ModuleClass> = [...MODULE_REGISTRY.values()].sort((left, right) => left.moduleName.localeCompare(right.moduleName));
 
 export const ModuleMenu: React.FC<ModuleMenuProps> = ({ onSelect }) => {
 	const [open, setOpen] = useState(false);
 	const [search, setSearch] = useState("");
 
-	const filtered = search
-		? modules.filter((mod) => mod.moduleName.toLowerCase().includes(search.toLowerCase()))
-		: modules;
+	const filtered = search ? modules.filter((mod) => mod.moduleName.toLowerCase().includes(search.toLowerCase())) : modules;
 
 	const handleSelect = (name: string) => {
 		onSelect(name);
@@ -28,13 +24,23 @@ export const ModuleMenu: React.FC<ModuleMenuProps> = ({ onSelect }) => {
 	};
 
 	return (
-		<Popover open={open} onOpenChange={setOpen}>
+		<Popover
+			open={open}
+			onOpenChange={setOpen}
+		>
 			<PopoverTrigger asChild>
-				<Button variant="ghost" size="sm" className="h-7 text-xs">
+				<Button
+					variant="ghost"
+					size="sm"
+					className="h-7 text-xs"
+				>
 					+ Add
 				</Button>
 			</PopoverTrigger>
-			<PopoverContent className="w-64 p-0" align="end">
+			<PopoverContent
+				className="w-64 p-0"
+				align="end"
+			>
 				<div className="p-2">
 					<Input
 						placeholder="Search modules..."
@@ -55,9 +61,7 @@ export const ModuleMenu: React.FC<ModuleMenuProps> = ({ onSelect }) => {
 								<span className="text-[10px] text-muted-foreground">{mod.moduleDescription}</span>
 							</button>
 						))}
-						{filtered.length === 0 && (
-							<p className="px-2 py-4 text-center text-xs text-muted-foreground">No modules found</p>
-						)}
+						{filtered.length === 0 && <p className="px-2 py-4 text-center text-xs text-muted-foreground">No modules found</p>}
 					</div>
 				</ScrollArea>
 			</PopoverContent>

@@ -5,7 +5,7 @@ import type { SessionContext } from "../../models/Context";
 import { formatTime } from "../../utils/time";
 import { Button } from "../ui/button";
 import { ExportModal, type ExportSettings } from "./Export/ExportModal";
-import { useExport } from "./Export/useExport";
+import { useExport } from "./Export/hooks/useExport";
 
 interface TransportProps {
 	readonly context: SessionContext;

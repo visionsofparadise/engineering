@@ -1,4 +1,5 @@
 import type { AppContext } from "../models/Context";
+import { Batch } from "./Batch";
 import { Session } from "./Session";
 import { EmptyState } from "./Session/EmptyState";
 
@@ -10,11 +11,7 @@ export const ActiveTab: React.FC<ActiveTabProps> = ({ context }: { context: AppC
 	const { app } = context;
 
 	if (app.activeTabId === "batch") {
-		return (
-			<div className="flex h-full items-center justify-center">
-				<p className="text-sm text-muted-foreground">Batch processing — coming soon</p>
-			</div>
-		);
+		return <Batch context={context} />;
 	}
 
 	const activeTab = app.tabs.find((tab) => tab.id === app.activeTabId);

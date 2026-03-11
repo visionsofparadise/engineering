@@ -1,5 +1,5 @@
 import { Settings2 } from "lucide-react";
-import { MODULE_REGISTRY } from "../../../../../shared/ipc/Audio/applyChain/utils";
+import { MODULE_REGISTRY } from "../../../../../shared/ipc/Audio/apply/utils/registry";
 import { useSaveChain } from "../../../../hooks/useChain";
 import type { SessionContext } from "../../../../models/Context";
 import { Button } from "../../../ui/button";

@@ -1,27 +1,31 @@
+import type { ChainDefinition } from "@engineering/acm";
 import { useCallback, useRef, useState } from "react";
-import { useSaveChain } from "../../../hooks/useChain";
-import type { SessionContext } from "../../../models/Context";
 import { ChainSlot } from "./ChainSlot";
 import { ModuleMenu } from "./ModuleMenu";
 
 interface ChainSlotsProps {
-	readonly onAdd: (moduleName: string) => void;
-	readonly context: SessionContext;
+	readonly chain: ChainDefinition;
+	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
+	readonly disabled?: boolean;
 }
 
-export const ChainSlots: React.FC<ChainSlotsProps> = ({ onAdd, context }) => {
-	const { chain, sessionPath } = context;
+export const ChainSlots: React.FC<ChainSlotsProps> = ({ chain, setChain, disabled }) => {
 	const transforms = chain.transforms;
-	const saveChain = useSaveChain(sessionPath);
 	const [dragIndex, setDragIndex] = useState<number | undefined>(undefined);
 	const dragOverIndex = useRef<number | undefined>(undefined);
 
 	const handleRemove = useCallback(
 		(index: number) => {
-			const updated = transforms.filter((_, position) => position !== index);
-			saveChain.mutate({ ...chain, transforms: updated });
+			setChain((current) => ({ ...current, transforms: current.transforms.filter((_, position) => position !== index) }));
 		},
-		[chain, transforms, saveChain],
+		[setChain],
+	);
+
+	const handleAdd = useCallback(
+		(moduleName: string) => {
+			setChain((current) => ({ ...current, transforms: [...current.transforms, { package: "acm" as const, module: moduleName }] }));
+		},
+		[setChain],
 	);
 
 	const handleDragStart = useCallback((index: number) => {
@@ -34,21 +38,25 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ onAdd, context }) => {
 	}, []);
 
 	const handleDrop = useCallback(() => {
-		if (dragIndex !== undefined && dragOverIndex.current !== undefined && dragIndex !== dragOverIndex.current) {
-			const updated = [...transforms];
-			const [moved] = updated.splice(dragIndex, 1);
-			if (moved) updated.splice(dragOverIndex.current, 0, moved);
-			saveChain.mutate({ ...chain, transforms: updated });
+		const targetIndex = dragOverIndex.current;
+		if (dragIndex !== undefined && targetIndex !== undefined && dragIndex !== targetIndex) {
+			setChain((current) => {
+				const updated = [...current.transforms];
+				const [moved] = updated.splice(dragIndex, 1);
+				if (moved) updated.splice(targetIndex, 0, moved);
+				return { ...current, transforms: updated };
+			});
 		}
 		setDragIndex(undefined);
 		dragOverIndex.current = undefined;
-	}, [dragIndex, transforms, chain, saveChain]);
+	}, [dragIndex, setChain]);
 
 	return (
 		<div className="flex flex-col gap-1 p-2">
 			{transforms.map((transform, index) => (
 				<div
 					key={`${transform.module}-${index}`}
+					draggable={!disabled}
 					onDragStart={() => handleDragStart(index)}
 					onDragOver={(event) => handleDragOver(event, index)}
 					onDrop={handleDrop}
@@ -56,12 +64,14 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ onAdd, context }) => {
 					<ChainSlot
 						module={transform.module}
 						index={index}
+						disabled={disabled}
 						onRemove={() => handleRemove(index)}
-						context={context}
+						chain={chain}
+						setChain={setChain}
 					/>
 				</div>
 			))}
-			<ModuleMenu onSelect={onAdd} />
+			{!disabled && <ModuleMenu onSelect={handleAdd} />}
 		</div>
 	);
 };

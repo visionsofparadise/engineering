@@ -1,3 +1,4 @@
+import type { ChainModuleReference } from "@engineering/acm";
 import type { Snapshot } from "valtio/vanilla";
 import type { State } from ".";
 import type { WindowState } from "../../../shared/utilities/emitToRenderer";
@@ -6,6 +7,27 @@ import { useCreateState } from "../ProxyStore/hooks/useCreateState";
 import type { ProxyStore } from "../ProxyStore/ProxyStore";
 
 export type Theme = "light" | "dark" | "system";
+
+export interface BatchTarget {
+	readonly outputDir: string;
+	readonly template: string;
+	readonly format: "wav" | "flac" | "mp3" | "aac";
+	readonly bitDepth?: "16" | "24" | "32" | "32f";
+	readonly bitrate?: string;
+	readonly vbr?: number;
+}
+
+export interface BatchFile {
+	readonly path: string;
+	readonly jobId?: string;
+}
+
+export interface BatchConfig {
+	readonly transforms: ReadonlyArray<ChainModuleReference>;
+	readonly target: BatchTarget;
+	readonly concurrency: number;
+	readonly files: ReadonlyArray<BatchFile>;
+}
 
 export interface TabEntry {
 	readonly id: string;
@@ -20,6 +42,7 @@ export interface AppState extends State {
 	readonly tabs: ReadonlyArray<TabEntry>;
 	readonly theme: Theme;
 	readonly windowState?: WindowState;
+	readonly batch: BatchConfig;
 }
 
 async function deriveTabsFromSessions(main: MainWithEvents, userDataPath: string): Promise<ReadonlyArray<TabEntry>> {
@@ -87,7 +110,22 @@ export async function loadAppState(main: MainWithEvents): Promise<AppState | und
 		tabs,
 		activeTabId,
 		windowState: saved.windowState,
+		batch: saved.batch ?? defaultBatchConfig(),
 	} as AppState;
+}
+
+function defaultBatchConfig(): BatchConfig {
+	return {
+		transforms: [],
+		target: {
+			outputDir: "",
+			template: "{name}",
+			format: "wav",
+			bitDepth: "24",
+		},
+		concurrency: navigator.hardwareConcurrency || 4,
+		files: [],
+	};
 }
 
 export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snapshot<AppState> {
@@ -96,6 +134,7 @@ export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snap
 			theme: "dark",
 			tabs: [],
 			activeTabId: undefined,
+			batch: defaultBatchConfig(),
 			...initial,
 		},
 		store,
