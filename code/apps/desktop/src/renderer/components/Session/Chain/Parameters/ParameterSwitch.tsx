@@ -2,31 +2,31 @@ import { BooleanParameter } from "./BooleanParameter";
 import { EnumParameter } from "./EnumParameter";
 import { NumberParameter } from "./NumberParameter";
 import { StringParameter } from "./StringParameter";
-import type { ZodDef } from "./utils/schema";
+import type { JsonSchemaProperty } from "./utils/schema";
 
 interface ParameterSwitchProps {
 	readonly fieldKey: string;
-	readonly def: ZodDef;
+	readonly property: JsonSchemaProperty;
 	readonly label: string;
 	readonly initialValue: unknown;
 	readonly onCommit: (value: unknown) => void;
 	readonly disabled?: boolean;
 }
 
-export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, def, label, initialValue, onCommit, disabled }) => {
-	if (def.typeName === "ZodNumber") {
+export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, property, label, initialValue, onCommit, disabled }) => {
+	if (property.type === "number") {
 		return (
 			<NumberParameter
 				key={fieldKey}
 				label={label}
 				initialValue={initialValue as number}
-				def={def}
+				property={property}
 				onCommit={onCommit}
 				disabled={disabled}
 			/>
 		);
 	}
-	if (def.typeName === "ZodBoolean") {
+	if (property.type === "boolean") {
 		return (
 			<BooleanParameter
 				key={fieldKey}
@@ -37,19 +37,19 @@ export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, def,
 			/>
 		);
 	}
-	if (def.typeName === "ZodEnum") {
+	if (property.type === "string" && property.enum) {
 		return (
 			<EnumParameter
 				key={fieldKey}
 				label={label}
 				initialValue={initialValue as string}
-				values={def.values ?? []}
+				values={[...property.enum]}
 				onCommit={onCommit}
 				disabled={disabled}
 			/>
 		);
 	}
-	if (def.typeName === "ZodString") {
+	if (property.type === "string") {
 		return (
 			<StringParameter
 				key={fieldKey}

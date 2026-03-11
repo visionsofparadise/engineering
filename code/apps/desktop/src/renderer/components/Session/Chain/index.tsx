@@ -102,7 +102,7 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 	}, [transforms, sessionPath, startJob, updateModuleProgress, completeModule, completeChain]);
 
 	if (jobState?.status === "running") {
-		return <JobView jobState={jobState} onAbort={handleAbort} chain={chain} setChain={setChain} />;
+		return <JobView app={context.app} jobState={jobState} onAbort={handleAbort} chain={chain} setChain={setChain} />;
 	}
 
 	return (
@@ -112,7 +112,7 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 				<ChainManagerMenu chain={chain} onChainChange={handleChainChange} userDataPath={userDataPath} />
 			</div>
 			<ScrollArea className="flex-1">
-				<ChainSlots chain={chain} setChain={setChain} />
+				<ChainSlots app={context.app} chain={chain} setChain={setChain} />
 			</ScrollArea>
 			<div className="flex justify-end border-t border-border px-3 py-2">
 				<Button

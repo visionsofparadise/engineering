@@ -1,36 +1,20 @@
-import type { z } from "zod";
-
-export interface ZodCheck {
-	readonly kind: string;
-	readonly value?: number;
+export interface JsonSchemaProperty {
+	readonly type?: string;
+	readonly description?: string;
+	readonly default?: unknown;
+	readonly minimum?: number;
+	readonly maximum?: number;
+	readonly multipleOf?: number;
+	readonly enum?: ReadonlyArray<string>;
 }
 
-export interface ZodDef {
-	readonly typeName?: string;
-	readonly checks?: ReadonlyArray<ZodCheck>;
-	readonly innerType?: { _def?: ZodDef; description?: string };
-	readonly defaultValue?: unknown;
-	readonly values?: ReadonlyArray<string>;
-	readonly shape?: () => Record<string, { _def?: ZodDef; description?: string }>;
+export interface JsonSchema {
+	readonly type?: string;
+	readonly properties?: Record<string, JsonSchemaProperty>;
 }
 
-export function getDef(schema: z.ZodType): ZodDef | undefined {
-	return (schema as unknown as { _def?: ZodDef })._def;
-}
-
-export function getShape(schema: z.ZodType): Record<string, { _def?: ZodDef; description?: string }> | undefined {
-	const def = getDef(schema);
-	if (def?.typeName === "ZodObject" && typeof def.shape === "function") return def.shape();
+export function getProperties(schema: unknown): Record<string, JsonSchemaProperty> | undefined {
+	const js = schema as JsonSchema | undefined;
+	if (js?.type === "object" && js.properties) return js.properties;
 	return undefined;
-}
-
-export function getCheck(checks: ReadonlyArray<ZodCheck>, kind: string): number | undefined {
-	return checks.find((check) => check.kind === kind)?.value;
-}
-
-export function unwrapDefault(def: ZodDef): { def: ZodDef; defaultValue: unknown; label: string | undefined } {
-	if (def.typeName === "ZodDefault" && def.innerType?._def) {
-		return { def: def.innerType._def, defaultValue: def.defaultValue, label: def.innerType.description };
-	}
-	return { def, defaultValue: undefined, label: undefined };
 }

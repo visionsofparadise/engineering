@@ -1,8 +1,6 @@
 import type { IpcHandlerAction, IpcHandlerParameters, IpcHandlerReturn } from "../models/AsyncRendererIpc";
 import { AbortJobRendererIpc } from "./Audio/abortJob/Renderer";
 import { ApplyRendererIpc } from "./Audio/apply/Renderer";
-import { OpenSessionRendererIpc } from "./Session/openSession/Renderer";
-import { SaveSessionRendererIpc } from "./Session/saveSession/Renderer";
 import { ShowOpenDialogRendererIpc } from "./Dialog/showOpenDialog/Renderer";
 import { ShowSaveDialogRendererIpc } from "./Dialog/showSaveDialog/Renderer";
 import { DeleteFileRendererIpc } from "./FileSystem/deleteFile/Renderer";
@@ -13,6 +11,12 @@ import { ReadFileBufferRendererIpc } from "./FileSystem/readFileBuffer/Renderer"
 import { ReadFileChunkRendererIpc } from "./FileSystem/readFileChunk/Renderer";
 import { StatRendererIpc } from "./FileSystem/stat/Renderer";
 import { WriteFileRendererIpc } from "./FileSystem/writeFile/Renderer";
+import { GitCloneRendererIpc } from "./Git/clone/Renderer";
+import { BundlePackageRendererIpc } from "./Package/bundle/Renderer";
+import { LoadPackageModulesRendererIpc } from "./Package/loadModules/Renderer";
+import { UnloadPackageModulesRendererIpc } from "./Package/unloadModules/Renderer";
+import { OpenSessionRendererIpc } from "./Session/openSession/Renderer";
+import { SaveSessionRendererIpc } from "./Session/saveSession/Renderer";
 import { GetAllDisplaysRendererIpc } from "./System/getAllDisplays/Renderer";
 import { GetAppVersionRendererIpc } from "./System/getAppVersion/Renderer";
 import { GetUserDataPathRendererIpc } from "./System/getUserDataPath/Renderer";
@@ -22,13 +26,17 @@ import { SetBoundsRendererIpc } from "./System/setBounds/Renderer";
 export const ASYNC_RENDERER_IPCS = [
 	AbortJobRendererIpc,
 	ApplyRendererIpc,
+	BundlePackageRendererIpc,
 	DeleteFileRendererIpc,
 	EnsureDirectoryRendererIpc,
+	GitCloneRendererIpc,
+	LoadPackageModulesRendererIpc,
 	ReadDirectoryRendererIpc,
 	ReadFileRendererIpc,
 	ReadFileBufferRendererIpc,
 	ReadFileChunkRendererIpc,
 	StatRendererIpc,
+	UnloadPackageModulesRendererIpc,
 	WriteFileRendererIpc,
 	OpenSessionRendererIpc,
 	SaveSessionRendererIpc,

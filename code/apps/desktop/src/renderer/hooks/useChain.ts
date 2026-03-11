@@ -1,12 +1,13 @@
 import { type ChainDefinition, validateChainDefinition } from "@engineering/acm";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { migrateChain } from "../../shared/migrateChain";
 
 export function useChain(sessionPath: string): ChainDefinition | undefined {
 	const query = useQuery({
 		queryKey: ["chain", sessionPath],
 		queryFn: async () => {
 			const content = await window.main.readFile(`${sessionPath}/chain.json`);
-			return validateChainDefinition(JSON.parse(content));
+			return migrateChain(validateChainDefinition(JSON.parse(content)));
 		},
 	});
 

@@ -10,9 +10,10 @@ const AUDIO_FILTERS = [{ name: "Audio Files", extensions: ["wav", "mp3", "flac",
 
 interface ToolbarProps {
 	context: AppContext;
+	onManagePackages: () => void;
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ context }) => {
+export const Toolbar: React.FC<ToolbarProps> = ({ context, onManagePackages }) => {
 	const { theme, setTheme } = useTheme();
 	const importFile = useImportFile(context);
 
@@ -107,6 +108,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context }) => {
 							onClick={() => window.dispatchEvent(new Event("open-export-modal"))}
 						>
 							Export
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem onClick={onManagePackages}>
+							Manage Packages...
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuSub>
