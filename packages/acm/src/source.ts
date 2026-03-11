@@ -29,6 +29,7 @@ export abstract class SourceModule<P extends SourceModuleProperties = SourceModu
 
 	async render(options?: RenderOptions): Promise<void> {
 		const meta = await this._init();
+
 		await this.setup(meta);
 
 		const start = performance.now();
@@ -36,11 +37,13 @@ export abstract class SourceModule<P extends SourceModuleProperties = SourceModu
 		try {
 			this.readable = this.createReadable(options);
 			this.emit("started");
+
 			const pipeline = this.buildPipeline(this, options);
 			await pipeline;
 			this.emit("finished");
 		} finally {
 			const totalMs = performance.now() - start;
+
 			const audioDurationMs = meta.duration !== undefined ? (meta.duration / meta.sampleRate) * 1000 : 0;
 
 			this.renderTimingData = {

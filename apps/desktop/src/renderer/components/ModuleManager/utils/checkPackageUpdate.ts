@@ -1,5 +1,6 @@
-import type { AppContext } from "../models/Context";
-import type { ModulePackageState } from "../models/State/App";
+import { gt, valid } from "semver";
+import type { AppContext } from "../../../models/Context";
+import type { ModulePackageState } from "../../../models/State/App";
 import { initializePackage } from "./initializePackages";
 
 interface UpdateCheckResult {
@@ -8,21 +9,20 @@ interface UpdateCheckResult {
 	readonly latestVersion: string;
 }
 
-export async function checkPackageUpdate(
-	packageState: ModulePackageState,
-	context: AppContext,
-): Promise<UpdateCheckResult> {
+export async function checkPackageUpdate(packageState: ModulePackageState, context: AppContext): Promise<UpdateCheckResult> {
 	const { main, userDataPath } = context;
+
 	const tempDir = `${userDataPath}/packages/.update-check-${packageState.directory}`;
 
 	try {
 		await main.gitClone({ url: packageState.url, directory: tempDir });
+
 		const raw = await main.readFile(`${tempDir}/package.json`);
 		const latestJson = JSON.parse(raw) as { version?: string };
 		const latestVersion = latestJson.version ?? "0.0.0";
 		const currentVersion = packageState.version ?? "0.0.0";
 
-		const updateAvailable = latestVersion !== currentVersion;
+		const updateAvailable = valid(latestVersion) !== null && valid(currentVersion) !== null && gt(latestVersion, currentVersion);
 
 		return { updateAvailable, currentVersion, latestVersion };
 	} finally {
@@ -34,13 +34,12 @@ export async function checkPackageUpdate(
 	}
 }
 
-export async function applyPackageUpdate(
-	directory: string,
-	context: AppContext,
-): Promise<void> {
+export async function applyPackageUpdate(directory: string, context: AppContext): Promise<void> {
 	const { app, appStore, main, userDataPath } = context;
+
 	const cloneDir = `${userDataPath}/packages/${directory}`;
 	const config = app.packageUrls.find((conf) => conf.directory === directory);
+
 	if (!config) return;
 
 	await main.unloadPackageModules({ packageName: directory });
@@ -52,9 +51,11 @@ export async function applyPackageUpdate(
 	}
 
 	const index = app.packages.findIndex((ps) => ps.directory === directory);
+
 	if (index >= 0) {
 		appStore.mutate(app, (proxy) => {
 			const existing = proxy.packages[index];
+
 			if (existing) {
 				existing.status = "pending";
 				existing.modules = [];

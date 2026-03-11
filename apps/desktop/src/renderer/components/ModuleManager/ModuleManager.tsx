@@ -1,12 +1,12 @@
 import { useState } from "react";
 import type { AppContext } from "../../models/Context";
 import type { ModulePackageState } from "../../models/State/App";
-import { addPackage } from "../../utils/addPackage";
-import { checkPackageUpdate } from "../../utils/checkPackageUpdate";
-import { removePackage } from "../../utils/removePackage";
 import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
+import { addPackage } from "./utils/addPackage";
+import { checkPackageUpdate } from "./utils/checkPackageUpdate";
+import { removePackage } from "./utils/removePackage";
 
 interface ModuleManagerProps {
 	readonly context: AppContext;
@@ -50,13 +50,13 @@ export const ModuleManager: React.FC<ModuleManagerProps> = ({ context, open, onO
 
 	const handleCheckUpdate = async (packageState: ModulePackageState) => {
 		setUpdateStates((prev) => ({ ...prev, [packageState.directory]: { status: "checking" } }));
+
 		try {
 			const result = await checkPackageUpdate(packageState, context);
+
 			setUpdateStates((prev) => ({
 				...prev,
-				[packageState.directory]: result.updateAvailable
-					? { status: "available", latestVersion: result.latestVersion }
-					: { status: "up-to-date" },
+				[packageState.directory]: result.updateAvailable ? { status: "available", latestVersion: result.latestVersion } : { status: "up-to-date" },
 			}));
 		} catch {
 			setUpdateStates((prev) => ({ ...prev, [packageState.directory]: { status: "idle" } }));
@@ -106,13 +106,9 @@ export const ModuleManager: React.FC<ModuleManagerProps> = ({ context, open, onO
 							>
 								<div className="flex items-center justify-between">
 									<span className="text-xs font-medium">{packageState.directory}</span>
-									{packageState.version && (
-										<span className="text-[10px] text-muted-foreground">v{packageState.version}</span>
-									)}
+									{packageState.version && <span className="text-[10px] text-muted-foreground">v{packageState.version}</span>}
 								</div>
-								{packageState.modules.length > 0 && (
-									<span className="text-[10px] text-muted-foreground">{formatModuleList(packageState)}</span>
-								)}
+								{packageState.modules.length > 0 && <span className="text-[10px] text-muted-foreground">{formatModuleList(packageState)}</span>}
 								<div className="flex justify-end gap-1 pt-1">
 									<Button
 										variant="ghost"
@@ -121,7 +117,13 @@ export const ModuleManager: React.FC<ModuleManagerProps> = ({ context, open, onO
 										disabled={updateState.status === "checking"}
 										onClick={() => void handleCheckUpdate(packageState)}
 									>
-										{updateState.status === "checking" ? "Checking..." : updateState.status === "available" ? `Update to v${updateState.latestVersion}` : updateState.status === "up-to-date" ? "Up to date" : "Check Update"}
+										{updateState.status === "checking"
+											? "Checking..."
+											: updateState.status === "available"
+												? `Update to v${updateState.latestVersion}`
+												: updateState.status === "up-to-date"
+													? "Up to date"
+													: "Check Update"}
 									</Button>
 									{!isDefault && (
 										<Button
@@ -139,9 +141,7 @@ export const ModuleManager: React.FC<ModuleManagerProps> = ({ context, open, onO
 					})}
 				</div>
 
-				<p className="text-[10px] text-muted-foreground">
-					Packages run with full system access. Only add packages you trust.
-				</p>
+				<p className="text-[10px] text-muted-foreground">Packages run with full system access. Only add packages you trust.</p>
 			</DialogContent>
 		</Dialog>
 	);

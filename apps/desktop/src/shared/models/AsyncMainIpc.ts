@@ -2,11 +2,13 @@ import type { BrowserWindow } from "electron";
 import type { JobManager } from "../ipc/Audio/apply/utils/jobManager";
 import type { LogContext } from "./LogContext";
 import { Logger } from "./Logger/Logger";
+import type { ModuleRegistryMap } from "./ModuleRegistry";
 
 export interface IpcHandlerDependencies {
 	readonly browserWindow: BrowserWindow;
 	readonly jobManager: JobManager;
 	readonly logger: Logger;
+	readonly moduleRegistry: ModuleRegistryMap;
 	readonly windowId: string;
 }
 

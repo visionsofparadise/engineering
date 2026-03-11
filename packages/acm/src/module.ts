@@ -101,7 +101,9 @@ export abstract class AudioChainModule<P extends AudioChainModuleProperties = Au
 
 	async setup(context: StreamContext): Promise<void> {
 		this.sourceTotalFrames = context.duration;
+
 		await Promise.all([this._setup(context), ...this.targets.map((target) => target.setup(context))]);
+
 		this.emit("setup");
 	}
 

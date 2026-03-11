@@ -4,6 +4,7 @@ import { Logger } from "../shared/models/Logger/Logger";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Layout } from "./components/Layout";
 import { LoadingScreen } from "./components/LoadingScreen";
+import { initializeAllPackages } from "./components/ModuleManager/utils/initializePackages";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { useAutosave } from "./hooks/useAutosave";
 import { useWindowState } from "./hooks/useWindowState";
@@ -15,7 +16,6 @@ import { ProxyStore } from "./models/ProxyStore/ProxyStore";
 import { loadAppState, useAppState } from "./models/State/App";
 import type { JobsState } from "./models/State/Jobs";
 import { useJobsState } from "./models/State/Jobs";
-import { initializeAllPackages } from "./utils/initializePackages";
 
 const logger = new Logger("renderer");
 Logger.level = "debug";
