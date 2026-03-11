@@ -1,15 +1,18 @@
 import type { ChainDefinition } from "@engineering/acm";
 import { useCallback, useRef, useState } from "react";
+import type { Snapshot } from "valtio/vanilla";
+import type { AppState } from "../../../models/State/App";
 import { ChainSlot } from "./ChainSlot";
-import { ModuleMenu } from "./ModuleMenu";
+import { ModuleMenu, type ModuleSelection } from "./ModuleMenu";
 
 interface ChainSlotsProps {
+	readonly app: Snapshot<AppState>;
 	readonly chain: ChainDefinition;
 	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
 	readonly disabled?: boolean;
 }
 
-export const ChainSlots: React.FC<ChainSlotsProps> = ({ chain, setChain, disabled }) => {
+export const ChainSlots: React.FC<ChainSlotsProps> = ({ app, chain, setChain, disabled }) => {
 	const transforms = chain.transforms;
 	const [dragIndex, setDragIndex] = useState<number | undefined>(undefined);
 	const dragOverIndex = useRef<number | undefined>(undefined);
@@ -22,8 +25,8 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ chain, setChain, disable
 	);
 
 	const handleAdd = useCallback(
-		(moduleName: string) => {
-			setChain((current) => ({ ...current, transforms: [...current.transforms, { package: "acm" as const, module: moduleName }] }));
+		(selection: ModuleSelection) => {
+			setChain((current) => ({ ...current, transforms: [...current.transforms, { package: selection.packageName, module: selection.moduleName }] }));
 		},
 		[setChain],
 	);
@@ -62,8 +65,10 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ chain, setChain, disable
 					onDrop={handleDrop}
 				>
 					<ChainSlot
+						packageName={transform.package}
 						module={transform.module}
 						index={index}
+						app={app}
 						disabled={disabled}
 						onRemove={() => handleRemove(index)}
 						chain={chain}
@@ -71,7 +76,7 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ chain, setChain, disable
 					/>
 				</div>
 			))}
-			{!disabled && <ModuleMenu onSelect={handleAdd} />}
+			{!disabled && <ModuleMenu app={app} onSelect={handleAdd} />}
 		</div>
 	);
 };

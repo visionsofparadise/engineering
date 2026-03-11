@@ -37,12 +37,32 @@ export interface TabEntry {
 	readonly activeSnapshotFolder: string | undefined;
 }
 
+export interface ModulePackageConfig {
+	readonly url: string;
+	readonly directory: string;
+}
+
+export interface LoadedModuleInfo {
+	readonly moduleName: string;
+	readonly moduleDescription: string;
+	readonly schema: unknown;
+}
+
+export interface ModulePackageState extends ModulePackageConfig {
+	readonly status: "pending" | "cloning" | "building" | "loading" | "ready" | "skipped" | "error";
+	readonly error?: string;
+	readonly version?: string;
+	readonly modules: ReadonlyArray<LoadedModuleInfo>;
+}
+
 export interface AppState extends State {
 	readonly activeTabId: string | undefined;
 	readonly tabs: ReadonlyArray<TabEntry>;
 	readonly theme: Theme;
 	readonly windowState?: WindowState;
 	readonly batch: BatchConfig;
+	readonly packageUrls: ReadonlyArray<ModulePackageConfig>;
+	readonly packages: ReadonlyArray<ModulePackageState>;
 }
 
 async function deriveTabsFromSessions(main: MainWithEvents, userDataPath: string): Promise<ReadonlyArray<TabEntry>> {
@@ -88,7 +108,7 @@ async function deriveTabsFromSessions(main: MainWithEvents, userDataPath: string
 	}
 }
 
-export async function loadAppState(main: MainWithEvents): Promise<AppState | undefined> {
+export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState, "_key"> | undefined> {
 	const userDataPath = await main.getUserDataPath();
 	const path = `${userDataPath}/state.json`;
 
@@ -111,7 +131,13 @@ export async function loadAppState(main: MainWithEvents): Promise<AppState | und
 		activeTabId,
 		windowState: saved.windowState,
 		batch: saved.batch ?? defaultBatchConfig(),
-	} as AppState;
+		packageUrls: saved.packageUrls ?? defaultPackageUrls(),
+		packages: [],
+	};
+}
+
+function defaultPackageUrls(): ReadonlyArray<ModulePackageConfig> {
+	return [{ url: "https://github.com/engineering/acm", directory: "acm" }];
 }
 
 function defaultBatchConfig(): BatchConfig {
@@ -135,6 +161,8 @@ export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snap
 			tabs: [],
 			activeTabId: undefined,
 			batch: defaultBatchConfig(),
+			packageUrls: defaultPackageUrls(),
+			packages: [],
 			...initial,
 		},
 		store,

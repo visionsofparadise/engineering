@@ -2,23 +2,22 @@ import { useState } from "react";
 import { Input } from "../../../ui/input";
 import { Label } from "../../../ui/label";
 import { Slider } from "../../../ui/slider";
-import { getCheck, type ZodDef } from "./utils/schema";
+import type { JsonSchemaProperty } from "./utils/schema";
 
 interface NumberParameterProps {
 	readonly label: string;
 	readonly initialValue: number;
-	readonly def: ZodDef;
+	readonly property: JsonSchemaProperty;
 	readonly onCommit: (value: number) => void;
 	readonly disabled?: boolean;
 }
 
-export const NumberParameter: React.FC<NumberParameterProps> = ({ label, initialValue, def, onCommit, disabled }) => {
+export const NumberParameter: React.FC<NumberParameterProps> = ({ label, initialValue, property, onCommit, disabled }) => {
 	const [value, setValue] = useState(initialValue);
 
-	const checks = def.checks ?? [];
-	const min = getCheck(checks, "min");
-	const max = getCheck(checks, "max");
-	const step = getCheck(checks, "multipleOf");
+	const min = property.minimum;
+	const max = property.maximum;
+	const step = property.multipleOf;
 
 	if (min !== undefined && max !== undefined) {
 		return (

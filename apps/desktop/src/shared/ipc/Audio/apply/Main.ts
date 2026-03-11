@@ -1,4 +1,5 @@
 import type { ModuleEventMap, SourceModule } from "@engineering/acm";
+import { getRegistry } from "../../../../main/moduleRegistry";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import { APPLY_ACTION, type ApplyInput, type ApplyIpcParameters, type ApplyIpcReturn } from "./Renderer";
 import { buildChain } from "./utils/buildChain";
@@ -11,7 +12,7 @@ export class ApplyMainIpc extends AsyncMainIpc<ApplyIpcParameters, ApplyIpcRetur
 
 		const { id: jobId, signal } = jobManager.startJob();
 
-		const source = buildChain(input) as unknown as SourceModule;
+		const source = buildChain(input, getRegistry()) as unknown as SourceModule;
 
 		source.on("progress", (progressEvent: ModuleEventMap["progress"][0]) => {
 			browserWindow.webContents.send("audio:progress", {

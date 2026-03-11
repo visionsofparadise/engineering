@@ -1,24 +1,28 @@
 import type { ChainDefinition } from "@engineering/acm";
 import { Settings2 } from "lucide-react";
 import { useCallback } from "react";
-import { MODULE_REGISTRY } from "../../../../../shared/ipc/Audio/apply/utils/registry";
+import type { Snapshot } from "valtio/vanilla";
+import type { AppState } from "../../../../models/State/App";
 import { Button } from "../../../ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../ui/popover";
 import { ParameterSwitch } from "./ParameterSwitch";
-import { getShape, unwrapDefault } from "./utils/schema";
+import { getProperties } from "./utils/schema";
 
 interface ParametersProps {
+	readonly packageName: string;
 	readonly module: string;
 	readonly index: number;
+	readonly app: Snapshot<AppState>;
 	readonly chain: ChainDefinition;
 	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
 	readonly disabled?: boolean;
 }
 
-export const Parameters: React.FC<ParametersProps> = ({ module, index, chain, setChain, disabled }) => {
-	const moduleClass = MODULE_REGISTRY.get(module);
-	const shape = moduleClass ? getShape(moduleClass.schema) : undefined;
-	const entries = shape ? Object.entries(shape) : [];
+export const Parameters: React.FC<ParametersProps> = ({ packageName, module, index, app, chain, setChain, disabled }) => {
+	const packageState = app.packages.find((ps) => ps.directory === packageName);
+	const mod = packageState?.modules.find((mi) => mi.moduleName === module);
+	const properties = mod ? getProperties(mod.schema) : undefined;
+	const entries = properties ? Object.entries(properties) : [];
 
 	const options = chain.transforms[index]?.options;
 
@@ -52,16 +56,14 @@ export const Parameters: React.FC<ParametersProps> = ({ module, index, chain, se
 				align="start"
 				side="left"
 			>
-				{entries.map(([key, field]) => {
-					const unwrapped = field._def ? unwrapDefault(field._def) : undefined;
-					if (!unwrapped) return null;
-					const label = unwrapped.label ?? field.description ?? key;
-					const initialValue = options?.[key] ?? unwrapped.defaultValue;
+				{entries.map(([key, property]) => {
+					const label = property.description ?? key;
+					const initialValue = options?.[key] ?? property.default;
 					return (
 						<ParameterSwitch
 							key={key}
 							fieldKey={key}
-							def={unwrapped.def}
+							property={property}
 							label={label}
 							initialValue={initialValue}
 							onCommit={(next) => commitKey(key, next)}

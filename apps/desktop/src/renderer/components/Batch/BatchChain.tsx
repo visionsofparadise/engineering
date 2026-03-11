@@ -47,7 +47,7 @@ export const BatchChain: React.FC<BatchChainProps> = ({ app, appStore, disabled,
 				/>
 			</div>
 			<ScrollArea className="flex-1">
-				<ChainSlots chain={chain} setChain={setChain} disabled={disabled} />
+				<ChainSlots app={app} chain={chain} setChain={setChain} disabled={disabled} />
 			</ScrollArea>
 		</div>
 	);

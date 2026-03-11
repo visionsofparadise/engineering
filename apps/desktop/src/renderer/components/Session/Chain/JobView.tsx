@@ -1,17 +1,20 @@
 import type { ChainDefinition } from "@engineering/acm";
+import type { Snapshot } from "valtio/vanilla";
+import type { AppState } from "../../../models/State/App";
 import type { JobState } from "../../../models/State/Jobs";
 import { Button } from "../../ui/button";
 import { ScrollArea } from "../../ui/scroll-area";
 import { JobSlot } from "./JobSlot";
 
 interface JobViewProps {
+	readonly app: Snapshot<AppState>;
 	readonly jobState: JobState;
 	readonly onAbort: () => void;
 	readonly chain: ChainDefinition;
 	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
 }
 
-export const JobView: React.FC<JobViewProps> = ({ jobState, onAbort, chain, setChain }) => (
+export const JobView: React.FC<JobViewProps> = ({ app, jobState, onAbort, chain, setChain }) => (
 	<div className="flex h-full flex-col">
 		<div className="flex items-center justify-between border-b border-border px-3 py-2">
 			<span className="text-xs font-medium text-muted-foreground">Chain</span>
@@ -19,7 +22,15 @@ export const JobView: React.FC<JobViewProps> = ({ jobState, onAbort, chain, setC
 		<ScrollArea className="flex-1">
 			<div className="flex flex-col gap-1 p-2">
 				{jobState.modules.map((moduleJob) => (
-					<JobSlot key={moduleJob.moduleIndex} moduleJob={moduleJob} index={moduleJob.moduleIndex} chain={chain} setChain={setChain} />
+					<JobSlot
+						key={moduleJob.moduleIndex}
+						packageName={chain.transforms[moduleJob.moduleIndex]?.package ?? "acm"}
+						moduleJob={moduleJob}
+						index={moduleJob.moduleIndex}
+						app={app}
+						chain={chain}
+						setChain={setChain}
+					/>
 				))}
 			</div>
 		</ScrollArea>
