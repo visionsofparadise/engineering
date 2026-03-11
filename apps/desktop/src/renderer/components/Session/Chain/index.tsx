@@ -79,8 +79,8 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 					targetPath: `${snapshotDir}/audio.wav`,
 					transforms: [
 						transform,
-						{ package: "acm", module: "waveform", options: { path: `${snapshotDir}/waveform.bin` } },
-						{ package: "acm", module: "spectrogram", options: { path: `${snapshotDir}/spectrogram.bin`, frequencyScale: "log" } },
+						{ package: "acm", module: "Waveform", options: { path: `${snapshotDir}/waveform.bin` } },
+						{ package: "acm", module: "Spectrogram", options: { path: `${snapshotDir}/spectrogram.bin`, frequencyScale: "log" } },
 					],
 				});
 

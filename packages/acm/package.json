@@ -41,14 +41,6 @@
     "typescript": "*",
     "vitest": "^3.0.0"
   },
-  "peerDependencies": {
-    "onnxruntime-node": "^1.24.3"
-  },
-  "peerDependenciesMeta": {
-    "onnxruntime-node": {
-      "optional": true
-    }
-  },
   "dependencies": {
     "bufferfy": "^4.0.3",
     "commander": "^14.0.3",

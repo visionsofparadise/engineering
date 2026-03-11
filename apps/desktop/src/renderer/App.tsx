@@ -4,7 +4,7 @@ import { Logger } from "../shared/models/Logger/Logger";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Layout } from "./components/Layout";
 import { LoadingScreen } from "./components/LoadingScreen";
-import { initializeAllPackages } from "./components/ModuleManager/utils/initializePackages";
+import { initializeAllPackages, initializePackage } from "./components/ModuleManager/utils/initializePackages";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { useAutosave } from "./hooks/useAutosave";
 import { useWindowState } from "./hooks/useWindowState";
@@ -102,6 +102,16 @@ export const App: React.FC = () => {
 		[context],
 	);
 
+	const handleRetryPackage = useCallback(
+		(index: number) => {
+			if (!context) return;
+			const config = context.app.packageUrls[index];
+			if (!config) return;
+			void initializePackage(config, index, context);
+		},
+		[context],
+	);
+
 	const packagesReady = context?.app.packages.length === 0 || context?.app.packages.every((entry) => entry.status === "ready" || entry.status === "skipped" || entry.status === "error");
 
 	if (!context) {
@@ -122,6 +132,7 @@ export const App: React.FC = () => {
 						<LoadingScreen
 							context={context}
 							onSkip={handleSkipPackage}
+							onRetry={handleRetryPackage}
 						/>
 					)}
 				</ErrorBoundary>

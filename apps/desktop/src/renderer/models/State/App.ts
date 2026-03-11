@@ -40,6 +40,7 @@ export interface TabEntry {
 export interface ModulePackageConfig {
 	readonly url: string;
 	readonly directory: string;
+	readonly core?: boolean;
 }
 
 export interface LoadedModuleInfo {
@@ -131,13 +132,24 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 		activeTabId,
 		windowState: saved.windowState,
 		batch: saved.batch ?? defaultBatchConfig(),
-		packageUrls: saved.packageUrls ?? defaultPackageUrls(),
+		packageUrls: mergeWithCoreDefaults(saved.packageUrls),
 		packages: [],
 	};
 }
 
-function defaultPackageUrls(): ReadonlyArray<ModulePackageConfig> {
-	return [{ url: "https://github.com/engineering/acm", directory: "acm" }];
+const CORE_PACKAGE_URLS: ReadonlyArray<ModulePackageConfig> = [
+	{ url: "https://github.com/engineering/acm", directory: "acm", core: true },
+	{ url: "https://github.com/engineering/acm-engineering", directory: "acm-engineering", core: true },
+];
+
+function mergeWithCoreDefaults(saved: ReadonlyArray<ModulePackageConfig> | undefined): ReadonlyArray<ModulePackageConfig> {
+	if (!saved) return CORE_PACKAGE_URLS;
+	const savedDirs = new Set(saved.map((config) => config.directory));
+	const missing = CORE_PACKAGE_URLS.filter((config) => !savedDirs.has(config.directory));
+	return [...missing, ...saved.map((config) => {
+		const coreMatch = CORE_PACKAGE_URLS.find((core) => core.directory === config.directory);
+		return coreMatch ? { ...config, core: true } : config;
+	})];
 }
 
 function defaultBatchConfig(): BatchConfig {
@@ -161,7 +173,7 @@ export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snap
 			tabs: [],
 			activeTabId: undefined,
 			batch: defaultBatchConfig(),
-			packageUrls: defaultPackageUrls(),
+			packageUrls: CORE_PACKAGE_URLS,
 			packages: [],
 			...initial,
 		},
