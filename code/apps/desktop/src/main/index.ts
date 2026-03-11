@@ -8,10 +8,13 @@ Logger.level = "debug";
 
 registerMediaScheme();
 
-app.whenReady().then(() => {
-	registerMediaProtocol();
-	return createWindow({ logger });
-}).catch(console.error);
+app.whenReady()
+	.then(() => {
+		registerMediaProtocol();
+
+		return createWindow({ logger });
+	})
+	.catch(console.error);
 
 app.on("window-all-closed", () => {
 	if (process.platform !== "darwin") {

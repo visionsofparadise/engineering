@@ -1,5 +1,4 @@
 import { type ChainDefinition, validateChainDefinition } from "@engineering/acm";
-import { migrateChain } from "../../../../../shared/migrateChain";
 
 function getChainsDirectory(userDataPath: string): string {
 	return `${userDataPath}/chains`;
@@ -18,7 +17,7 @@ export async function listChains(userDataPath: string): Promise<Array<{ label: s
 	for (const filename of jsonFiles) {
 		try {
 			const content = await window.main.readFile(`${directory}/${filename}`);
-			const chain = migrateChain(validateChainDefinition(JSON.parse(content)));
+			const chain = validateChainDefinition(JSON.parse(content));
 
 			chains.push({ label: chain.label ?? filename.replace(".json", ""), filename });
 		} catch {
@@ -33,7 +32,7 @@ export async function loadChain(userDataPath: string, filename: string): Promise
 	const directory = getChainsDirectory(userDataPath);
 	const content = await window.main.readFile(`${directory}/${filename}`);
 
-	return migrateChain(validateChainDefinition(JSON.parse(content)));
+	return validateChainDefinition(JSON.parse(content));
 }
 
 function sanitizeFilename(label: string): string {

@@ -1,4 +1,4 @@
-import type { AppContext } from "../models/Context";
+import type { AppContext } from "../../../models/Context";
 
 export async function removePackage(directory: string, context: AppContext): Promise<void> {
 	const { app, appStore, main, userDataPath } = context;

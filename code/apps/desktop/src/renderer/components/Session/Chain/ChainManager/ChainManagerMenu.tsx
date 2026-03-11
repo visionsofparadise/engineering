@@ -1,6 +1,5 @@
 import type { ChainDefinition } from "@engineering/acm";
 import { validateChainDefinition } from "@engineering/acm";
-import { migrateChain } from "../../../../../shared/migrateChain";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -78,7 +77,7 @@ export const ChainManagerMenu: React.FC<ChainManagerMenuProps> = ({ chain, onCha
 
 		try {
 			const content = await window.main.readFile(selectedPath);
-			const imported = migrateChain(validateChainDefinition(JSON.parse(content)));
+			const imported = validateChainDefinition(JSON.parse(content));
 
 			if (!imported.label) {
 				const filename = selectedPath.split(/[/\\]/).pop()?.replace(".json", "") ?? "imported";

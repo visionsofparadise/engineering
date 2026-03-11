@@ -5,6 +5,7 @@ import { ASYNC_MAIN_IPCS } from "../shared/ipc/asyncMainIpcs";
 import type { IpcHandlerDependencies } from "../shared/models/AsyncMainIpc";
 import { Logger } from "../shared/models/Logger/Logger";
 import { getContentSecurityPolicy } from "./getContentSecurityPolicy";
+import { createModuleRegistry } from "../shared/models/ModuleRegistry";
 
 export interface WindowFactoryDependencies {
 	readonly logger: Logger;
@@ -54,11 +55,13 @@ export const createWindow = (dependencies: WindowFactoryDependencies): BrowserWi
 	const windowId = crypto.randomUUID();
 
 	const jobManager = new JobManager();
+	const moduleRegistry = createModuleRegistry();
 
 	const ipcDependencies: IpcHandlerDependencies = {
 		browserWindow,
 		jobManager,
 		logger,
+		moduleRegistry,
 		windowId,
 	};
 

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import type { IpcRendererEvent } from "electron";
-import type { SessionContext } from "../../../models/Context";
-import type { AudioChainCompleteEvent, AudioProgressEvent } from "../../../../shared/utilities/emitToRenderer";
-import { useActiveSnapshotPath } from "../hooks/useActiveSnapshotPath";
-import type { ExportSettings } from "./ExportModal";
+import type { SessionContext } from "../../../../models/Context";
+import type { AudioChainCompleteEvent, AudioProgressEvent } from "../../../../../shared/utilities/emitToRenderer";
+import { useActiveSnapshotPath } from "../../hooks/useActiveSnapshotPath";
+import type { ExportSettings } from "../ExportModal";
 
 const FORMAT_EXTENSIONS: Record<ExportSettings["format"], string> = {
 	wav: "wav",

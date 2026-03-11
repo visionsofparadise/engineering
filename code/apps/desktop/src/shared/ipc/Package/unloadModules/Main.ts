@@ -1,4 +1,4 @@
-import { unregisterPackage } from "../../../../main/moduleRegistry";
+import { unregisterPackage } from "../../../models/ModuleRegistry";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import {
 	UNLOAD_PACKAGE_MODULES_ACTION,
@@ -10,8 +10,8 @@ import {
 export class UnloadPackageModulesMainIpc extends AsyncMainIpc<UnloadPackageModulesIpcParameters, UnloadPackageModulesIpcReturn> {
 	action = UNLOAD_PACKAGE_MODULES_ACTION;
 
-	handler(input: UnloadPackageModulesInput, _dependencies: IpcHandlerDependencies): UnloadPackageModulesIpcReturn {
-		unregisterPackage(input.packageName);
+	handler(input: UnloadPackageModulesInput, dependencies: IpcHandlerDependencies): UnloadPackageModulesIpcReturn {
+		unregisterPackage(dependencies.moduleRegistry, input.packageName);
 		return undefined;
 	}
 }
