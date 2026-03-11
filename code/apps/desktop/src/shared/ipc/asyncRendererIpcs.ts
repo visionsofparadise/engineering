@@ -2,6 +2,9 @@ import type { IpcHandlerAction, IpcHandlerParameters, IpcHandlerReturn } from ".
 import { AbortJobRendererIpc } from "./Audio/abortJob/Renderer";
 import { ApplyAllRendererIpc } from "./Audio/applyAll/Renderer";
 import { ApplyChainRendererIpc } from "./Audio/applyChain/Renderer";
+import { ExportAudioRendererIpc } from "./Audio/exportAudio/Renderer";
+import { OpenSessionRendererIpc } from "./Session/openSession/Renderer";
+import { SaveSessionRendererIpc } from "./Session/saveSession/Renderer";
 import { ShowOpenDialogRendererIpc } from "./Dialog/showOpenDialog/Renderer";
 import { ShowSaveDialogRendererIpc } from "./Dialog/showSaveDialog/Renderer";
 import { DeleteFileRendererIpc } from "./FileSystem/deleteFile/Renderer";
@@ -22,6 +25,7 @@ export const ASYNC_RENDERER_IPCS = [
 	AbortJobRendererIpc,
 	ApplyAllRendererIpc,
 	ApplyChainRendererIpc,
+	ExportAudioRendererIpc,
 	DeleteFileRendererIpc,
 	EnsureDirectoryRendererIpc,
 	ReadDirectoryRendererIpc,
@@ -30,6 +34,8 @@ export const ASYNC_RENDERER_IPCS = [
 	ReadFileChunkRendererIpc,
 	StatRendererIpc,
 	WriteFileRendererIpc,
+	OpenSessionRendererIpc,
+	SaveSessionRendererIpc,
 	ShowOpenDialogRendererIpc,
 	ShowSaveDialogRendererIpc,
 	GetAllDisplaysRendererIpc,

@@ -1,13 +1,12 @@
 import { Menu, Monitor, Moon, Sun } from "lucide-react";
-import type { AppContext } from "../models/Context";
 import { useImportFile } from "../hooks/useImportFile";
+import type { AppContext } from "../models/Context";
+import { addTab } from "../utils/tabs";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
-const AUDIO_FILTERS = [
-	{ name: "Audio Files", extensions: ["wav", "mp3", "flac", "aac", "m4a", "ogg"] },
-];
+const AUDIO_FILTERS = [{ name: "Audio Files", extensions: ["wav", "mp3", "flac", "aac", "m4a", "ogg"] }];
 
 interface ToolbarProps {
 	context: AppContext;
@@ -16,6 +15,49 @@ interface ToolbarProps {
 export const Toolbar: React.FC<ToolbarProps> = ({ context }) => {
 	const { theme, setTheme } = useTheme();
 	const importFile = useImportFile(context);
+
+	const activeTab = context.app.tabs.find((tab) => tab.id === context.app.activeTabId);
+
+	const handleSaveSession = async (): Promise<void> => {
+		if (!activeTab) return;
+
+		const defaultName = activeTab.label.replace(/\.[^.]+$/, "");
+
+		const targetPath = await context.main.showSaveDialog({
+			title: "Save Session",
+			defaultPath: `${defaultName}.eng`,
+			filters: [{ name: "Engineering Session", extensions: ["eng"] }],
+		});
+
+		if (!targetPath) return;
+
+		await context.main.sessionSave({ sessionPath: activeTab.workingDir, targetPath });
+	};
+
+	const handleOpenSession = async (): Promise<void> => {
+		const paths = await context.main.showOpenDialog({
+			title: "Open Session",
+			filters: [{ name: "Engineering Session", extensions: ["eng"] }],
+			properties: ["openFile"],
+		});
+
+		const filePath = paths?.[0];
+
+		if (!filePath) return;
+
+		const result = await context.main.sessionOpen({ filePath });
+
+		addTab(
+			{
+				id: result.sessionId,
+				label: result.label,
+				filePath,
+				workingDir: result.sessionPath,
+				activeSnapshotFolder: undefined,
+			},
+			{ app: context.app, appStore: context.appStore },
+		);
+	};
 
 	const handleOpen = async (): Promise<void> => {
 		const paths = await context.main.showOpenDialog({
@@ -53,8 +95,19 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context }) => {
 						>
 							Open
 						</DropdownMenuItem>
-						<DropdownMenuItem disabled>Save Session</DropdownMenuItem>
-						<DropdownMenuItem disabled>Export</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => void handleOpenSession()}>Open Session</DropdownMenuItem>
+						<DropdownMenuItem
+							disabled={!activeTab}
+							onClick={() => void handleSaveSession()}
+						>
+							Save Session
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							disabled={!context.app.activeTabId}
+							onClick={() => window.dispatchEvent(new Event("open-export-modal"))}
+						>
+							Export
+						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuSub>
 							<DropdownMenuSubTrigger>
@@ -91,4 +144,4 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context }) => {
 			<div className="w-[138px]" />
 		</div>
 	);
-}
+};

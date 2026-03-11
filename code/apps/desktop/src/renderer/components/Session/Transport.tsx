@@ -1,9 +1,11 @@
-import { Download, FastForward, Pause, Play, Repeat, Rewind, SkipBack, SkipForward, Square, Volume2, VolumeX } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { Download, FastForward, Loader2, Pause, Play, Repeat, Rewind, SkipBack, SkipForward, Square, Volume2, VolumeX } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTransients } from "../../hooks/useTransients";
 import type { SessionContext } from "../../models/Context";
 import { formatTime } from "../../utils/time";
 import { Button } from "../ui/button";
+import { ExportModal, type ExportSettings } from "./Export/ExportModal";
+import { useExport } from "./Export/useExport";
 
 interface TransportProps {
 	readonly context: SessionContext;
@@ -14,7 +16,16 @@ const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.5, 2, 4] as const;
 export const Transport: React.FC<TransportProps> = ({ context }) => {
 	const { playback, playbackEngine } = context;
 	const [prevVolume, setPrevVolume] = useState(1);
+	const [exportOpen, setExportOpen] = useState(false);
+	const { exporting, progress, startExport } = useExport(context);
 	const timeRef = useRef<HTMLSpanElement>(null);
+
+	useEffect(() => {
+		const handleOpenExport = () => setExportOpen(true);
+		window.addEventListener("open-export-modal", handleOpenExport);
+
+		return () => window.removeEventListener("open-export-modal", handleOpenExport);
+	}, []);
 
 	useTransients([playback.currentMs], () => {
 		if (timeRef.current) {
@@ -76,6 +87,15 @@ export const Transport: React.FC<TransportProps> = ({ context }) => {
 	const handleLoopToggle = useCallback(() => {
 		playbackEngine.setIsLooping(!playback.isLooping);
 	}, [playback.isLooping, playbackEngine]);
+
+	const handleExportSettings = useCallback(
+		(settings: ExportSettings) => {
+			setExportOpen(false);
+
+			void startExport(settings);
+		},
+		[startExport],
+	);
 
 	const durationMs = playbackEngine.durationMs;
 
@@ -182,12 +202,19 @@ export const Transport: React.FC<TransportProps> = ({ context }) => {
 					variant="ghost"
 					size="sm"
 					className="h-8 gap-1 text-xs"
-					disabled
+					disabled={exporting}
+					onClick={() => setExportOpen(true)}
 				>
-					<Download className="h-4 w-4" />
-					Export
+					{exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+					{exporting ? `${Math.round(progress * 100)}%` : "Export"}
 				</Button>
 			</div>
+
+			<ExportModal
+				open={exportOpen}
+				onOpenChange={setExportOpen}
+				onExport={handleExportSettings}
+			/>
 		</div>
 	);
 };
