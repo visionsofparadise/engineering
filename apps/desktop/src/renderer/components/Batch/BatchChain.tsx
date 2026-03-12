@@ -1,20 +1,17 @@
 import type { ChainDefinition, ChainModuleReference } from "@engineering/acm";
 import { useCallback } from "react";
-import type { Snapshot } from "valtio/vanilla";
-import type { ProxyStore } from "../../models/ProxyStore/ProxyStore";
-import type { AppState } from "../../models/State/App";
+import type { AppContext } from "../../models/Context";
 import { ChainManagerMenu } from "../Session/Chain/ChainManager/ChainManagerMenu";
 import { ChainSlots } from "../Session/Chain/ChainSlots";
 import { ScrollArea } from "../ui/scroll-area";
 
 interface BatchChainProps {
-	readonly app: Snapshot<AppState>;
-	readonly appStore: ProxyStore;
+	readonly context: AppContext;
 	readonly disabled: boolean;
-	readonly userDataPath: string;
 }
 
-export const BatchChain: React.FC<BatchChainProps> = ({ app, appStore, disabled, userDataPath }) => {
+export const BatchChain: React.FC<BatchChainProps> = ({ context, disabled }) => {
+	const { app, appStore, userDataPath } = context;
 	const chain: ChainDefinition = { transforms: app.batch.transforms as Array<ChainModuleReference> };
 
 	const setChain = useCallback(
@@ -47,7 +44,7 @@ export const BatchChain: React.FC<BatchChainProps> = ({ app, appStore, disabled,
 				/>
 			</div>
 			<ScrollArea className="flex-1">
-				<ChainSlots app={app} chain={chain} setChain={setChain} disabled={disabled} />
+				<ChainSlots context={context} chain={chain} setChain={setChain} disabled={disabled} />
 			</ScrollArea>
 		</div>
 	);

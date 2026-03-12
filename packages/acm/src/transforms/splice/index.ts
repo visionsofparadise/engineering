@@ -5,7 +5,7 @@ import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({
-	insertPath: z.string().default("").describe("Insert File Path"),
+	insertPath: z.string().default("").meta({ input: "file", mode: "open", accept: ".wav" }).describe("Insert File Path"),
 	insertAt: z.number().min(0).default(0).describe("Insert At (frames)"),
 });
 

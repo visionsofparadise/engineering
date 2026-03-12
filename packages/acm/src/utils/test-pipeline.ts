@@ -6,8 +6,7 @@ import { WaveFile } from "wavefile";
 import { ChunkBuffer } from "../chunk-buffer";
 import type { StreamMeta } from "../module";
 import { read } from "../sources/read";
-import type { WavBitDepth } from "../targets/write";
-import { write } from "../targets/write";
+import { write, type WavBitDepth } from "../targets/write";
 import type { TransformModule } from "../transform";
 
 export interface TransformTestResult {
@@ -47,13 +46,11 @@ export async function runTransform(inputPath: string, transform: TransformModule
 	const tempPath = join(tmpdir(), `acm-test-${randomBytes(8).toString("hex")}.wav`);
 
 	try {
-		// Read input samples
 		const inputResult = await readToBuffer(inputPath);
 		const inputChunk = await inputResult.buffer.read(0, inputResult.buffer.frames);
 		const inputSamples = inputChunk.samples;
 		await inputResult.buffer.close();
 
-		// Build pipeline: read → transform → write
 		const source = read(inputPath);
 		const target = write(tempPath, { bitDepth: options?.outputBitDepth ?? "32f" });
 
@@ -62,7 +59,6 @@ export async function runTransform(inputPath: string, transform: TransformModule
 
 		await source.render();
 
-		// Read output
 		const outputResult = await readToBuffer(tempPath);
 		const outputChunk = await outputResult.buffer.read(0, outputResult.buffer.frames);
 		const outputSamples = outputChunk.samples;

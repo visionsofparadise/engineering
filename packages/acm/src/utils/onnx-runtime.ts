@@ -1,0 +1,54 @@
+import { createRequire } from "node:module";
+
+export interface OnnxSession {
+	run(inputs: Record<string, OnnxTensor>): Promise<Record<string, OnnxTensor>>;
+	dispose(): void;
+}
+
+export interface OnnxTensor {
+	readonly data: Float32Array;
+	readonly dims: ReadonlyArray<number>;
+}
+
+export interface OnnxSessionOptions {
+	readonly executionProviders?: ReadonlyArray<string>;
+}
+
+interface OnnxAddon {
+	init(libraryPath: string): void;
+	createSession(modelPath: string, options?: { executionProviders?: Array<string> }): OnnxAddonSession;
+}
+
+interface OnnxAddonSession {
+	run(inputs: Record<string, OnnxTensor>): Record<string, OnnxTensor>;
+	dispose(): void;
+	inputNames(): Array<string>;
+	outputNames(): Array<string>;
+}
+
+const require = createRequire(import.meta.url);
+let addon: OnnxAddon | undefined;
+
+export function initOnnxRuntime(addonPath: string, libraryPath: string): void {
+	addon = require(addonPath) as OnnxAddon;
+	addon.init(libraryPath);
+}
+
+export function createOnnxSession(modelPath: string, options?: OnnxSessionOptions): OnnxSession {
+	if (!addon) {
+		throw new Error("ONNX Runtime not initialized. Call initOnnxRuntime(addonPath, libraryPath) first.");
+	}
+
+	const session = addon.createSession(modelPath, {
+		executionProviders: options?.executionProviders ? [...options.executionProviders] : ["cuda", "cpu"],
+	});
+
+	return {
+		async run(inputs) {
+			return session.run(inputs);
+		},
+		dispose() {
+			session.dispose();
+		},
+	};
+}

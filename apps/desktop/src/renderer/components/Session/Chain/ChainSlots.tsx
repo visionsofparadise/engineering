@@ -1,18 +1,17 @@
 import type { ChainDefinition } from "@engineering/acm";
 import { useCallback, useRef, useState } from "react";
-import type { Snapshot } from "valtio/vanilla";
-import type { AppState } from "../../../models/State/App";
+import type { AppContext } from "../../../models/Context";
 import { ChainSlot } from "./ChainSlot";
 import { ModuleMenu, type ModuleSelection } from "./ModuleMenu";
 
 interface ChainSlotsProps {
-	readonly app: Snapshot<AppState>;
+	readonly context: AppContext;
 	readonly chain: ChainDefinition;
 	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
 	readonly disabled?: boolean;
 }
 
-export const ChainSlots: React.FC<ChainSlotsProps> = ({ app, chain, setChain, disabled }) => {
+export const ChainSlots: React.FC<ChainSlotsProps> = ({ context, chain, setChain, disabled }) => {
 	const transforms = chain.transforms;
 	const [dragIndex, setDragIndex] = useState<number | undefined>(undefined);
 	const dragOverIndex = useRef<number | undefined>(undefined);
@@ -68,7 +67,7 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ app, chain, setChain, di
 						packageName={transform.package}
 						module={transform.module}
 						index={index}
-						app={app}
+						context={context}
 						disabled={disabled}
 						onRemove={() => handleRemove(index)}
 						chain={chain}
@@ -76,7 +75,7 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ app, chain, setChain, di
 					/>
 				</div>
 			))}
-			{!disabled && <ModuleMenu app={app} onSelect={handleAdd} />}
+			{!disabled && <ModuleMenu app={context.app} onSelect={handleAdd} />}
 		</div>
 	);
 };

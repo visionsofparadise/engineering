@@ -4,7 +4,7 @@ import type { AudioChunk, StreamMeta } from "../module";
 import { SourceModule, type SourceModuleProperties } from "../source";
 
 export const schema = z.object({
-	path: z.string().default(""),
+	path: z.string().default("").meta({ input: "file", mode: "open", accept: ".wav" }),
 });
 
 export interface ReadProperties extends z.infer<typeof schema>, SourceModuleProperties {

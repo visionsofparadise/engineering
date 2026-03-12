@@ -1,5 +1,7 @@
+import type { AppContext } from "../../../../models/Context";
 import { BooleanParameter } from "./BooleanParameter";
 import { EnumParameter } from "./EnumParameter";
+import { FileParameter } from "./FileParameter";
 import { NumberParameter } from "./NumberParameter";
 import { StringParameter } from "./StringParameter";
 import type { JsonSchemaProperty } from "./utils/schema";
@@ -10,10 +12,24 @@ interface ParameterSwitchProps {
 	readonly label: string;
 	readonly initialValue: unknown;
 	readonly onCommit: (value: unknown) => void;
+	readonly context: AppContext;
 	readonly disabled?: boolean;
 }
 
-export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, property, label, initialValue, onCommit, disabled }) => {
+export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, property, label, initialValue, onCommit, context, disabled }) => {
+	if (property.input === "file" || property.input === "folder") {
+		return (
+			<FileParameter
+				key={fieldKey}
+				label={label}
+				initialValue={typeof initialValue === "string" ? initialValue : ""}
+				property={property}
+				onCommit={onCommit}
+				context={context}
+				disabled={disabled}
+			/>
+		);
+	}
 	if (property.type === "number") {
 		return (
 			<NumberParameter
