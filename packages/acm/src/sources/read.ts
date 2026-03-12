@@ -1,6 +1,6 @@
 import { open, stat, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
-import type { AudioChunk, StreamContext } from "../module";
+import type { AudioChunk, StreamMeta } from "../module";
 import { SourceModule, type SourceModuleProperties } from "../source";
 
 export const schema = z.object({
@@ -37,7 +37,7 @@ export class ReadModule extends SourceModule<ReadProperties> {
 	private outputChannels = 0;
 	private bytesRead = 0;
 
-	async _init(): Promise<StreamContext> {
+	async _init(): Promise<StreamMeta> {
 		const fileInfo = await stat(this.properties.path);
 		this.fileHandle = await open(this.properties.path, "r");
 

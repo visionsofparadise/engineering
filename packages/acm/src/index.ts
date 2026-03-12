@@ -1,6 +1,6 @@
 /* eslint-disable barrel-files/avoid-barrel-files */
 // Types
-export type { AudioChunk, ModuleEventMap, ModuleSchema, RenderOptions, StreamContext } from "./module";
+export type { AudioChunk, ExecutionProvider, ModuleEventMap, ModuleSchema, RenderOptions, StreamContext, StreamMeta } from "./module";
 
 // Base classes
 export { ChunkBuffer, type BufferStorage } from "./chunk-buffer";

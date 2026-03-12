@@ -1,4 +1,4 @@
-import { AudioChainModule, type AudioChainModuleProperties, type AudioChunk, type RenderOptions, type StreamContext } from "./module";
+import { AudioChainModule, type AudioChainModuleProperties, type AudioChunk, type ExecutionProvider, type RenderOptions, type StreamContext, type StreamMeta } from "./module";
 import type { TargetModule } from "./target";
 import type { TransformModule, TransformTiming } from "./transform";
 
@@ -21,21 +21,30 @@ export abstract class SourceModule<P extends SourceModuleProperties = SourceModu
 
 	abstract _read(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void>;
 	abstract _flush(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void>;
-	abstract _init(): Promise<StreamContext>;
+	abstract _init(): Promise<StreamMeta>;
 
 	get renderTiming(): RenderTiming | undefined {
 		return this.renderTimingData;
 	}
 
 	async render(options?: RenderOptions): Promise<void> {
+		const defaultProviders: ReadonlyArray<ExecutionProvider> = ["gpu", "cpu-native", "cpu"];
 		const meta = await this._init();
+		const context: StreamContext = { ...meta, executionProviders: options?.executionProviders ?? defaultProviders };
 
-		await this.setup(meta);
+		await this.setup(context);
+
+		const stages = Math.max(1, this.collectPipeline(this).length);
+		const chunkSize = options?.chunkSize ?? 128 * 1024;
+		const bytesPerChunk = context.channels * chunkSize * 4;
+		const memoryLimit = options?.memoryLimit ?? 256 * 1024 * 1024;
+		const computedHighWaterMark = Math.max(1, Math.floor(memoryLimit / (stages * bytesPerChunk)));
+		const highWaterMark = options?.highWaterMark ?? computedHighWaterMark;
 
 		const start = performance.now();
 
 		try {
-			this.readable = this.createReadable(options);
+			this.readable = this.createReadable({ ...options, highWaterMark });
 			this.emit("started");
 
 			const pipeline = this.buildPipeline(this, options);
