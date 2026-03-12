@@ -1,6 +1,13 @@
 import { z } from "zod";
 import type { OptionalProperties } from "./utils/RequiredProperties";
 
+export interface FileInputMeta {
+	readonly input: "file" | "folder";
+	readonly mode?: "open" | "save";
+	readonly accept?: string;
+	readonly binary?: string;
+}
+
 export interface AudioChunk {
 	readonly samples: Array<Float32Array>;
 	readonly offset: number;

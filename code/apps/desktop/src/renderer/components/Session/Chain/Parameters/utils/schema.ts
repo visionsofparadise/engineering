@@ -6,6 +6,10 @@ export interface JsonSchemaProperty {
 	readonly maximum?: number;
 	readonly multipleOf?: number;
 	readonly enum?: ReadonlyArray<string>;
+	readonly input?: "file" | "folder";
+	readonly mode?: "open" | "save";
+	readonly accept?: string;
+	readonly binary?: string;
 }
 
 export interface JsonSchema {

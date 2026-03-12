@@ -19,6 +19,7 @@ import { OpenSessionRendererIpc } from "./Session/openSession/Renderer";
 import { SaveSessionRendererIpc } from "./Session/saveSession/Renderer";
 import { GetAllDisplaysRendererIpc } from "./System/getAllDisplays/Renderer";
 import { GetAppVersionRendererIpc } from "./System/getAppVersion/Renderer";
+import { GetResourcesPathRendererIpc } from "./System/getResourcesPath/Renderer";
 import { GetUserDataPathRendererIpc } from "./System/getUserDataPath/Renderer";
 import { GetWindowIdRendererIpc } from "./System/getWindowId/Renderer";
 import { SetBoundsRendererIpc } from "./System/setBounds/Renderer";
@@ -43,6 +44,7 @@ export const ASYNC_RENDERER_IPCS = [
 	ShowOpenDialogRendererIpc,
 	ShowSaveDialogRendererIpc,
 	GetAllDisplaysRendererIpc,
+	GetResourcesPathRendererIpc,
 	GetUserDataPathRendererIpc,
 	GetWindowIdRendererIpc,
 	GetAppVersionRendererIpc,

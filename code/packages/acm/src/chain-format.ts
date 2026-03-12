@@ -16,5 +16,14 @@ export type ChainModuleReference = z.infer<typeof chainModuleReferenceSchema>;
 export type ChainDefinition = z.infer<typeof chainDefinitionSchema>;
 
 export function validateChainDefinition(json: unknown): ChainDefinition {
-	return chainDefinitionSchema.parse(json);
+	const chain = chainDefinitionSchema.parse(json);
+
+	// Migrate legacy package names
+	for (const transform of chain.transforms) {
+		if (transform.package === "acm-engineering") {
+			transform.package = "acm";
+		}
+	}
+
+	return chain;
 }

@@ -62,6 +62,7 @@ export interface AppState extends State {
 	readonly theme: Theme;
 	readonly windowState?: WindowState;
 	readonly batch: BatchConfig;
+	readonly binaries: Record<string, string>;
 	readonly packageUrls: ReadonlyArray<ModulePackageConfig>;
 	readonly packages: ReadonlyArray<ModulePackageState>;
 }
@@ -109,8 +110,41 @@ async function deriveTabsFromSessions(main: MainWithEvents, userDataPath: string
 	}
 }
 
+const BUNDLED_BINARIES: Record<string, string> = {
+	ffmpeg: `ffmpeg-${process.platform}-${process.arch}${process.platform === "win32" ? ".exe" : ""}`,
+	ffprobe: `ffprobe-${process.platform}-${process.arch}${process.platform === "win32" ? ".exe" : ""}`,
+	"dtln-model_1": "dtln-model_1.onnx",
+	"dtln-model_2": "dtln-model_2.onnx",
+	Kim_Vocal_2: "Kim_Vocal_2.onnx",
+	htdemucs: "htdemucs.onnx",
+};
+
+async function resolveBundledBinaries(
+	saved: Record<string, string> | undefined,
+	resourcesPath: string,
+	main: MainWithEvents,
+): Promise<Record<string, string>> {
+	const binaries: Record<string, string> = { ...saved };
+
+	for (const [key, filename] of Object.entries(BUNDLED_BINARIES)) {
+		if (binaries[key]) continue;
+
+		const bundledPath = `${resourcesPath}/binaries/${filename}`;
+
+		try {
+			await main.stat(bundledPath);
+			binaries[key] = bundledPath;
+		} catch {
+			// bundled binary not found — leave unset
+		}
+	}
+
+	return binaries;
+}
+
 export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState, "_key"> | undefined> {
 	const userDataPath = await main.getUserDataPath();
+	const resourcesPath = await main.getResourcesPath();
 	const path = `${userDataPath}/state.json`;
 
 	let saved: Partial<AppState> = {};
@@ -126,12 +160,15 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 		? saved.activeTabId
 		: tabs[0]?.id;
 
+	const binaries = await resolveBundledBinaries(saved.binaries as Record<string, string> | undefined, resourcesPath, main);
+
 	return {
 		theme: saved.theme ?? "dark",
 		tabs,
 		activeTabId,
 		windowState: saved.windowState,
 		batch: saved.batch ?? defaultBatchConfig(),
+		binaries,
 		packageUrls: mergeWithCoreDefaults(saved.packageUrls),
 		packages: [],
 	};
@@ -139,7 +176,6 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 
 const CORE_PACKAGE_URLS: ReadonlyArray<ModulePackageConfig> = [
 	{ url: "https://github.com/engineering/acm", directory: "acm", core: true },
-	{ url: "https://github.com/engineering/acm-engineering", directory: "acm-engineering", core: true },
 ];
 
 function mergeWithCoreDefaults(saved: ReadonlyArray<ModulePackageConfig> | undefined): ReadonlyArray<ModulePackageConfig> {
@@ -173,6 +209,7 @@ export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snap
 			tabs: [],
 			activeTabId: undefined,
 			batch: defaultBatchConfig(),
+			binaries: {},
 			packageUrls: CORE_PACKAGE_URLS,
 			packages: [],
 			...initial,

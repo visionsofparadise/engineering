@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { appendFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import type { RenderOptions } from "../module";
 import type { SourceModule } from "../source";
 import { read } from "../sources/read";
 import { write } from "../targets/write";
@@ -14,7 +15,7 @@ export interface BenchmarkResult {
 	readonly realTimeMultiplier: number;
 }
 
-export async function runBenchmark(name: string, transform: TransformModule, inputPath: string): Promise<BenchmarkResult> {
+export async function runBenchmark(name: string, transform: TransformModule, inputPath: string, renderOptions?: RenderOptions): Promise<BenchmarkResult> {
 	const tempPath = resolve(tmpdir(), `acm-bench-${randomBytes(8).toString("hex")}.wav`);
 
 	try {
@@ -24,7 +25,7 @@ export async function runBenchmark(name: string, transform: TransformModule, inp
 		source.to(transform);
 		transform.to(target);
 
-		await source.render();
+		await source.render(renderOptions);
 
 		const timings = (source as SourceModule).collectTimings();
 		const transformTiming = timings[0];

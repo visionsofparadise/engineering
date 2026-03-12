@@ -5,7 +5,7 @@ import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({
-	outputPath: z.string().default("").describe("Output Path"),
+	outputPath: z.string().default("").meta({ input: "file", mode: "save" }).describe("Output Path"),
 	resolution: z.number().min(100).max(10000).multipleOf(100).default(1000).describe("Resolution"),
 });
 

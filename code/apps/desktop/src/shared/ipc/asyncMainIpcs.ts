@@ -18,6 +18,7 @@ import { OpenSessionMainIpc } from "./Session/openSession/Main";
 import { SaveSessionMainIpc } from "./Session/saveSession/Main";
 import { GetAllDisplaysMainIpc } from "./System/getAllDisplays/Main";
 import { GetAppVersionMainIpc } from "./System/getAppVersion/Main";
+import { GetResourcesPathMainIpc } from "./System/getResourcesPath/Main";
 import { GetUserDataPathMainIpc } from "./System/getUserDataPath/Main";
 import { GetWindowIdMainIpc } from "./System/getWindowId/Main";
 import { SetBoundsMainIpc } from "./System/setBounds/Main";
@@ -42,6 +43,7 @@ export const ASYNC_MAIN_IPCS = [
 	ShowOpenDialogMainIpc,
 	ShowSaveDialogMainIpc,
 	GetAllDisplaysMainIpc,
+	GetResourcesPathMainIpc,
 	GetUserDataPathMainIpc,
 	GetWindowIdMainIpc,
 	GetAppVersionMainIpc,

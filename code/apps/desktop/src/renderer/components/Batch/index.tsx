@@ -27,10 +27,8 @@ export const Batch: React.FC<BatchProps> = ({ context }) => {
 					context={context}
 				/>
 				<BatchChain
-					app={app}
-					appStore={appStore}
+					context={context}
 					disabled={running}
-					userDataPath={context.userDataPath}
 				/>
 				<BatchTarget
 					app={app}

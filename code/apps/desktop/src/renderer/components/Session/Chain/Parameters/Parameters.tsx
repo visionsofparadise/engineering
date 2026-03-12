@@ -1,8 +1,7 @@
 import type { ChainDefinition } from "@engineering/acm";
 import { Settings2 } from "lucide-react";
 import { useCallback } from "react";
-import type { Snapshot } from "valtio/vanilla";
-import type { AppState } from "../../../../models/State/App";
+import type { AppContext } from "../../../../models/Context";
 import { Button } from "../../../ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../ui/popover";
 import { ParameterSwitch } from "./ParameterSwitch";
@@ -12,13 +11,14 @@ interface ParametersProps {
 	readonly packageName: string;
 	readonly module: string;
 	readonly index: number;
-	readonly app: Snapshot<AppState>;
+	readonly context: AppContext;
 	readonly chain: ChainDefinition;
 	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
 	readonly disabled?: boolean;
 }
 
-export const Parameters: React.FC<ParametersProps> = ({ packageName, module, index, app, chain, setChain, disabled }) => {
+export const Parameters: React.FC<ParametersProps> = ({ packageName, module, index, context, chain, setChain, disabled }) => {
+	const app = context.app;
 	const packageState = app.packages.find((ps) => ps.directory === packageName);
 	const mod = packageState?.modules.find((mi) => mi.moduleName === module);
 	const properties = mod ? getProperties(mod.schema) : undefined;
@@ -67,6 +67,7 @@ export const Parameters: React.FC<ParametersProps> = ({ packageName, module, ind
 							label={label}
 							initialValue={initialValue}
 							onCommit={(next) => commitKey(key, next)}
+							context={context}
 							disabled={disabled}
 						/>
 					);

@@ -6,7 +6,7 @@ import { TargetModule, type TargetModuleProperties } from "../target";
 export type WavBitDepth = "16" | "24" | "32" | "32f";
 
 export const schema = z.object({
-	path: z.string().default(""),
+	path: z.string().default("").meta({ input: "file", mode: "save", accept: ".wav" }),
 	bitDepth: z.enum(["16", "24", "32", "32f"]).default("16"),
 });
 
