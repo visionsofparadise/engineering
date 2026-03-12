@@ -7,16 +7,24 @@ export interface AudioChunk {
 	readonly duration: number;
 }
 
-export interface StreamContext {
+export type ExecutionProvider = "gpu" | "cpu-native" | "cpu";
+
+export interface StreamMeta {
 	readonly sampleRate: number;
 	readonly channels: number;
 	readonly duration?: number;
 }
 
+export interface StreamContext extends StreamMeta {
+	readonly executionProviders: ReadonlyArray<ExecutionProvider>;
+}
+
 export interface RenderOptions {
 	readonly chunkSize?: number;
 	readonly highWaterMark?: number;
+	readonly memoryLimit?: number;
 	readonly signal?: AbortSignal;
+	readonly executionProviders?: ReadonlyArray<ExecutionProvider>;
 }
 
 export interface AudioChainModuleProperties {

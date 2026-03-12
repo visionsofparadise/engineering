@@ -4,15 +4,15 @@ import type { ChunkBuffer } from "./chunk-buffer";
 import { SourceModule, type SourceModuleProperties } from "./source";
 import { TransformModule } from "./transform";
 import { TargetModule } from "./target";
-import type { AudioChunk, StreamContext } from "./module";
+import type { AudioChunk, StreamContext, StreamMeta } from "./module";
 
 class MockSource extends SourceModule {
 	readonly type = ["async-module", "source", "mock"] as const;
 readonly chunks: Array<AudioChunk>;
 	private chunkIndex = 0;
-	private readonly streamContext: StreamContext;
+	private readonly streamContext: StreamMeta;
 
-	constructor(chunks: Array<AudioChunk>, meta: StreamContext) {
+	constructor(chunks: Array<AudioChunk>, meta: StreamMeta) {
 		super();
 		this.chunks = chunks;
 		this.streamContext = meta;
@@ -26,7 +26,7 @@ readonly chunks: Array<AudioChunk>;
 		return 0;
 	}
 
-	async _init(): Promise<StreamContext> {
+	async _init(): Promise<StreamMeta> {
 		return this.streamContext;
 	}
 
@@ -98,7 +98,8 @@ function createChunk(value: number, offset: number, duration: number): AudioChun
 	return { samples: [samples], offset, duration };
 }
 
-const testMeta: StreamContext = { sampleRate: 44100, channels: 1 };
+const testMeta: StreamMeta = { sampleRate: 44100, channels: 1 };
+const testContext: StreamContext = { ...testMeta, executionProviders: ["gpu", "cpu-native", "cpu"] };
 
 describe("AudioChainModule", () => {
 	it("type discrimination with is()", () => {
@@ -142,11 +143,11 @@ describe("AudioChainModule", () => {
 		source.to(transform);
 		transform.to(target);
 
-		await source.setup(testMeta);
+		await source.setup(testContext);
 
-		expect(sourceSetup).toHaveBeenCalledWith(testMeta);
-		expect(transformSetup).toHaveBeenCalledWith(testMeta);
-		expect(targetSetup).toHaveBeenCalledWith(testMeta);
+		expect(sourceSetup).toHaveBeenCalledWith(testContext);
+		expect(transformSetup).toHaveBeenCalledWith(testContext);
+		expect(targetSetup).toHaveBeenCalledWith(testContext);
 	});
 
 	it("teardown() recurses to targets", async () => {

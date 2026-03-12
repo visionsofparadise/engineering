@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WaveFile } from "wavefile";
 import { ChunkBuffer } from "../chunk-buffer";
-import type { StreamContext } from "../module";
+import type { StreamMeta } from "../module";
 import { read } from "../sources/read";
 import type { WavBitDepth } from "../targets/write";
 import { write } from "../targets/write";
@@ -13,10 +13,10 @@ import type { TransformModule } from "../transform";
 export interface TransformTestResult {
 	readonly input: Array<Float32Array>;
 	readonly output: Array<Float32Array>;
-	readonly context: StreamContext;
+	readonly context: StreamMeta;
 }
 
-async function readToBuffer(path: string): Promise<{ buffer: ChunkBuffer; context: StreamContext }> {
+async function readToBuffer(path: string): Promise<{ buffer: ChunkBuffer; context: StreamMeta }> {
 	const data = await readFile(path);
 	const wav = new WaveFile(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
 	wav.toBitDepth("32f");
