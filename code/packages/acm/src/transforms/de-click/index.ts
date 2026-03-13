@@ -230,7 +230,7 @@ function approximateMedian(values: Float32Array): number {
 
 	for (let i = 0; i < len; i++) {
 		const bin = Math.floor(((values[i] ?? 0) - min) * scale);
-		bins[bin]++;
+		bins[bin] = (bins[bin] ?? 0) + 1;
 	}
 
 	const target = len >>> 1;

@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "@engineering/acm";
+import type { ChainDefinition } from "audio-chain-module";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Snapshot } from "valtio/vanilla";
 import type { Logger } from "../../shared/models/Logger/Logger";

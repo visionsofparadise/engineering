@@ -1,4 +1,4 @@
-import type { ChainDefinition, ChainModuleReference } from "@engineering/acm";
+import type { ChainDefinition, ChainModuleReference } from "audio-chain-module";
 import { useCallback } from "react";
 import type { AppContext } from "../../models/Context";
 import { ChainManagerMenu } from "../Session/Chain/ChainManager/ChainManagerMenu";

@@ -1,4 +1,4 @@
-import type { ChainModuleReference } from "@engineering/acm";
+import type { ChainModuleReference } from "audio-chain-module";
 import type { Snapshot } from "valtio/vanilla";
 import type { State } from ".";
 import type { WindowState } from "../../../shared/utilities/emitToRenderer";

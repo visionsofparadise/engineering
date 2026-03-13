@@ -1,4 +1,4 @@
-import { type ChainDefinition, validateChainDefinition } from "@engineering/acm";
+import { type ChainDefinition, validateChainDefinition } from "audio-chain-module";
 
 function getChainsDirectory(userDataPath: string): string {
 	return `${userDataPath}/chains`;

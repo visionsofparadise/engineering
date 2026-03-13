@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "@engineering/acm";
+import type { ChainDefinition } from "audio-chain-module";
 import { useCallback, useRef, useState } from "react";
 import type { AppContext } from "../../../models/Context";
 import { ChainSlot } from "./ChainSlot";

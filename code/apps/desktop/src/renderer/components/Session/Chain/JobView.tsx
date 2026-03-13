@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "@engineering/acm";
+import type { ChainDefinition } from "audio-chain-module";
 import type { AppContext } from "../../../models/Context";
 import type { JobState } from "../../../models/State/Jobs";
 import { Button } from "../../ui/button";

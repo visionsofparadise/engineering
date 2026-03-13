@@ -1,4 +1,4 @@
-import { AudioChainModule } from "@engineering/acm";
+import { AudioChainModule } from "audio-chain-module";
 import { pathToFileURL } from "node:url";
 import { toJSONSchema } from "zod";
 import { registerPackage, type ModuleClass } from "../../../models/ModuleRegistry";

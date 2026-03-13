@@ -34,29 +34,29 @@ export { trim, TrimModule, type TrimProperties } from "./transforms/trim";
 export { waveform, WaveformModule as WaveformTransformModule, type WaveformProperties } from "./transforms/waveform";
 
 // Transforms - ffmpeg-based
-export { FfmpegModule, type FfmpegProperties } from "./transforms/ffmpeg";
-export { ResampleModule, type ResampleProperties } from "./transforms/resample";
-export { LoudnessModule, type LoudnessProperties } from "./transforms/loudness";
-export { LoudnessStatsModule, type LoudnessStats } from "./transforms/loudness-stats";
-export { SpectrogramModule, type SpectrogramProperties, type FrequencyScale } from "./transforms/spectrogram";
+export { ffmpeg, FfmpegModule, type FfmpegProperties } from "./transforms/ffmpeg";
+export { resample, ResampleModule, type ResampleProperties } from "./transforms/resample";
+export { loudness, LoudnessModule, type LoudnessProperties } from "./transforms/loudness";
+export { loudnessStats, LoudnessStatsModule, type LoudnessStats } from "./transforms/loudness-stats";
+export { spectrogram, SpectrogramModule, type SpectrogramProperties, type FrequencyScale } from "./transforms/spectrogram";
 
 // Transforms - engineering
-export { BreathControlModule, type BreathControlProperties } from "./transforms/breath-control";
-export { DeBleedModule, type DeBleedProperties } from "./transforms/de-bleed";
-export { DeClickModule, type DeClickProperties } from "./transforms/de-click";
-export { DeCrackleModule, type DeCrackleProperties } from "./transforms/de-click/de-crackle";
-export { MouthDeClickModule, type MouthDeClickProperties } from "./transforms/de-click/mouth-de-click";
-export { DeClipModule, type DeClipProperties } from "./transforms/de-clip";
-export { DePlosiveModule, type DePlosiveProperties } from "./transforms/de-plosive";
-export { DeReverbModule, type DeReverbProperties } from "./transforms/de-reverb";
-export { DialogueIsolateModule, type DialogueIsolateProperties } from "./transforms/dialogue-isolate";
-export { EqMatchModule, type EqMatchProperties } from "./transforms/eq-match";
-export { LevelerModule, type LevelerProperties } from "./transforms/leveler";
-export { MusicRebalanceModule, type MusicRebalanceProperties, type StemGains } from "./transforms/music-rebalance";
-export { PitchShiftModule, type PitchShiftProperties } from "./transforms/pitch-shift";
-export { SpectralRepairModule, type SpectralRegion, type SpectralRepairProperties } from "./transforms/spectral-repair";
-export { TimeStretchModule, type TimeStretchProperties } from "./transforms/time-stretch";
-export { VoiceDenoiseModule, type VoiceDenoiseProperties } from "./transforms/voice-denoise";
+export { breathControl, BreathControlModule, type BreathControlProperties } from "./transforms/breath-control";
+export { deBleed, DeBleedModule, type DeBleedProperties } from "./transforms/de-bleed";
+export { deClick, DeClickModule, type DeClickProperties } from "./transforms/de-click";
+export { deCrackle, DeCrackleModule, type DeCrackleProperties } from "./transforms/de-click/de-crackle";
+export { mouthDeClick, MouthDeClickModule, type MouthDeClickProperties } from "./transforms/de-click/mouth-de-click";
+export { deClip, DeClipModule, type DeClipProperties } from "./transforms/de-clip";
+export { dePlosive, DePlosiveModule, type DePlosiveProperties } from "./transforms/de-plosive";
+export { deReverb, DeReverbModule, type DeReverbProperties } from "./transforms/de-reverb";
+export { dialogueIsolate, DialogueIsolateModule, type DialogueIsolateProperties } from "./transforms/dialogue-isolate";
+export { eqMatch, EqMatchModule, type EqMatchProperties } from "./transforms/eq-match";
+export { leveler, LevelerModule, type LevelerProperties } from "./transforms/leveler";
+export { musicRebalance, MusicRebalanceModule, type MusicRebalanceProperties, type StemGains } from "./transforms/music-rebalance";
+export { pitchShift, PitchShiftModule, type PitchShiftProperties } from "./transforms/pitch-shift";
+export { spectralRepair, SpectralRepairModule, type SpectralRegion, type SpectralRepairProperties } from "./transforms/spectral-repair";
+export { timeStretch, TimeStretchModule, type TimeStretchProperties } from "./transforms/time-stretch";
+export { voiceDenoise, VoiceDenoiseModule, type VoiceDenoiseProperties } from "./transforms/voice-denoise";
 
 // Utilities
 export { dbToLinear, linearToDb } from "./utils/db";

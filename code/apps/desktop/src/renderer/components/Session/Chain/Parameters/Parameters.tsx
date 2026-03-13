@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "@engineering/acm";
+import type { ChainDefinition } from "audio-chain-module";
 import { Settings2 } from "lucide-react";
 import { useCallback } from "react";
 import type { AppContext } from "../../../../models/Context";

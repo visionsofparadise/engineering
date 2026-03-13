@@ -1,5 +1,5 @@
-import type { ChainDefinition } from "@engineering/acm";
-import { validateChainDefinition } from "@engineering/acm";
+import type { ChainDefinition } from "audio-chain-module";
+import { validateChainDefinition } from "audio-chain-module";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";

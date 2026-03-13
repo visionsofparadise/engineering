@@ -1,4 +1,4 @@
-import type { AudioChainModule } from "@engineering/acm";
+import type { AudioChainModule } from "audio-chain-module";
 import type { z } from "zod";
 
 export interface ModuleClass {

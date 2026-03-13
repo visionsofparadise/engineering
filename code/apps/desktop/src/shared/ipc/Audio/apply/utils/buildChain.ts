@@ -1,4 +1,4 @@
-import { chain, ReadModule, WriteModule, WaveformTransformModule, SpectrogramModule, type AudioChainModule, type ChainModuleReference, type EncodingOptions, type FrequencyScale } from "@engineering/acm";
+import { chain, ReadModule, WriteModule, WaveformTransformModule, SpectrogramModule, type AudioChainModule, type ChainModuleReference, type EncodingOptions, type FrequencyScale } from "audio-chain-module";
 import type { ModuleRegistry } from "../../../../models/ModuleRegistry";
 import type { ApplyInput } from "../Renderer";
 

@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "@engineering/acm";
+import type { ChainDefinition } from "audio-chain-module";
 import { Check, Loader2 } from "lucide-react";
 import type { AppContext } from "../../../models/Context";
 import type { ModuleJobState } from "../../../models/State/Jobs";

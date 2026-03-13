@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "@engineering/acm";
+import type { ChainDefinition } from "audio-chain-module";
 import { useCallback, useEffect, useRef } from "react";
 import { useSaveChain } from "../../../hooks/useChain";
 import type { SessionContext } from "../../../models/Context";
