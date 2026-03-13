@@ -5,21 +5,23 @@ import { TransformModule, type TransformModuleProperties } from "../../transform
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { detectFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { istft, stft } from "../../utils/stft";
-import { applyTransform } from "../../utils/apply-transform";
-import { resample } from "../resample";
+import { resampleDirect } from "../../utils/resample-direct";
 
 export const schema = z.object({
 	modelPath1: z
 		.string()
 		.default("")
-		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "dtln-model_1" })
-		.describe("Model Path 1"),
+		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "dtln-model_1", download: "https://github.com/breizhn/DTLN" })
+		.describe("DTLN magnitude mask model (.onnx)"),
 	modelPath2: z
 		.string()
 		.default("")
-		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "dtln-model_2" })
-		.describe("Model Path 2"),
-	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg" }).describe("FFmpeg Path"),
+		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "dtln-model_2", download: "https://github.com/breizhn/DTLN" })
+		.describe("DTLN time-domain model (.onnx)"),
+	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
+	onnxAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" }).describe("ONNX Runtime native addon"),
+	vkfftAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "vkfft-addon", download: "https://github.com/visionsofparadise/vkfft-addon" }).describe("VkFFT native addon — GPU FFT acceleration"),
+	fftwAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" }).describe("FFTW native addon — CPU FFT acceleration"),
 });
 
 export interface VoiceDenoiseProperties extends z.infer<typeof schema>, TransformModuleProperties {}
@@ -47,14 +49,19 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 	private session2?: OnnxSession;
 	private sourceSampleRate = DTLN_SAMPLE_RATE;
 	private fftBackend: FftBackend = "js";
+	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);
 
 		this.sourceSampleRate = context.sampleRate;
-		this.fftBackend = detectFftBackend(context.executionProviders);
-		this.session1 = await createOnnxSession(this.properties.modelPath1);
-		this.session2 = await createOnnxSession(this.properties.modelPath2);
+		this.fftAddonOptions = { vkfftPath: this.properties.vkfftAddonPath || undefined, fftwPath: this.properties.fftwAddonPath || undefined };
+		// Use CPU FFT only — vkfft GPU overhead is counterproductive for small 512-point FFTs
+		const cpuProviders = context.executionProviders.filter((p) => p !== "gpu");
+		this.fftBackend = detectFftBackend(cpuProviders.length > 0 ? cpuProviders : ["cpu"], this.fftAddonOptions);
+		const onnxProviders = context.executionProviders.filter((p) => p !== "gpu" && p !== "cpu-native");
+		this.session1 = await createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath1, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
+		this.session2 = await createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath2, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -75,11 +82,7 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 			let input16k: Float32Array = channel;
 
 			if (this.sourceSampleRate !== DTLN_SAMPLE_RATE) {
-				const resampled = await applyTransform(
-					[channel],
-					{ sampleRate: this.sourceSampleRate, channels: 1 },
-					resample(this.properties.ffmpegPath, DTLN_SAMPLE_RATE),
-				);
+				const resampled = await resampleDirect(this.properties.ffmpegPath, [channel], this.sourceSampleRate, DTLN_SAMPLE_RATE);
 				input16k = resampled[0] ?? channel;
 			}
 
@@ -89,11 +92,7 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 			let output: Float32Array = denoised16k;
 
 			if (this.sourceSampleRate !== DTLN_SAMPLE_RATE) {
-				const resampled = await applyTransform(
-					[denoised16k],
-					{ sampleRate: DTLN_SAMPLE_RATE, channels: 1 },
-					resample(this.properties.ffmpegPath, this.sourceSampleRate),
-				);
+				const resampled = await resampleDirect(this.properties.ffmpegPath, [denoised16k], DTLN_SAMPLE_RATE, this.sourceSampleRate);
 				output = resampled[0] ?? denoised16k;
 			}
 
@@ -146,7 +145,7 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 			inputBuffer.set(signal.subarray(offset, offset + BLOCK_LEN));
 
 			// Step 1: Compute RFFT of the block
-			const stftResult = stft(inputBuffer, BLOCK_LEN, BLOCK_LEN, stftOutput, this.fftBackend);
+			const stftResult = stft(inputBuffer, BLOCK_LEN, BLOCK_LEN, stftOutput, this.fftBackend, this.fftAddonOptions);
 			const realFrame = stftResult.real[0];
 			const imagFrame = stftResult.imag[0];
 
@@ -161,7 +160,7 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 			}
 
 			// Step 2: Run model 1 — magnitude mask estimation
-			const result1 = await session1.run({
+			const result1 = session1.run({
 				input_2: { data: magnitude, dims: [1, 1, FFT_BINS] },
 				input_3: { data: states1, dims: [1, 2, LSTM_UNITS, 2] },
 			});
@@ -178,10 +177,10 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 				maskedImag[bin] = (imagFrame[bin] ?? 0) * maskVal;
 			}
 
-			const maskedTimeDomain = istft(maskedStft, BLOCK_LEN, BLOCK_LEN, this.fftBackend);
+			const maskedTimeDomain = istft(maskedStft, BLOCK_LEN, BLOCK_LEN, this.fftBackend, this.fftAddonOptions);
 
 			// Step 4: Run model 2 — time-domain processing
-			const result2 = await session2.run({
+			const result2 = session2.run({
 				input_4: { data: maskedTimeDomain, dims: [1, 1, BLOCK_LEN] },
 				input_5: { data: states2, dims: [1, 2, LSTM_UNITS, 2] },
 			});
@@ -233,7 +232,18 @@ export function voiceDenoise(options: {
 	modelPath1: string;
 	modelPath2: string;
 	ffmpegPath: string;
+	onnxAddonPath?: string;
+	vkfftAddonPath?: string;
+	fftwAddonPath?: string;
 	id?: string;
 }): VoiceDenoiseModule {
-	return new VoiceDenoiseModule(options);
+	return new VoiceDenoiseModule({
+		modelPath1: options.modelPath1,
+		modelPath2: options.modelPath2,
+		ffmpegPath: options.ffmpegPath,
+		onnxAddonPath: options.onnxAddonPath ?? "",
+		vkfftAddonPath: options.vkfftAddonPath ?? "",
+		fftwAddonPath: options.fftwAddonPath ?? "",
+		id: options.id,
+	});
 }

@@ -3,7 +3,7 @@ import { StreamContext } from "../../module";
 import { FfmpegModule, type FfmpegProperties } from "../ffmpeg";
 
 export const schema = z.object({
-	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg" }).describe("FFmpeg Path"),
+	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
 	semitones: z.number().min(-24).max(24).multipleOf(1).default(0).describe("Semitones"),
 	cents: z.number().min(-100).max(100).multipleOf(1).default(0).describe("Cents"),
 });

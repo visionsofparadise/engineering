@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { stft, istft } from "./stft";
 import type { FftBackend } from "./fft-backend";
+import { binaries } from "./test-binaries";
 
 function maxError(a: Float32Array, b: Float32Array): number {
 	let max = 0;
@@ -22,6 +23,7 @@ const backends: FftBackend[] = ["js", "fftw", "vkfft"];
 const fftSize = 2048;
 const hopSize = 512;
 const signalLength = 48000; // 1 second at 48kHz
+const fftAddonOptions = { vkfftPath: binaries.vkfftAddon, fftwPath: binaries.fftwAddon };
 
 describe("FFT backend integration", () => {
 	const signal = generateSignal(signalLength);
@@ -31,7 +33,7 @@ describe("FFT backend integration", () => {
 			it("stft -> istft round-trip", () => {
 				let result;
 				try {
-					result = stft(signal, fftSize, hopSize, undefined, backend);
+					result = stft(signal, fftSize, hopSize, undefined, backend, fftAddonOptions);
 				} catch {
 					// addon not available — skip
 					console.log(`  [skip] ${backend} addon not loadable`);
@@ -42,7 +44,7 @@ describe("FFT backend integration", () => {
 				expect(result.fftSize).toBe(fftSize);
 				expect(result.real.length).toBe(result.frames);
 
-				const reconstructed = istft(result, hopSize, signal.length, backend);
+				const reconstructed = istft(result, hopSize, signal.length, backend, fftAddonOptions);
 				// trim edges where windowing causes artifacts
 				const trim = fftSize;
 				const sigTrimmed = signal.subarray(trim, signal.length - trim);
@@ -59,7 +61,7 @@ describe("FFT backend integration", () => {
 
 		for (const backend of backends) {
 			try {
-				const result = stft(signal, fftSize, hopSize, undefined, backend);
+				const result = stft(signal, fftSize, hopSize, undefined, backend, fftAddonOptions);
 				results.push({ backend, real: result.real, imag: result.imag });
 			} catch {
 				// skip unavailable
@@ -91,7 +93,7 @@ describe("FFT backend benchmark", () => {
 		it(`benchmark: ${backend}`, () => {
 			let loaded = true;
 			try {
-				stft(new Float32Array(fftSize), fftSize, hopSize, undefined, backend);
+				stft(new Float32Array(fftSize), fftSize, hopSize, undefined, backend, fftAddonOptions);
 			} catch {
 				loaded = false;
 			}
@@ -101,17 +103,17 @@ describe("FFT backend benchmark", () => {
 			}
 
 			// warmup
-			stft(signal.subarray(0, 48000), fftSize, hopSize, undefined, backend);
+			stft(signal.subarray(0, 48000), fftSize, hopSize, undefined, backend, fftAddonOptions);
 
 			const iterations = 3;
 			const times: number[] = [];
 			for (let i = 0; i < iterations; i++) {
 				const start = performance.now();
-				const result = stft(signal, fftSize, hopSize, undefined, backend);
+				const result = stft(signal, fftSize, hopSize, undefined, backend, fftAddonOptions);
 				const stftTime = performance.now() - start;
 
 				const start2 = performance.now();
-				istft(result, hopSize, signal.length, backend);
+				istft(result, hopSize, signal.length, backend, fftAddonOptions);
 				const istftTime = performance.now() - start2;
 
 				times.push(stftTime + istftTime);

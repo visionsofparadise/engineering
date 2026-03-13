@@ -3,7 +3,7 @@ import { StreamContext } from "../../module";
 import { FfmpegModule, type FfmpegProperties } from "../ffmpeg";
 
 export const schema = z.object({
-	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg" }).describe("FFmpeg Path"),
+	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
 	sampleRate: z.number().min(8000).max(192000).multipleOf(100).default(44100).describe("Sample Rate"),
 	dither: z.enum(["triangular", "lipshitz", "none"]).default("triangular").describe("Dither"),
 });
@@ -28,6 +28,10 @@ export class ResampleModule extends FfmpegModule<ResampleProperties> {
 		const ditherMethod = dither ?? "triangular";
 
 		return ["-af", `aresample=${sampleRate}:resampler=soxr:dither_method=${ditherMethod}`];
+	}
+
+	protected override _buildOutputArgs(context: StreamContext): Array<string> {
+		return ["-f", "f32le", "-ar", String(this.properties.sampleRate), "-ac", String(context.channels), "pipe:1"];
 	}
 
 	override clone(overrides?: Partial<ResampleProperties>): ResampleModule {
