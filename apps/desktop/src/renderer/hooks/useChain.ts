@@ -1,4 +1,4 @@
-import { type ChainDefinition, validateChainDefinition } from "@engineering/acm";
+import { type ChainDefinition, validateChainDefinition } from "audio-chain-module";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export function useChain(sessionPath: string): ChainDefinition | undefined {

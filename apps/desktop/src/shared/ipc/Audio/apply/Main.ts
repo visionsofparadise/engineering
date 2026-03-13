@@ -1,4 +1,4 @@
-import type { ModuleEventMap, SourceModule } from "@engineering/acm";
+import type { ModuleEventMap, SourceModule } from "audio-chain-module";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import { APPLY_ACTION, type ApplyInput, type ApplyIpcParameters, type ApplyIpcReturn } from "./Renderer";
 import { buildChain } from "./utils/buildChain";

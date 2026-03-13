@@ -258,8 +258,8 @@ function solveWpeFilter(
 			const pR1 = realT[pastIdx1]!;
 			const pI1 = imagT[pastIdx1]!;
 
-			crossReal[tap1] += weight * (pR1 * targetR + pI1 * targetI);
-			crossImag[tap1] += weight * (pR1 * targetI - pI1 * targetR);
+			crossReal[tap1] = (crossReal[tap1] ?? 0) + weight * (pR1 * targetR + pI1 * targetI);
+			crossImag[tap1] = (crossImag[tap1] ?? 0) + weight * (pR1 * targetI - pI1 * targetR);
 
 			// Upper triangle only (Hermitian: corr[i][j] = conj(corr[j][i]))
 			for (let tap2 = tap1; tap2 < L; tap2++) {
@@ -267,8 +267,8 @@ function solveWpeFilter(
 				const pR2 = realT[pastIdx2]!;
 				const pI2 = imagT[pastIdx2]!;
 
-				corrReal[tap1 * L + tap2] += weight * (pR1 * pR2 + pI1 * pI2);
-				corrImag[tap1 * L + tap2] += weight * (pR1 * pI2 - pI1 * pR2);
+				corrReal[tap1 * L + tap2] = (corrReal[tap1 * L + tap2] ?? 0) + weight * (pR1 * pR2 + pI1 * pI2);
+				corrImag[tap1 * L + tap2] = (corrImag[tap1 * L + tap2] ?? 0) + weight * (pR1 * pI2 - pI1 * pR2);
 			}
 		}
 	}
@@ -283,7 +283,7 @@ function solveWpeFilter(
 
 	// Regularize diagonal
 	for (let tap = 0; tap < L; tap++) {
-		corrReal[tap * L + tap] += 1e-6;
+		corrReal[tap * L + tap] = (corrReal[tap * L + tap] ?? 0) + 1e-6;
 	}
 
 	solveLinearSystem(corrReal, corrImag, crossReal, crossImag, L, outReal, outImag, arWork, aiWork, brWork, biWork);
