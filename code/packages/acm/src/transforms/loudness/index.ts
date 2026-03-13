@@ -5,7 +5,7 @@ import { StreamContext } from "../../module";
 import { FfmpegModule, type FfmpegProperties } from "../ffmpeg";
 
 export const schema = z.object({
-	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg" }).describe("FFmpeg Path"),
+	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
 	target: z.number().min(-50).max(0).multipleOf(0.1).default(-14).describe("Target"),
 	truePeak: z.number().min(-10).max(0).multipleOf(0.1).default(-1).describe("True Peak"),
 	lra: z.number().min(0).max(20).multipleOf(0.1).default(0).describe("LRA"),

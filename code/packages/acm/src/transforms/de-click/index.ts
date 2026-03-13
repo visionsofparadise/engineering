@@ -135,9 +135,7 @@ function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: 
 		envelope[index] = Math.sqrt(envelope[index] ?? 0);
 	}
 
-	const sorted = Float32Array.from(envelope);
-	sorted.sort();
-	const median = sorted[Math.floor(sorted.length * 0.5)] ?? 0;
+	const median = approximateMedian(envelope);
 	const threshold = median * (5 + 20 * (1 - sensitivity));
 
 	for (let index = 0; index < signal.length; index++) {
@@ -208,6 +206,45 @@ function buildBlendEnvelope(mask: Uint8Array, length: number, fadeSamples: numbe
 	}
 
 	return envelope;
+}
+
+function approximateMedian(values: Float32Array): number {
+	const len = values.length;
+
+	if (len === 0) return 0;
+
+	let min = values[0] ?? 0;
+	let max = values[0] ?? 0;
+
+	for (let i = 1; i < len; i++) {
+		const v = values[i] ?? 0;
+		if (v < min) min = v;
+		if (v > max) max = v;
+	}
+
+	if (min === max) return min;
+
+	const numBins = 1024;
+	const bins = new Uint32Array(numBins);
+	const scale = (numBins - 1) / (max - min);
+
+	for (let i = 0; i < len; i++) {
+		const bin = Math.floor(((values[i] ?? 0) - min) * scale);
+		bins[bin]++;
+	}
+
+	const target = len >>> 1;
+	let count = 0;
+
+	for (let i = 0; i < numBins; i++) {
+		count += bins[i] ?? 0;
+
+		if (count > target) {
+			return min + (i + 0.5) / scale;
+		}
+	}
+
+	return max;
 }
 
 function smoothEnvelopeInPlace(envelope: Float32Array, windowSize: number): void {

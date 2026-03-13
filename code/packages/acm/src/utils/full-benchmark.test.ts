@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBenchmark, type BenchmarkResult } from "./test-benchmark";
+import { binaries } from "./test-binaries";
 import { spectralRepair } from "../transforms/spectral-repair";
 import { deReverb } from "../transforms/de-reverb";
 import { voiceDenoise } from "../transforms/voice-denoise";
@@ -71,7 +72,7 @@ describe("FFT backends", () => {
 	// voice-denoise (also ONNX — tests FFT portion)
 	for (const { label, providers } of fftConfigs) {
 		it(`voice-denoise [${label}]`, async () => {
-			const t = voiceDenoise();
+			const t = voiceDenoise({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
 			const r = await runBenchmark(`voice-denoise`, t, testVoice, { executionProviders: providers });
 			record("fft", "voice-denoise", label, r);
 		}, 240_000);
@@ -84,7 +85,7 @@ describe("FFT backends", () => {
 describe("ONNX models", () => {
 	for (const { label, providers } of onnxConfigs) {
 		it(`voice-denoise [${label}]`, async () => {
-			const t = voiceDenoise();
+			const t = voiceDenoise({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
 			const r = await runBenchmark(`voice-denoise`, t, testVoice, { executionProviders: providers });
 			record("onnx", "voice-denoise", label, r);
 		}, 240_000);
@@ -92,7 +93,7 @@ describe("ONNX models", () => {
 
 	for (const { label, providers } of onnxConfigs) {
 		it(`dialogue-isolate [${label}]`, async () => {
-			const t = dialogueIsolate();
+			const t = dialogueIsolate({ modelPath: binaries.kimVocal2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon });
 			const r = await runBenchmark(`dialogue-isolate`, t, testVoice, { executionProviders: providers });
 			record("onnx", "dialogue-isolate", label, r);
 		}, 240_000);
@@ -100,7 +101,7 @@ describe("ONNX models", () => {
 
 	for (const { label, providers } of onnxConfigs) {
 		it(`music-rebalance [${label}]`, async () => {
-			const t = musicRebalance({ vocals: 1, drums: 0, bass: 0, other: 0 });
+			const t = musicRebalance(binaries.htdemucs, { vocals: 1, drums: 0, bass: 0, other: 0 }, { onnxAddonPath: binaries.onnxAddon });
 			const r = await runBenchmark(`music-rebalance`, t, testVoice, { executionProviders: providers });
 			record("onnx", "music-rebalance", label, r);
 		}, 240_000);

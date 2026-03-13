@@ -77,11 +77,9 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 				const jobId = await window.main.audioApply({
 					sourcePath: currentSource,
 					targetPath: `${snapshotDir}/audio.wav`,
-					transforms: [
-						transform,
-						{ package: "acm", module: "Waveform", options: { path: `${snapshotDir}/waveform.bin` } },
-						{ package: "acm", module: "Spectrogram", options: { path: `${snapshotDir}/spectrogram.bin`, frequencyScale: "log" } },
-					],
+					transforms: [transform],
+					waveform: { path: `${snapshotDir}/waveform.bin` },
+					spectrogram: { path: `${snapshotDir}/spectrogram.bin`, frequencyScale: "log" },
 				});
 
 				activeJobIdRef.current = jobId;

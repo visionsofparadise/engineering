@@ -43,14 +43,14 @@ async function readToBuffer(path: string): Promise<{ buffer: ChunkBuffer; contex
 }
 
 export async function runTransform(inputPath: string, transform: TransformModule, options?: { outputBitDepth?: WavBitDepth }): Promise<TransformTestResult> {
+	const inputResult = await readToBuffer(inputPath);
+	const inputChunk = await inputResult.buffer.read(0, inputResult.buffer.frames);
+	const inputSamples = inputChunk.samples;
+	await inputResult.buffer.close();
+
 	const tempPath = join(tmpdir(), `acm-test-${randomBytes(8).toString("hex")}.wav`);
 
 	try {
-		const inputResult = await readToBuffer(inputPath);
-		const inputChunk = await inputResult.buffer.read(0, inputResult.buffer.frames);
-		const inputSamples = inputChunk.samples;
-		await inputResult.buffer.close();
-
 		const source = read(inputPath);
 		const target = write(tempPath, { bitDepth: options?.outputBitDepth ?? "32f" });
 

@@ -3,17 +3,17 @@ import { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { z } from "zod";
 import { highPassCoefficients, lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
-import { applyTransform } from "../../utils/apply-transform";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
-import { resample } from "../resample";
+import { resampleDirect } from "../../utils/resample-direct";
 
 export const schema = z.object({
 	modelPath: z
 		.string()
 		.default("")
-		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "Kim_Vocal_2" })
-		.describe("Model Path"),
-	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg" }).describe("FFmpeg Path"),
+		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "Kim_Vocal_2", download: "https://huggingface.co/seanghay/uvr_models" })
+		.describe("MDX-Net vocal isolation model (.onnx)"),
+	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
+	onnxAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" }).describe("ONNX Runtime native addon"),
 	highPass: z.number().min(20).max(500).multipleOf(10).default(80).describe("High Pass"),
 	lowPass: z.number().min(1000).max(22050).multipleOf(100).default(20000).describe("Low Pass"),
 });
@@ -52,7 +52,8 @@ export class DialogueIsolateModule extends TransformModule<DialogueIsolateProper
 		await super.setup(context);
 
 		this.sourceSampleRate = context.sampleRate;
-		this.session = await createOnnxSession(this.properties.modelPath);
+		const onnxProviders = context.executionProviders.filter((p) => p !== "gpu" && p !== "cpu-native");
+		this.session = await createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
 
 		initMixedRadix();
 	}
@@ -75,7 +76,7 @@ export class DialogueIsolateModule extends TransformModule<DialogueIsolateProper
 		let right44k = right;
 
 		if (this.sourceSampleRate !== SAMPLE_RATE) {
-			const resampled = await applyTransform([left, right], { sampleRate: this.sourceSampleRate, channels: 2 }, resample(this.properties.ffmpegPath, SAMPLE_RATE));
+			const resampled = await resampleDirect(this.properties.ffmpegPath, [left, right], this.sourceSampleRate, SAMPLE_RATE);
 			left44k = resampled[0] ?? left;
 			right44k = resampled[1] ?? right;
 		}
@@ -137,7 +138,7 @@ export class DialogueIsolateModule extends TransformModule<DialogueIsolateProper
 			}
 
 			// Run inference
-			const result = await this.session.run({
+			const result = this.session.run({
 				input: { data: inputData, dims: [1, 4, DIM_F, DIM_T] },
 			});
 
@@ -182,7 +183,7 @@ export class DialogueIsolateModule extends TransformModule<DialogueIsolateProper
 		let finalRight: Float32Array = outputRight;
 
 		if (this.sourceSampleRate !== SAMPLE_RATE) {
-			const resampled = await applyTransform([outputLeft, outputRight], { sampleRate: SAMPLE_RATE, channels: 2 }, resample(this.properties.ffmpegPath, this.sourceSampleRate));
+			const resampled = await resampleDirect(this.properties.ffmpegPath, [outputLeft, outputRight], SAMPLE_RATE, this.sourceSampleRate);
 			finalLeft = resampled[0] ?? outputLeft;
 			finalRight = resampled[1] ?? outputRight;
 		}
@@ -229,6 +230,7 @@ export class DialogueIsolateModule extends TransformModule<DialogueIsolateProper
 export function dialogueIsolate(options: {
 	modelPath: string;
 	ffmpegPath: string;
+	onnxAddonPath?: string;
 	highPass?: number;
 	lowPass?: number;
 	id?: string;
@@ -236,6 +238,7 @@ export function dialogueIsolate(options: {
 	return new DialogueIsolateModule({
 		modelPath: options.modelPath,
 		ffmpegPath: options.ffmpegPath,
+		onnxAddonPath: options.onnxAddonPath ?? "",
 		highPass: options.highPass ?? 80,
 		lowPass: options.lowPass ?? 20000,
 		id: options.id,

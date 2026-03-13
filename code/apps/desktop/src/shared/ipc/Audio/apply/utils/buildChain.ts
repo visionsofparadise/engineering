@@ -1,4 +1,4 @@
-import { chain, type AudioChainModule, type ChainModuleReference, type EncodingOptions } from "@engineering/acm";
+import { chain, ReadModule, WriteModule, WaveformTransformModule, SpectrogramModule, type AudioChainModule, type ChainModuleReference, type EncodingOptions, type FrequencyScale } from "@engineering/acm";
 import type { ModuleRegistry } from "../../../../models/ModuleRegistry";
 import type { ApplyInput } from "../Renderer";
 
@@ -15,13 +15,21 @@ function resolveModule(ref: ChainModuleReference, registry: ModuleRegistry): Aud
 }
 
 export function buildChain(input: ApplyInput, registry: ModuleRegistry): AudioChainModule {
-	const source = resolveModule({ package: "acm", module: "Read", options: { path: input.sourcePath, channels: input.sourceChannels ? [...input.sourceChannels] : undefined } }, registry);
+	const source = new ReadModule({ path: input.sourcePath, channels: input.sourceChannels ? [...input.sourceChannels] : undefined, ffmpegPath: "", ffprobePath: "" });
 
 	const transforms: Array<AudioChainModule> = input.transforms.map((ref) => resolveModule(ref, registry));
 
+	if (input.waveform) {
+		transforms.push(new WaveformTransformModule({ outputPath: input.waveform.path, resolution: 1000 }));
+	}
+
+	if (input.spectrogram) {
+		transforms.push(new SpectrogramModule({ outputPath: input.spectrogram.path, fftSize: 2048, hopSize: 512, frequencyScale: (input.spectrogram.frequencyScale ?? "log") as FrequencyScale }));
+	}
+
 	const encoding: EncodingOptions | undefined = input.encoding?.format === "wav" ? undefined : input.encoding;
 
-	const target = resolveModule({ package: "acm", module: "Write", options: { path: input.targetPath, bitDepth: input.bitDepth, encoding } }, registry);
+	const target = new WriteModule({ path: input.targetPath, bitDepth: input.bitDepth ?? "16", encoding });
 
 	return chain(source, ...transforms, target);
 }

@@ -9,6 +9,8 @@ import { istft, stft } from "../../utils/stft";
 export const schema = z.object({
 	referencePath: z.string().default("").describe("Reference Path"),
 	smoothing: z.number().min(0).max(1).multipleOf(0.01).default(1 / 3).describe("Smoothing"),
+	vkfftAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "vkfft-addon", download: "https://github.com/visionsofparadise/vkfft-addon" }).describe("VkFFT native addon — GPU FFT acceleration"),
+	fftwAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" }).describe("FFTW native addon — CPU FFT acceleration"),
 });
 
 export interface EqMatchProperties extends z.infer<typeof schema>, TransformModuleProperties {}
@@ -35,11 +37,13 @@ export class EqMatchModule extends TransformModule<EqMatchProperties> {
 	private matchSampleRate = 44100;
 	private referenceSpectrum?: Float32Array;
 	private fftBackend: FftBackend = "js";
+	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);
 		this.matchSampleRate = context.sampleRate;
-		this.fftBackend = detectFftBackend(context.executionProviders);
+		this.fftAddonOptions = { vkfftPath: this.properties.vkfftAddonPath || undefined, fftwPath: this.properties.fftwAddonPath || undefined };
+		this.fftBackend = detectFftBackend(context.executionProviders, this.fftAddonOptions);
 		await this.loadReference();
 	}
 
@@ -82,7 +86,7 @@ export class EqMatchModule extends TransformModule<EqMatchProperties> {
 			const correctionDb = computeCorrection(this.referenceSpectrum, inputSpectrum, this.properties.smoothing);
 			const correctionLinear = correctionDb.map((db) => Math.pow(10, db / 20));
 
-			const stftResult = stft(channel, fftSize, hopSize, stftOutput, this.fftBackend);
+			const stftResult = stft(channel, fftSize, hopSize, stftOutput, this.fftBackend, this.fftAddonOptions);
 
 			for (let frame = 0; frame < stftResult.frames; frame++) {
 				const realFrame = stftResult.real[frame];
@@ -99,7 +103,7 @@ export class EqMatchModule extends TransformModule<EqMatchProperties> {
 				}
 			}
 
-			const matched = istft(stftResult, hopSize, frames, this.fftBackend);
+			const matched = istft(stftResult, hopSize, frames, this.fftBackend, this.fftAddonOptions);
 			const allChannels: Array<Float32Array> = [];
 
 			for (let writeCh = 0; writeCh < channels; writeCh++) {
@@ -184,12 +188,16 @@ export function eqMatch(
 	referencePath: string,
 	options?: {
 		smoothing?: number;
+		vkfftAddonPath?: string;
+		fftwAddonPath?: string;
 		id?: string;
 	},
 ): EqMatchModule {
 	return new EqMatchModule({
 		referencePath,
 		smoothing: options?.smoothing ?? 1 / 3,
+		vkfftAddonPath: options?.vkfftAddonPath ?? "",
+		fftwAddonPath: options?.fftwAddonPath ?? "",
 		id: options?.id,
 	});
 }
