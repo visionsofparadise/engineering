@@ -17,14 +17,16 @@ export const schema = z.object({
 	modelPath: z
 		.string()
 		.default("")
-		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "htdemucs" })
-		.describe("Model Path"),
+		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "htdemucs", download: "https://github.com/facebookresearch/demucs" })
+		.describe("HTDemucs source separation model (.onnx) — requires .onnx.data file alongside"),
+	onnxAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" }).describe("ONNX Runtime native addon"),
 	highPass: z.number().min(0).max(500).multipleOf(10).default(0).describe("High Pass"),
 	lowPass: z.number().min(0).max(22050).multipleOf(100).default(0).describe("Low Pass"),
 });
 
 export interface MusicRebalanceProperties extends TransformModuleProperties {
 	readonly modelPath: string;
+	readonly onnxAddonPath: string;
 	readonly stems: StemGains;
 	readonly highPass?: number;
 	readonly lowPass?: number;
@@ -52,7 +54,8 @@ export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperti
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);
-		this.session = await createOnnxSession(this.properties.modelPath);
+		const onnxProviders = context.executionProviders.filter((p) => p !== "gpu" && p !== "cpu-native");
+		this.session = await createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -190,7 +193,7 @@ export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperti
 			inputData.set(segRight, SEGMENT_SAMPLES);
 
 			// Run inference
-			const result = await this.session.run({
+			const result = this.session.run({
 				input: { data: inputData, dims: [1, 2, SEGMENT_SAMPLES] },
 				x: { data: xData, dims: [1, 4, xBinsConst, xFramesConst] },
 			});
@@ -324,11 +327,13 @@ export function musicRebalance(
 	modelPath: string,
 	stems: Partial<StemGains>,
 	options?: {
+		onnxAddonPath?: string;
 		id?: string;
 	},
 ): MusicRebalanceModule {
 	return new MusicRebalanceModule({
 		modelPath,
+		onnxAddonPath: options?.onnxAddonPath ?? "",
 		stems: {
 			vocals: stems.vocals ?? 1,
 			drums: stems.drums ?? 1,

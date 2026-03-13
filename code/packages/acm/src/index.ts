@@ -18,11 +18,9 @@ export { validateChainDefinition, type ChainDefinition, type ChainModuleReferenc
 
 // Sources
 export { read, ReadModule, type ReadProperties } from "./sources/read";
-export { TranscodeReadModule, type TranscodeReadProperties } from "./sources/transcode-read";
 
 // Targets
-export { write, WriteModule, type WavBitDepth, type WriteProperties } from "./targets/write";
-export { TranscodeWriteModule, type TranscodeWriteProperties, type EncodingOptions } from "./targets/transcode-write";
+export { write, WriteModule, type WavBitDepth, type WriteProperties, type EncodingOptions } from "./targets/write";
 
 // Transforms - basic
 export { cut, CutModule, type CutProperties, type CutRegion } from "./transforms/cut";
@@ -62,5 +60,3 @@ export { VoiceDenoiseModule, type VoiceDenoiseProperties } from "./transforms/vo
 
 // Utilities
 export { dbToLinear, linearToDb } from "./utils/db";
-export { initOnnxRuntime } from "./utils/onnx-runtime";
-export { initFftBackend } from "./utils/fft-backend";

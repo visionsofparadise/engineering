@@ -5,7 +5,7 @@ import { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({
-	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg" }).describe("FFmpeg Path"),
+	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
 	args: z.array(z.string()).default([]),
 });
 
@@ -54,7 +54,7 @@ export class FfmpegModule<P extends FfmpegProperties = FfmpegProperties> extends
 		const context = this.ffmpegContext;
 		const inputArgs = buildInputArgs(context);
 		const filterArgs = this._buildArgs(context);
-		const outputArgs = buildOutputArgs(context);
+		const outputArgs = this._buildOutputArgs(context);
 
 		const result = await runFfmpeg(this.resolvedBinaryPath, [...inputArgs, ...filterArgs, ...outputArgs], buffer, context);
 
@@ -65,6 +65,10 @@ export class FfmpegModule<P extends FfmpegProperties = FfmpegProperties> extends
 		if (frames > 0) {
 			await buffer.append(result);
 		}
+	}
+
+	protected _buildOutputArgs(context: StreamContext): Array<string> {
+		return buildOutputArgs(context);
 	}
 
 	protected getStreamContext(): StreamContext {

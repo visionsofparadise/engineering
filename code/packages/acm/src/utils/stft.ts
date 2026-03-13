@@ -13,12 +13,12 @@ export interface StftOutput {
 	readonly imag: Array<Float32Array>;
 }
 
-export function stft(signal: Float32Array, fftSize: number, hopSize: number, output?: StftOutput, backend?: FftBackend): StftResult {
+export function stft(signal: Float32Array, fftSize: number, hopSize: number, output?: StftOutput, backend?: FftBackend, fftAddonOptions?: { vkfftPath?: string; fftwPath?: string }): StftResult {
 	const window = hanningWindow(fftSize);
 	const numFrames = Math.floor((signal.length - fftSize) / hopSize) + 1;
 	const halfSize = fftSize / 2 + 1;
 
-	const addon = backend ? getFftAddon(backend) : null;
+	const addon = backend ? getFftAddon(backend, fftAddonOptions) : null;
 
 	if (addon && numFrames > 0) {
 		// Native path: window all frames, batch FFT in a single call
@@ -75,14 +75,14 @@ export function stft(signal: Float32Array, fftSize: number, hopSize: number, out
 	return { real, imag, frames: numFrames, fftSize };
 }
 
-export function istft(result: StftResult, hopSize: number, outputLength: number, backend?: FftBackend): Float32Array {
+export function istft(result: StftResult, hopSize: number, outputLength: number, backend?: FftBackend, fftAddonOptions?: { vkfftPath?: string; fftwPath?: string }): Float32Array {
 	const { real, imag, frames, fftSize } = result;
 	const window = hanningWindow(fftSize);
 	const output = new Float32Array(outputLength);
 	const windowSum = new Float32Array(outputLength);
 	const halfSize = fftSize / 2 + 1;
 
-	const addon = backend ? getFftAddon(backend) : null;
+	const addon = backend ? getFftAddon(backend, fftAddonOptions) : null;
 
 	if (addon && frames > 0) {
 		// Native path: batch all iFFTs in a single call

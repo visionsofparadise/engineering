@@ -97,7 +97,6 @@ export const ModuleManager: React.FC<ModuleManagerProps> = ({ context, open, onO
 				<div className="flex flex-col gap-2">
 					{packages.map((packageState) => {
 						const updateState = updateStates[packageState.directory] ?? { status: "idle" };
-						const isCore = context.app.packageUrls.find((config) => config.directory === packageState.directory)?.core;
 
 						return (
 							<div
@@ -125,8 +124,7 @@ export const ModuleManager: React.FC<ModuleManagerProps> = ({ context, open, onO
 													? "Up to date"
 													: "Check Update"}
 									</Button>
-									{!isCore && (
-										<Button
+									<Button
 											variant="ghost"
 											size="sm"
 											className="h-6 text-[10px] text-destructive"
@@ -134,7 +132,6 @@ export const ModuleManager: React.FC<ModuleManagerProps> = ({ context, open, onO
 										>
 											Remove
 										</Button>
-									)}
 								</div>
 							</div>
 						);

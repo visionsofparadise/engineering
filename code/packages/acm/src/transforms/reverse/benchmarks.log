@@ -9,3 +9,8 @@
 2026-03-09T18:56:37.430Z |      178.4ms |       15095416 samples/sec |   342.30x RT | Node v22.20.0 win32
 2026-03-09T19:25:22.510Z |       15.4ms |      175324434 samples/sec |  3975.61x RT | Node v22.20.0 win32
 2026-03-10T04:10:02.964Z |      104.0ms |       25903471 samples/sec |   587.38x RT | Node v22.20.0 win32
+2026-03-12T18:44:08.195Z |      140.0ms |       19239225 samples/sec |   436.26x RT | Node v22.20.0 win32
+2026-03-12T19:19:56.862Z |      207.8ms |       12965457 samples/sec |   294.00x RT | Node v22.20.0 win32
+2026-03-12T19:33:55.920Z |        0.7ms |     1951624402 samples/sec | 44254.52x RT | Node v22.20.0 win32
+2026-03-12T20:00:33.095Z |        0.3ms |     4062793363 samples/sec | 92126.83x RT | Node v22.20.0 win32
+2026-03-12T20:41:56.675Z |       44.2ms |       60875791 samples/sec |  1380.40x RT | Node v22.20.0 win32

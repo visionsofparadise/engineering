@@ -21,11 +21,10 @@ export function useImportFile(context: AppContext) {
 
 			await context.main.audioApply({
 				sourcePath: filePath,
-				transforms: [
-					{ package: "acm", module: "Waveform", options: { path: `${snapshotDir}/waveform.bin` } },
-					{ package: "acm", module: "Spectrogram", options: { path: `${snapshotDir}/spectrogram.bin`, frequencyScale: "log" } },
-				],
+				transforms: [],
 				targetPath: `${snapshotDir}/audio.wav`,
+				waveform: { path: `${snapshotDir}/waveform.bin` },
+				spectrogram: { path: `${snapshotDir}/spectrogram.bin`, frequencyScale: "log" },
 			});
 
 			const tabId = crypto.randomUUID();

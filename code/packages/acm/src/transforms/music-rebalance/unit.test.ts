@@ -3,13 +3,14 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runTransform } from "../../utils/test-pipeline";
 import { notSilent, expectedDuration, somethingChanged, notAnomalous } from "../../utils/test-audio";
+import { binaries } from "../../utils/test-binaries";
 import { musicRebalance } from ".";
 
 const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/test-voice.wav");
 
 describe("music-rebalance", () => {
 	it("processes voice audio", async () => {
-		const transform = musicRebalance({ vocals: 1, drums: 0, bass: 0, other: 0 });
+		const transform = musicRebalance(binaries.htdemucs, { vocals: 1, drums: 0, bass: 0, other: 0 }, { onnxAddonPath: binaries.onnxAddon});
 		const { input, output, context } = await runTransform(testVoice, transform);
 
 		expect(notSilent(output).pass).toBe(true);
