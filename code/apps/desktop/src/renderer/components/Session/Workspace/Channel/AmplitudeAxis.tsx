@@ -10,7 +10,7 @@ export const AmplitudeAxis: React.FC<AmplitudeAxisProps> = ({ height }) => {
 
 	return (
 		<div
-			className="relative flex-shrink-0 bg-background"
+			className="relative flex-shrink-0 surface-instrument-panel"
 			style={{ width: AMPLITUDE_AXIS_WIDTH, height }}
 		>
 			<svg

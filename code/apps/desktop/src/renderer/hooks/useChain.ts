@@ -1,4 +1,4 @@
-import { type ChainDefinition, validateChainDefinition } from "audio-chain-module";
+import type { ChainDefinition } from "audio-chain-module";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export function useChain(sessionPath: string): ChainDefinition | undefined {
@@ -6,7 +6,7 @@ export function useChain(sessionPath: string): ChainDefinition | undefined {
 		queryKey: ["chain", sessionPath],
 		queryFn: async () => {
 			const content = await window.main.readFile(`${sessionPath}/chain.json`);
-			return validateChainDefinition(JSON.parse(content));
+			return window.main.validateChain(JSON.parse(content));
 		},
 	});
 

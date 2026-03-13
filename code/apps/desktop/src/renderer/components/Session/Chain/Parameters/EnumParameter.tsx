@@ -1,5 +1,5 @@
 import { Label } from "../../../ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../ui/select";
+import { ButtonBank } from "../../../ui/button-bank";
 
 interface EnumParameterProps {
 	readonly label: string;
@@ -12,17 +12,6 @@ interface EnumParameterProps {
 export const EnumParameter: React.FC<EnumParameterProps> = ({ label, initialValue, values, onCommit, disabled }) => (
 	<div className="space-y-1">
 		<Label className="text-xs">{label}</Label>
-		<Select value={initialValue} onValueChange={onCommit} disabled={disabled}>
-			<SelectTrigger className="h-7 text-xs">
-				<SelectValue />
-			</SelectTrigger>
-			<SelectContent>
-				{values.map((enumValue) => (
-					<SelectItem key={enumValue} value={enumValue} className="text-xs">
-						{enumValue}
-					</SelectItem>
-				))}
-			</SelectContent>
-		</Select>
+		<ButtonBank value={initialValue} onValueChange={onCommit} options={values} disabled={disabled} />
 	</div>
 );

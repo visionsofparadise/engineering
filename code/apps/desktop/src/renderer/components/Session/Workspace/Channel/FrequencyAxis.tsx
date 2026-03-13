@@ -21,7 +21,7 @@ export const FrequencyAxis: React.FC<FrequencyAxisProps> = ({ channelIndex, heig
 	const visibleMarkers = FREQUENCY_MARKERS.filter((freq) => freq >= minFrequency && freq <= maxFrequency);
 
 	return (
-		<div className="relative flex-shrink-0 bg-background" style={{ width: AXIS_WIDTH, height }}>
+		<div className="relative flex-shrink-0 surface-instrument-panel" style={{ width: AXIS_WIDTH, height }}>
 			<span className="absolute left-1 top-1 text-[10px] font-medium text-muted-foreground">
 				{channelIndex}
 			</span>

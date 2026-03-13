@@ -1,5 +1,6 @@
 export { Button, buttonVariants } from "./button";
 export type { ButtonProps } from "./button";
+export { ButtonBank } from "./button-bank";
 export { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "./dialog";
 export { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "./dropdown-menu";
 export { FileInput } from "./file-input";

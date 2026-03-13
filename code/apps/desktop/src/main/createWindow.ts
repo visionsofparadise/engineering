@@ -41,7 +41,7 @@ export const createWindow = (dependencies: WindowFactoryDependencies): BrowserWi
 		},
 	});
 
-	const isDev = process.env.MAIN_WINDOW_VITE_DEV_SERVER_URL !== undefined;
+	const isDev = MAIN_WINDOW_VITE_DEV_SERVER_URL !== undefined;
 
 	browserWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
 		callback({
@@ -92,16 +92,16 @@ export const createWindow = (dependencies: WindowFactoryDependencies): BrowserWi
 		emitBounds();
 	});
 
-	if (process.env.MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-		browserWindow.loadURL(process.env.MAIN_WINDOW_VITE_DEV_SERVER_URL).catch((error: unknown) => {
+	if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+		browserWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL).catch((error: unknown) => {
 			logger.error("Failed to load dev server URL", error as Error, {
 				namespace: "window",
 				transactionId,
-				url: process.env.MAIN_WINDOW_VITE_DEV_SERVER_URL,
+				url: MAIN_WINDOW_VITE_DEV_SERVER_URL,
 			});
 		});
 	} else {
-		const filePath = path.join(__dirname, `../../renderer/${process.env.MAIN_WINDOW_VITE_NAME}/index.html`);
+		const filePath = path.join(__dirname, `../../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
 
 		browserWindow.loadFile(filePath).catch((error: unknown) => {
 			logger.error("Failed to load file", error as Error, { namespace: "window", transactionId, filePath });

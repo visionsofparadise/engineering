@@ -1,59 +1,290 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource/dm-sans/300.css";
+@import "@fontsource/dm-sans/400.css";
+@import "@fontsource/dm-sans/500.css";
+@import "@fontsource/dm-sans/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark, .dark *));
 
-@theme {
-	--color-background: hsl(0 0% 100%);
-	--color-foreground: hsl(222.2 84% 4.9%);
-	--color-card: hsl(0 0% 100%);
-	--color-card-foreground: hsl(222.2 84% 4.9%);
-	--color-popover: hsl(0 0% 100%);
-	--color-popover-foreground: hsl(222.2 84% 4.9%);
-	--color-primary: hsl(222.2 47.4% 11.2%);
-	--color-primary-foreground: hsl(210 40% 98%);
-	--color-secondary: hsl(210 40% 96.1%);
-	--color-secondary-foreground: hsl(222.2 47.4% 11.2%);
-	--color-muted: hsl(210 40% 96.1%);
-	--color-muted-foreground: hsl(215.4 16.3% 46.9%);
-	--color-accent: hsl(210 40% 96.1%);
-	--color-accent-foreground: hsl(222.2 47.4% 11.2%);
-	--color-destructive: hsl(0 84.2% 60.2%);
-	--color-destructive-foreground: hsl(210 40% 98%);
-	--color-border: hsl(214.3 31.8% 91.4%);
-	--color-input: hsl(214.3 31.8% 91.4%);
-	--color-ring: hsl(222.2 84% 4.9%);
+/* ═══════════════════════════════════════════════════════════════
+   THEME TOKENS
+   Tailwind v4 design token registration.
+   --color-* generates bg-*, text-*, border-* utilities.
+   --font-*  generates font-* utilities.
+   ═══════════════════════════════════════════════════════════════ */
 
-	--radius: 0.5rem;
+@theme inline {
+	/* ── Fonts ── */
+	--font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+	--font-mono: "JetBrains Mono", ui-monospace, monospace;
+	--font-display: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+
+	/* ── Timing ── */
+	--duration-ui: 100ms;
+
+	/* ── Color tokens (resolved from CSS variables below) ── */
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+
+	/* ── Status colors ── */
+	--color-status-queued: var(--status-queued);
+	--color-status-processing: var(--status-processing);
+	--color-status-complete: var(--status-complete);
+	--color-status-error: var(--status-error);
+	--color-status-warning: var(--status-warning);
+
+	/* ── Specialized colors ── */
+	--color-fader-thumb: var(--fader-thumb);
+	--color-playhead: var(--playhead);
 }
 
-.dark {
-	--color-background: hsl(222.2 84% 4.9%);
-	--color-foreground: hsl(210 40% 98%);
-	--color-card: hsl(222.2 84% 4.9%);
-	--color-card-foreground: hsl(210 40% 98%);
-	--color-popover: hsl(222.2 84% 4.9%);
-	--color-popover-foreground: hsl(210 40% 98%);
-	--color-primary: hsl(210 40% 98%);
-	--color-primary-foreground: hsl(222.2 47.4% 11.2%);
-	--color-secondary: hsl(217.2 32.6% 17.5%);
-	--color-secondary-foreground: hsl(210 40% 98%);
-	--color-muted: hsl(217.2 32.6% 17.5%);
-	--color-muted-foreground: hsl(215 20.2% 65.1%);
-	--color-accent: hsl(217.2 32.6% 17.5%);
-	--color-accent-foreground: hsl(210 40% 98%);
-	--color-destructive: hsl(0 62.8% 30.6%);
-	--color-destructive-foreground: hsl(210 40% 98%);
-	--color-border: hsl(217.2 32.6% 17.5%);
-	--color-input: hsl(217.2 32.6% 17.5%);
-	--color-ring: hsl(212.7 26.8% 83.9%);
-}
+/* ═══════════════════════════════════════════════════════════════
+   COLOR PALETTE
+   All color values. Warm neutral base (hue 18), copper accent (hue 28).
+   Light mode = :root, Dark mode = .dark class.
+   ═══════════════════════════════════════════════════════════════ */
 
 @layer base {
+
+	/* ── Light mode (default) ── */
+	:root {
+		/* Core surfaces */
+		--background: hsl(18 12% 99%);
+		--foreground: hsl(18 6% 6%);
+		--card: hsl(18 8% 97.5%);
+		--card-foreground: hsl(18 6% 6%);
+		--popover: hsl(18 8% 97.5%);
+		--popover-foreground: hsl(18 6% 6%);
+
+		/* Interactive */
+		--primary: hsl(28 45% 42%);
+		--primary-foreground: hsl(28 10% 98%);
+		--secondary: hsl(18 10% 94%);
+		--secondary-foreground: hsl(18 6% 12%);
+		--accent: hsl(18 8% 94%);
+		--accent-foreground: hsl(18 6% 12%);
+		--destructive: hsl(0 84.2% 60.2%);
+		--destructive-foreground: hsl(26 10% 98%);
+
+		/* Utility */
+		--muted: hsl(18 8% 94.5%);
+		--muted-foreground: hsl(18 5% 46%);
+		--border: hsl(18 10% 88%);
+		--input: hsl(18 10% 88%);
+		--ring: hsl(28 45% 42%);
+
+		/* Status */
+		--status-queued: hsl(18 5% 56%);
+		--status-processing: hsl(210 80% 52%);
+		--status-complete: hsl(152 60% 40%);
+		--status-error: hsl(0 72% 51%);
+		--status-warning: hsl(38 92% 50%);
+
+		/* Specialized */
+		--fader-thumb: hsl(18 4% 72%);
+		--playhead: hsl(0 80% 50%);
+		--slider-range: hsl(28 50% 48%);
+
+		/* Material surfaces */
+		--surface-panel: hsl(18 6% 92%);
+		--surface-panel-header: hsl(18 5% 88%);
+		--surface-control: hsl(18 4% 86%);
+		--surface-control-hover: hsl(18 4% 89%);
+		--accent-border: hsl(28 45% 42%);
+
+		/* Shadow system */
+		--shadow-raised: 0 1px 2px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.05);
+		--shadow-raised-hover: 0 1px 3px rgba(0,0,0,0.10), 0 2px 5px rgba(0,0,0,0.07);
+		--shadow-pressed: inset 0 2px 4px rgba(0,0,0,0.15), inset 0 1px 2px rgba(0,0,0,0.10);
+		--shadow-channel: inset 0 4px 8px rgba(0,0,0,0.20), inset 0 2px 3px rgba(0,0,0,0.15);
+		--shadow-panel-inset: inset 0 1px 4px rgba(0,0,0,0.08);
+	}
+
+	/* ── Dark mode ── */
+	.dark {
+		/* Core surfaces */
+		--background: hsl(18 8% 10%);
+		--foreground: hsl(18 8% 96%);
+		--card: hsl(18 6% 13%);
+		--card-foreground: hsl(18 8% 96%);
+		--popover: hsl(18 6% 13%);
+		--popover-foreground: hsl(18 8% 96%);
+
+		/* Interactive */
+		--primary: hsl(28 45% 46%);
+		--primary-foreground: hsl(28 10% 98%);
+		--secondary: hsl(18 8% 15%);
+		--secondary-foreground: hsl(18 8% 96%);
+		--accent: hsl(18 8% 15%);
+		--accent-foreground: hsl(18 8% 96%);
+		--destructive: hsl(0 62.8% 30.6%);
+		--destructive-foreground: hsl(18 8% 96%);
+
+		/* Utility */
+		--muted: hsl(18 8% 15%);
+		--muted-foreground: hsl(18 6% 55%);
+		--border: hsl(18 8% 16%);
+		--input: hsl(18 8% 16%);
+		--ring: hsl(28 45% 50%);
+
+		/* Status */
+		--status-queued: hsl(18 6% 50%);
+		--status-processing: hsl(210 80% 60%);
+		--status-complete: hsl(152 60% 50%);
+		--status-error: hsl(0 72% 58%);
+		--status-warning: hsl(38 92% 55%);
+
+		/* Specialized */
+		--fader-thumb: hsl(18 3% 18%);
+		--playhead: hsl(0 80% 55%);
+		--slider-range: hsl(28 45% 46%);
+
+		/* Material surfaces */
+		--surface-panel: hsl(18 4% 10%);
+		--surface-panel-header: hsl(18 4% 12%);
+		--surface-control: hsl(18 3% 16%);
+		--surface-control-hover: hsl(18 3% 19%);
+		--accent-border: hsl(28 45% 46%);
+
+		/* Shadow system — stronger for dark backgrounds */
+		--shadow-raised: 0 1px 2px rgba(0,0,0,0.20), 0 2px 4px rgba(0,0,0,0.12);
+		--shadow-raised-hover: 0 1px 3px rgba(0,0,0,0.25), 0 2px 5px rgba(0,0,0,0.15);
+		--shadow-pressed: inset 0 2px 4px rgba(0,0,0,0.35), inset 0 1px 2px rgba(0,0,0,0.20);
+		--shadow-channel: inset 0 4px 8px rgba(0,0,0,0.50), inset 0 2px 3px rgba(0,0,0,0.35), inset 0 -1px 1px rgba(255,255,255,0.03);
+		--shadow-panel-inset: inset 0 1px 4px rgba(0,0,0,0.20);
+	}
+
+	/* ── Global base styles ── */
 	* {
 		@apply border-border;
 	}
-	body {
-		@apply bg-background text-foreground;
+	html {
+		font-size: 110%;
 	}
+	body {
+		@apply bg-background text-foreground antialiased;
+		font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+		font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+		letter-spacing: 0.03em;
+		font-weight: 300;
+	}
+	.font-mono {
+		letter-spacing: 0.05em;
+	}
+	.bg-card {
+		box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);
+	}
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MATERIAL SURFACE SYSTEM
+   DJM aesthetic: flat matte surfaces, depth through shadow only,
+   color as accent. No gradients, no sheen.
+
+   Surface hierarchy (back → front):
+     panel → panel-header → channel (recessed) → control (raised) → primary
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Structural panels ── */
+
+@utility surface-panel {
+	background-color: var(--surface-panel);
+}
+
+@utility surface-panel-header {
+	background-color: var(--surface-panel-header);
+	border-bottom: 1px solid var(--border);
+}
+
+/* ── Recessed wells ── */
+
+@utility surface-channel {
+	background-color: var(--input);
+	box-shadow: var(--shadow-channel);
+}
+
+@utility surface-instrument-panel {
+	background-color: var(--card);
+	border: 1px solid var(--border);
+	box-shadow: var(--shadow-panel-inset);
+}
+
+/* ── Controls (raised) ── */
+
+@utility surface-control {
+	background-color: var(--surface-control);
+	border: 1px solid var(--border);
+	box-shadow: var(--shadow-raised);
+}
+
+@utility surface-control-pressed {
+	background-color: rgba(0, 0, 0, 0.12);
+	box-shadow: var(--shadow-pressed);
+}
+
+@utility surface-primary {
+	background-color: var(--surface-control);
+	border: 1px solid var(--border);
+	border-bottom: 2px solid var(--accent-border);
+	box-shadow: var(--shadow-raised);
+}
+
+/* ── Cards ── */
+
+@utility card-outline {
+	border: 2px solid var(--border);
+}
+
+/* ── Specialized controls ── */
+
+@utility surface-slider-range {
+	background-color: var(--slider-range);
+	box-shadow: inset 0 2px 3px rgba(0,0,0,0.3), inset 0 -1px 1px rgba(255,255,255,0.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INTERACTIVE STATES
+   Hover, active, and data-state overrides for surface components.
+   ═══════════════════════════════════════════════════════════════ */
+
+.surface-control:hover {
+	background-color: var(--surface-control-hover);
+	box-shadow: var(--shadow-raised-hover);
+}
+
+.surface-primary:hover {
+	background-color: var(--surface-control-hover);
+	box-shadow: var(--shadow-raised-hover);
+}
+
+.surface-primary:active,
+.surface-control:active {
+	box-shadow: var(--shadow-pressed);
+}
+
+[data-state="active"][role="tab"] {
+	background-color: var(--surface-control);
+	border: 1px solid var(--border);
+	box-shadow: var(--shadow-raised);
 }

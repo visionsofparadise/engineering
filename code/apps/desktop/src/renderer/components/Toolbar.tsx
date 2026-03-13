@@ -76,7 +76,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context, onManagePackages, onM
 
 	return (
 		<div
-			className="relative flex h-10 items-center border-b border-border px-2"
+			className="relative flex h-10 items-center surface-panel-header px-2"
 			style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
 		>
 			<div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>

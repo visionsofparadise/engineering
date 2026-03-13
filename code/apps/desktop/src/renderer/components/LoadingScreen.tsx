@@ -12,9 +12,9 @@ interface LoadingScreenProps {
 function StatusIcon({ status }: { readonly status: ModulePackageState["status"] }) {
 	switch (status) {
 		case "ready":
-			return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+			return <CheckCircle2 className="h-4 w-4 text-status-complete" />;
 		case "error":
-			return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+			return <AlertCircle className="h-4 w-4 text-status-warning" />;
 		case "skipped":
 			return <SkipForward className="h-4 w-4 text-muted-foreground" />;
 		case "pending":
@@ -48,7 +48,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({ context, onSkip, o
 	const isFirstRun = packages.some((entry) => entry.status === "cloning");
 
 	return (
-		<div className="flex h-screen flex-col items-center justify-center gap-6 bg-background">
+		<div className="flex h-screen flex-col items-center justify-center gap-6 surface-panel">
 			<div className="flex flex-col items-center gap-1">
 				<div className="text-sm text-muted-foreground">
 					{isFirstRun ? "Downloading audio modules..." : "Loading packages..."}

@@ -100,7 +100,7 @@ export const Transport: React.FC<TransportProps> = ({ context }) => {
 	const durationMs = playbackEngine.durationMs;
 
 	return (
-		<div className="flex h-12 items-center border-t border-border px-4">
+		<div className="flex h-12 items-center border-t border-border surface-panel-header px-4">
 			<div className="flex flex-1 items-center gap-2">
 				<button
 					onClick={handleMuteToggle}
@@ -179,7 +179,7 @@ export const Transport: React.FC<TransportProps> = ({ context }) => {
 			</div>
 
 			<div className="flex flex-1 items-center justify-end gap-3">
-				<span className="font-mono text-xs text-muted-foreground">
+				<span className="font-mono text-xs tabular-nums text-muted-foreground">
 					<span ref={timeRef}>{formatTime(0)}</span>
 					{" / "}
 					{formatTime(durationMs)}

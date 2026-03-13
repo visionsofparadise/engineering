@@ -6,6 +6,7 @@ import { Switch } from "../components/ui/switch";
 import { Label } from "../components/ui/label";
 import { Input } from "../components/ui/input";
 import { FileInput } from "../components/ui/file-input";
+import { ButtonBank } from "../components/ui/button-bank";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 
 interface ModuleDefinition {
@@ -102,42 +103,7 @@ function ParameterControl({ parameter }: { parameter: ParameterDefinition }) {
 		return (
 			<div>
 				<Label className="mb-2 block text-[0.6875rem]">{parameter.name}</Label>
-				<div className="flex gap-1.5">
-					{parameter.options.map((option) => {
-						const isActive = selected === option;
-						return (
-							<button
-								key={option}
-								onClick={() => setSelected(option)}
-								className={cn(
-									"rounded border-2 px-2.5 py-1 font-mono text-[0.625rem] uppercase transition-all",
-									"bg-muted active:translate-y-px",
-									isActive
-										? "border-primary text-primary"
-										: "border-border text-muted-foreground hover:text-foreground"
-								)}
-								style={{
-									boxShadow: isActive
-										? [
-											'inset 0 2px 4px rgba(0,0,0,0.25)',
-											'inset 0 1px 2px rgba(0,0,0,0.15)',
-											'0 0 4px var(--color-primary)',
-										].join(', ')
-										: [
-											'inset 0 2px 3px -1px rgba(255,255,255,0.15)',
-											'inset 0 -2px 3px -1px rgba(0,0,0,0.25)',
-											'0 1px 2px rgba(0,0,0,0.15)',
-										].join(', '),
-									textShadow: isActive
-										? '0 0 6px var(--color-primary)'
-										: undefined,
-								}}
-							>
-								{option}
-							</button>
-						);
-					})}
-				</div>
+				<ButtonBank value={selected} onValueChange={setSelected} options={parameter.options} />
 			</div>
 		);
 	}

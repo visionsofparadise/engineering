@@ -1,5 +1,4 @@
 import type { ChainDefinition } from "audio-chain-module";
-import { validateChainDefinition } from "audio-chain-module";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -77,7 +76,7 @@ export const ChainManagerMenu: React.FC<ChainManagerMenuProps> = ({ chain, onCha
 
 		try {
 			const content = await window.main.readFile(selectedPath);
-			const imported = validateChainDefinition(JSON.parse(content));
+			const imported = await window.main.validateChain(JSON.parse(content));
 
 			if (!imported.label) {
 				const filename = selectedPath.split(/[/\\]/).pop()?.replace(".json", "") ?? "imported";
