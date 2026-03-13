@@ -1,5 +1,6 @@
 import type { IpcHandlerAction, IpcHandlerParameters, IpcHandlerReturn } from "../models/AsyncRendererIpc";
 import { AbortJobRendererIpc } from "./Audio/abortJob/Renderer";
+import { ValidateChainRendererIpc } from "./Chain/validateChain/Renderer";
 import { ApplyRendererIpc } from "./Audio/apply/Renderer";
 import { ShowOpenDialogRendererIpc } from "./Dialog/showOpenDialog/Renderer";
 import { ShowSaveDialogRendererIpc } from "./Dialog/showSaveDialog/Renderer";
@@ -49,6 +50,7 @@ export const ASYNC_RENDERER_IPCS = [
 	GetWindowIdRendererIpc,
 	GetAppVersionRendererIpc,
 	SetBoundsRendererIpc,
+	ValidateChainRendererIpc,
 ];
 
 export type AsyncIpcAction = IpcHandlerAction<InstanceType<(typeof ASYNC_RENDERER_IPCS)[number]>>;

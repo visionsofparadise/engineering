@@ -20,7 +20,7 @@ export const FileRow: React.FC<FileRowProps> = ({ file, name, jobState, running,
 		<div className="relative flex items-center gap-1 overflow-hidden rounded border border-border px-2 py-1.5">
 			{status === "running" && (
 				<div
-					className="absolute inset-0 bg-primary/10 transition-all duration-200"
+					className="absolute inset-0 bg-status-processing/10 transition-all duration-200"
 					style={{ width: `${progress * 100}%` }}
 				/>
 			)}
@@ -41,7 +41,7 @@ export const FileRow: React.FC<FileRowProps> = ({ file, name, jobState, running,
 						<X className="h-3 w-3" />
 					</Button>
 				)}
-				{status === "idle" && running && <span className="text-[10px] text-muted-foreground">Queued</span>}
+				{status === "idle" && running && <span className="text-[10px] text-status-queued">Queued</span>}
 				{status === "running" && (
 					<Button
 						variant="ghost"
@@ -49,11 +49,11 @@ export const FileRow: React.FC<FileRowProps> = ({ file, name, jobState, running,
 						className="h-5 w-5"
 						onClick={onAbort}
 					>
-						<Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+						<Loader2 className="h-3 w-3 animate-spin text-status-processing" />
 					</Button>
 				)}
-				{status === "completed" && <Check className="h-3 w-3 text-primary" />}
-				{status === "aborted" && <span className="text-[10px] text-destructive">Aborted</span>}
+				{status === "completed" && <Check className="h-3 w-3 text-status-complete" />}
+				{status === "aborted" && <span className="text-[10px] text-status-error">Aborted</span>}
 			</span>
 		</div>
 	);

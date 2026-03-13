@@ -105,7 +105,7 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex items-center justify-between border-b border-border px-3 py-2">
+			<div className="flex items-center justify-between surface-panel-header px-3 py-2">
 				<span className="text-xs font-medium text-muted-foreground">Chain</span>
 				<ChainManagerMenu chain={chain} onChainChange={handleChainChange} userDataPath={userDataPath} />
 			</div>
@@ -114,7 +114,7 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 			</ScrollArea>
 			<div className="flex justify-end border-t border-border px-3 py-2">
 				<Button
-					variant="ghost"
+					variant="default"
 					size="sm"
 					className="h-7 text-xs"
 					disabled={transforms.length === 0}

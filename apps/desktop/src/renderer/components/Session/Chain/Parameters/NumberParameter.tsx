@@ -24,7 +24,7 @@ export const NumberParameter: React.FC<NumberParameterProps> = ({ label, initial
 			<div className="space-y-1">
 				<div className="flex items-center justify-between">
 					<Label className="text-xs">{label}</Label>
-					<span className="text-[10px] text-muted-foreground">{String(value)}</span>
+					<span className="font-mono text-[10px] tabular-nums text-muted-foreground">{String(value)}</span>
 				</div>
 				<Slider
 					value={[value]}

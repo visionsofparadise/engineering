@@ -1,4 +1,5 @@
 import { AbortJobMainIpc } from "./Audio/abortJob/Main";
+import { ValidateChainMainIpc } from "./Chain/validateChain/Main";
 import { ApplyMainIpc } from "./Audio/apply/Main";
 import { ShowOpenDialogMainIpc } from "./Dialog/showOpenDialog/Main";
 import { ShowSaveDialogMainIpc } from "./Dialog/showSaveDialog/Main";
@@ -48,4 +49,5 @@ export const ASYNC_MAIN_IPCS = [
 	GetWindowIdMainIpc,
 	GetAppVersionMainIpc,
 	SetBoundsMainIpc,
+	ValidateChainMainIpc,
 ];

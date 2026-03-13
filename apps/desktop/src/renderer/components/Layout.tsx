@@ -15,7 +15,7 @@ export const Layout: React.FC<LayoutProps> = ({ context }) => {
 	const [binaryManagerOpen, setBinaryManagerOpen] = useState(false);
 
 	return (
-		<div className="flex h-screen flex-col">
+		<div className="flex h-screen flex-col surface-panel">
 			<Toolbar context={context} onManagePackages={() => setModuleManagerOpen(true)} onManageBinaries={() => setBinaryManagerOpen(true)} />
 			<Tabs context={context} />
 			<div className="flex flex-1 overflow-hidden">

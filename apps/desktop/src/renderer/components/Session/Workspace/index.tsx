@@ -74,18 +74,18 @@ export const Workspace: React.FC<WorkspaceProps> = ({ context }) => {
 	const laneHeight = viewportHeight > 0 ? viewportHeight / channelCount : 0;
 
 	return (
-		<div className="flex h-full flex-col bg-background">
+		<div className="flex h-full flex-col surface-panel">
 			<div className="flex flex-shrink-0">
 				<div
 					style={{ width: FREQUENCY_AXIS_WIDTH }}
-					className="border-b border-r border-border bg-background"
+					className="border-b border-r border-border surface-instrument-panel"
 				/>
 				<div className="flex-1">
 					<Ruler context={context} />
 				</div>
 				<div
 					style={{ width: AMPLITUDE_AXIS_WIDTH }}
-					className="border-b border-l border-border bg-background"
+					className="border-b border-l border-border surface-instrument-panel"
 				/>
 			</div>
 
@@ -104,7 +104,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ context }) => {
 
 				<div
 					ref={lanesRef}
-					className="relative flex-1 overflow-hidden"
+					className="relative flex-1 overflow-hidden surface-channel"
 					onWheel={handleWheel}
 					onPointerDown={selectionHandlers.onPointerDown}
 					onPointerMove={selectionHandlers.onPointerMove}

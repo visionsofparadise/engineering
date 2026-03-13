@@ -17,7 +17,7 @@ interface FileParameterProps {
 export const FileParameter: React.FC<FileParameterProps> = ({ label, initialValue, property, onCommit, context, disabled }) => {
 	const binaryKey = property.binary;
 	const binaryPath = binaryKey ? context.app.binaries[binaryKey] : undefined;
-	const effectiveValue = initialValue || binaryPath || "";
+	const effectiveValue = initialValue ? initialValue : binaryPath ?? "";
 
 	const [displayValue, setDisplayValue] = useState(effectiveValue);
 
@@ -63,10 +63,32 @@ export const FileParameter: React.FC<FileParameterProps> = ({ label, initialValu
 		<div className="grid gap-1">
 			<Label className="text-xs">{label}</Label>
 			<div className="flex items-center gap-1">
-				<div className="min-w-0 flex-1 truncate rounded border border-border bg-muted/50 px-2 py-1 text-xs text-muted-foreground" title={displayValue}>
+				<div
+					className="min-w-0 flex-1 truncate px-2.5 py-1 font-mono text-[0.625rem] tabular-nums"
+					title={displayValue}
+					style={{
+						background: 'linear-gradient(170deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.02) 25%, transparent 50%, transparent 75%, rgba(255,255,255,0.03) 100%) #000',
+						boxShadow: [
+							'inset 0 1px 0 rgba(255,255,255,0.18)',
+							'inset 0 -1px 0 rgba(255,255,255,0.04)',
+							'inset 1px 0 0 rgba(255,255,255,0.08)',
+							'inset -1px 0 0 rgba(255,255,255,0.03)',
+							'inset 0 2px 8px rgba(0,0,0,0.8)',
+							'0 1px 0 rgba(255,255,255,0.06)',
+						].join(', '),
+						border: '1px solid rgba(255,255,255,0.1)',
+						color: displayValue ? 'var(--primary)' : 'var(--muted-foreground)',
+					}}
+				>
 					{filename}
 				</div>
-				<Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" disabled={disabled} onClick={() => void handleBrowse()}>
+				<Button
+					variant="secondary"
+					size="icon"
+					className="h-6 w-6 shrink-0"
+					disabled={disabled}
+					onClick={() => void handleBrowse()}
+				>
 					<Folder className="h-3 w-3" />
 				</Button>
 			</div>

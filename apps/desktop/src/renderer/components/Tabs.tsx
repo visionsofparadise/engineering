@@ -52,7 +52,7 @@ export const Tabs: React.FC<TabsProps> = ({ context }) => {
 	}, []);
 
 	return (
-		<div className="flex h-9 border-b border-border">
+		<div className="flex h-9 surface-panel-header">
 			<ScrollArea className="flex-1">
 				<div className="flex h-9 items-end">
 					{sessionTabs.map((tab, index) => (
@@ -66,7 +66,7 @@ export const Tabs: React.FC<TabsProps> = ({ context }) => {
 							onClick={() => setActiveTab(tab.id, { appStore, app })}
 							className={cn(
 								"group flex h-8 cursor-pointer items-center gap-1 border-r border-border px-3 text-xs transition-colors",
-								app.activeTabId === tab.id ? "bg-background text-foreground" : "bg-muted/50 text-muted-foreground hover:text-foreground",
+								app.activeTabId === tab.id ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground",
 								dragIndex === index && "opacity-50",
 								dropTarget === index && "border-l-2 border-l-ring",
 							)}
@@ -91,7 +91,7 @@ export const Tabs: React.FC<TabsProps> = ({ context }) => {
 				onClick={() => setActiveTab(BATCH_TAB_ID, { appStore, app })}
 				className={cn(
 					"flex h-8 cursor-pointer items-center self-end border-l border-border px-3 text-xs transition-colors",
-					app.activeTabId === BATCH_TAB_ID ? "bg-background text-foreground" : "bg-muted/50 text-muted-foreground hover:text-foreground",
+					app.activeTabId === BATCH_TAB_ID ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground",
 				)}
 			>
 				<span>Batch</span>

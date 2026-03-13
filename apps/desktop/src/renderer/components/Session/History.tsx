@@ -37,7 +37,7 @@ export const History: React.FC<HistoryProps> = ({ context }) => {
 
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex items-center border-b border-border px-3 py-2">
+			<div className="flex items-center surface-panel-header px-3 py-2">
 				<span className="text-xs font-medium text-muted-foreground">History</span>
 			</div>
 			<ScrollArea className="flex-1">

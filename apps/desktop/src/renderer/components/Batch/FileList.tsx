@@ -80,7 +80,7 @@ export const FileList: React.FC<FileListProps> = ({ app, appStore, running, onAb
 			onDragOver={handleDragOver}
 			onDrop={handleDrop}
 		>
-			<div className="flex items-center justify-between border-b border-border px-3 py-2">
+			<div className="flex items-center justify-between surface-panel-header px-3 py-2">
 				<span className="text-xs font-medium text-muted-foreground">Files ({files.length})</span>
 				<div className="flex gap-1">
 					<Button
