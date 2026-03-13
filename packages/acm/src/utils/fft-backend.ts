@@ -14,81 +14,51 @@ interface VkFftAddon extends FftAddon {
 
 const require = createRequire(import.meta.url);
 
-let cachedBackend: FftBackend | undefined;
-let cachedVkfft: VkFftAddon | null | undefined;
-let cachedFftw: FftAddon | null | undefined;
-let vkfftAddonPath: string | undefined;
-let fftwAddonPath: string | undefined;
-
-export function initFftBackend(options: { vkfftPath?: string; fftwPath?: string }): void {
-	vkfftAddonPath = options.vkfftPath;
-	fftwAddonPath = options.fftwPath;
-	cachedBackend = undefined;
-	cachedVkfft = undefined;
-	cachedFftw = undefined;
-}
-
-function tryLoadVkfft(): VkFftAddon | null {
-	if (cachedVkfft !== undefined) return cachedVkfft;
-	if (!vkfftAddonPath) {
-		cachedVkfft = null;
+function tryLoadVkfft(vkfftPath?: string): VkFftAddon | null {
+	if (!vkfftPath) return null;
+	try {
+		return require(vkfftPath) as VkFftAddon;
+	} catch {
 		return null;
 	}
-	try {
-		cachedVkfft = require(vkfftAddonPath) as VkFftAddon;
-	} catch {
-		cachedVkfft = null;
-	}
-	return cachedVkfft;
 }
 
-function tryLoadFftw(): FftAddon | null {
-	if (cachedFftw !== undefined) return cachedFftw;
-	if (!fftwAddonPath) {
-		cachedFftw = null;
+function tryLoadFftw(fftwPath?: string): FftAddon | null {
+	if (!fftwPath) return null;
+	try {
+		return require(fftwPath) as FftAddon;
+	} catch {
 		return null;
 	}
-	try {
-		cachedFftw = require(fftwAddonPath) as FftAddon;
-	} catch {
-		cachedFftw = null;
-	}
-	return cachedFftw;
 }
 
-export function detectFftBackend(executionProviders: ReadonlyArray<ExecutionProvider>): FftBackend {
-	if (cachedBackend !== undefined) return cachedBackend;
-
+export function detectFftBackend(executionProviders: ReadonlyArray<ExecutionProvider>, options?: { vkfftPath?: string; fftwPath?: string }): FftBackend {
 	for (const provider of executionProviders) {
 		if (provider === "gpu") {
-			const vkfft = tryLoadVkfft();
+			const vkfft = tryLoadVkfft(options?.vkfftPath);
 			if (vkfft) {
 				const device = vkfft.detectDevice();
 				if (device) {
-					cachedBackend = "vkfft";
-					return cachedBackend;
+					return "vkfft";
 				}
 			}
 		}
 		if (provider === "cpu-native") {
-			const fftw = tryLoadFftw();
+			const fftw = tryLoadFftw(options?.fftwPath);
 			if (fftw) {
-				cachedBackend = "fftw";
-				return cachedBackend;
+				return "fftw";
 			}
 		}
 		if (provider === "cpu") {
-			cachedBackend = "js";
-			return cachedBackend;
+			return "js";
 		}
 	}
 
-	cachedBackend = "js";
-	return cachedBackend;
+	return "js";
 }
 
-export function getFftAddon(backend: FftBackend): FftAddon | null {
-	if (backend === "vkfft") return tryLoadVkfft();
-	if (backend === "fftw") return tryLoadFftw();
+export function getFftAddon(backend: FftBackend, options?: { vkfftPath?: string; fftwPath?: string }): FftAddon | null {
+	if (backend === "vkfft") return tryLoadVkfft(options?.vkfftPath);
+	if (backend === "fftw") return tryLoadFftw(options?.fftwPath);
 	return null;
 }

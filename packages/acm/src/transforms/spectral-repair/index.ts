@@ -14,6 +14,8 @@ export interface SpectralRegion {
 
 export const schema = z.object({
 	method: z.enum(["ar", "nmf"]).default("ar").describe("Method"),
+	vkfftAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "vkfft-addon", download: "https://github.com/visionsofparadise/vkfft-addon" }).describe("VkFFT native addon — GPU FFT acceleration"),
+	fftwAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" }).describe("FFTW native addon — CPU FFT acceleration"),
 });
 
 export interface SpectralRepairProperties extends z.infer<typeof schema>, TransformModuleProperties {
@@ -42,11 +44,13 @@ export class SpectralRepairModule extends TransformModule<SpectralRepairProperti
 
 	private repairSampleRate = 44100;
 	private fftBackend: FftBackend = "js";
+	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
 		this.repairSampleRate = context.sampleRate;
-		this.fftBackend = detectFftBackend(context.executionProviders);
+		this.fftAddonOptions = { vkfftPath: this.properties.vkfftAddonPath || undefined, fftwPath: this.properties.fftwAddonPath || undefined };
+		this.fftBackend = detectFftBackend(context.executionProviders, this.fftAddonOptions);
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -68,7 +72,7 @@ export class SpectralRepairModule extends TransformModule<SpectralRepairProperti
 
 			if (!channel) continue;
 
-			const stftResult = stft(channel, fftSize, hopSize, stftOutput, this.fftBackend);
+			const stftResult = stft(channel, fftSize, hopSize, stftOutput, this.fftBackend, this.fftAddonOptions);
 			const freqPerBin = sampleRate / fftSize;
 			const timePerFrame = hopSize / sampleRate;
 
@@ -81,7 +85,7 @@ export class SpectralRepairModule extends TransformModule<SpectralRepairProperti
 				interpolateTfRegion(stftResult.real, stftResult.imag, startFrame, endFrame, startBin, endBin);
 			}
 
-			const repaired = istft(stftResult, hopSize, frames, this.fftBackend);
+			const repaired = istft(stftResult, hopSize, frames, this.fftBackend, this.fftAddonOptions);
 
 			await buffer.write(0, ch === 0 ? [repaired, ...(channels > 1 ? [chunk.samples[1] ?? new Float32Array(frames)] : [])] : [chunk.samples[0] ?? new Float32Array(frames), repaired]);
 		}
@@ -155,12 +159,16 @@ export function spectralRepair(
 	regions: Array<SpectralRegion>,
 	options?: {
 		method?: "ar" | "nmf";
+		vkfftAddonPath?: string;
+		fftwAddonPath?: string;
 		id?: string;
 	},
 ): SpectralRepairModule {
 	return new SpectralRepairModule({
 		regions,
 		method: options?.method ?? "ar",
+		vkfftAddonPath: options?.vkfftAddonPath ?? "",
+		fftwAddonPath: options?.fftwAddonPath ?? "",
 		id: options?.id,
 	});
 }

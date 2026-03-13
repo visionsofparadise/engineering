@@ -14,6 +14,8 @@ export interface ApplyInput {
 		readonly vbr?: number;
 	};
 	readonly bitDepth?: "16" | "24" | "32" | "32f";
+	readonly waveform?: { readonly path: string };
+	readonly spectrogram?: { readonly path: string; readonly frequencyScale?: string };
 }
 
 export type ApplyIpcParameters = [input: ApplyInput];

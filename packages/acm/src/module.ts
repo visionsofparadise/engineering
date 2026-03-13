@@ -6,6 +6,7 @@ export interface FileInputMeta {
 	readonly mode?: "open" | "save";
 	readonly accept?: string;
 	readonly binary?: string;
+	readonly download?: string;
 }
 
 export interface AudioChunk {

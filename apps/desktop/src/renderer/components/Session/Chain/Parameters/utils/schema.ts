@@ -10,6 +10,7 @@ export interface JsonSchemaProperty {
 	readonly mode?: "open" | "save";
 	readonly accept?: string;
 	readonly binary?: string;
+	readonly download?: string;
 }
 
 export interface JsonSchema {

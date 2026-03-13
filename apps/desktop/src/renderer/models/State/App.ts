@@ -40,7 +40,6 @@ export interface TabEntry {
 export interface ModulePackageConfig {
 	readonly url: string;
 	readonly directory: string;
-	readonly core?: boolean;
 }
 
 export interface LoadedModuleInfo {
@@ -110,9 +109,17 @@ async function deriveTabsFromSessions(main: MainWithEvents, userDataPath: string
 	}
 }
 
-const BUNDLED_BINARIES: Record<string, string> = {
-	ffmpeg: `ffmpeg-${process.platform}-${process.arch}${process.platform === "win32" ? ".exe" : ""}`,
-	ffprobe: `ffprobe-${process.platform}-${process.arch}${process.platform === "win32" ? ".exe" : ""}`,
+const PLATFORM_DIR = `${process.platform}-${process.arch}`;
+
+const BUNDLED_PLATFORM_BINARIES: Record<string, string> = {
+	ffmpeg: `ffmpeg${process.platform === "win32" ? ".exe" : ""}`,
+	ffprobe: `ffprobe${process.platform === "win32" ? ".exe" : ""}`,
+	"onnx-addon": "onnx_addon.node",
+	"vkfft-addon": "vkfft_addon.node",
+	"fftw-addon": "fftw_addon.node",
+};
+
+const BUNDLED_MODEL_BINARIES: Record<string, string> = {
 	"dtln-model_1": "dtln-model_1.onnx",
 	"dtln-model_2": "dtln-model_2.onnx",
 	Kim_Vocal_2: "Kim_Vocal_2.onnx",
@@ -125,17 +132,31 @@ async function resolveBundledBinaries(
 	main: MainWithEvents,
 ): Promise<Record<string, string>> {
 	const binaries: Record<string, string> = { ...saved };
+	const binariesRoot = `${resourcesPath}/binaries`;
 
-	for (const [key, filename] of Object.entries(BUNDLED_BINARIES)) {
+	for (const [key, filename] of Object.entries(BUNDLED_PLATFORM_BINARIES)) {
 		if (binaries[key]) continue;
 
-		const bundledPath = `${resourcesPath}/binaries/${filename}`;
+		const bundledPath = `${binariesRoot}/${PLATFORM_DIR}/${filename}`;
 
 		try {
 			await main.stat(bundledPath);
 			binaries[key] = bundledPath;
 		} catch {
-			// bundled binary not found — leave unset
+			// bundled binary not found for this platform — leave unset
+		}
+	}
+
+	for (const [key, filename] of Object.entries(BUNDLED_MODEL_BINARIES)) {
+		if (binaries[key]) continue;
+
+		const bundledPath = `${binariesRoot}/models/${filename}`;
+
+		try {
+			await main.stat(bundledPath);
+			binaries[key] = bundledPath;
+		} catch {
+			// bundled model not found — leave unset
 		}
 	}
 
@@ -169,24 +190,14 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 		windowState: saved.windowState,
 		batch: saved.batch ?? defaultBatchConfig(),
 		binaries,
-		packageUrls: mergeWithCoreDefaults(saved.packageUrls),
+		packageUrls: saved.packageUrls ?? CORE_PACKAGE_URLS,
 		packages: [],
 	};
 }
 
 const CORE_PACKAGE_URLS: ReadonlyArray<ModulePackageConfig> = [
-	{ url: "https://github.com/engineering/acm", directory: "acm", core: true },
+	{ url: "https://github.com/engineering/acm", directory: "acm" },
 ];
-
-function mergeWithCoreDefaults(saved: ReadonlyArray<ModulePackageConfig> | undefined): ReadonlyArray<ModulePackageConfig> {
-	if (!saved) return CORE_PACKAGE_URLS;
-	const savedDirs = new Set(saved.map((config) => config.directory));
-	const missing = CORE_PACKAGE_URLS.filter((config) => !savedDirs.has(config.directory));
-	return [...missing, ...saved.map((config) => {
-		const coreMatch = CORE_PACKAGE_URLS.find((core) => core.directory === config.directory);
-		return coreMatch ? { ...config, core: true } : config;
-	})];
-}
 
 function defaultBatchConfig(): BatchConfig {
 	return {

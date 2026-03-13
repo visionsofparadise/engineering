@@ -3,7 +3,7 @@ import { StreamContext } from "../../module";
 import { FfmpegModule, type FfmpegProperties } from "../ffmpeg";
 
 export const schema = z.object({
-	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg" }).describe("FFmpeg Path"),
+	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
 	rate: z.number().min(0.25).max(4).multipleOf(0.01).default(1).describe("Rate"),
 });
 
