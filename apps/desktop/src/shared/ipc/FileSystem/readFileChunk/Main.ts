@@ -10,7 +10,9 @@ export class ReadFileChunkMainIpc extends AsyncMainIpc<ReadFileChunkIpcParameter
 
 		try {
 			const buffer = Buffer.alloc(length);
+
 			const { bytesRead } = await handle.read(buffer, 0, length, offset);
+
 			return new Uint8Array(buffer.subarray(0, bytesRead));
 		} finally {
 			await handle.close();

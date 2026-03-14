@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loops with bounds-checked typed array access */
 import { z } from "zod";
-import { ChunkBuffer } from "../../chunk-buffer";
-import { StreamContext } from "../../module";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { detectFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { istft, stft } from "../../utils/stft";
@@ -82,8 +83,9 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 			const imagT = new Float32Array(numBins * numFrames);
 
 			for (let frame = 0; frame < numFrames; frame++) {
-				const re = stftResult.real[frame]!;
-				const im = stftResult.imag[frame]!;
+				const re = stftResult.real[frame];
+				const im = stftResult.imag[frame];
+				if (!re || !im) continue;
 
 				for (let bin = 0; bin < numBins; bin++) {
 					realT[bin * numFrames + frame] = re[bin]!;
@@ -94,8 +96,8 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 			// Original power per bin (bin-major), used as upper bound for clamping
 			const originalPowerT = new Float32Array(numBins * numFrames);
 
-			for (let i = 0; i < realT.length; i++) {
-				originalPowerT[i] = Math.max(realT[i]! * realT[i]! + imagT[i]! * imagT[i]!, 1e-10);
+			for (let ci = 0; ci < realT.length; ci++) {
+				originalPowerT[ci] = Math.max(realT[ci]! * realT[ci]! + imagT[ci]! * imagT[ci]!, 1e-10);
 			}
 
 			// Compute per-bin energy to skip silent bins
@@ -112,21 +114,21 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 				binEnergy[bin] = energy;
 			}
 
-			const meanEnergy = binEnergy.reduce((a, b) => a + b, 0) / numBins;
+			const meanEnergy = binEnergy.reduce((sum, sample) => sum + sample, 0) / numBins;
 			const energyThreshold = meanEnergy * 1e-4;
 
 			// Pre-allocate work arrays
-			const L = filterLength;
-			const corrReal = new Float32Array(L * L);
-			const corrImag = new Float32Array(L * L);
-			const crossReal = new Float32Array(L);
-			const crossImag = new Float32Array(L);
-			const filterReal = new Float32Array(L);
-			const filterImag = new Float32Array(L);
-			const arWork = new Float32Array(L * L);
-			const aiWork = new Float32Array(L * L);
-			const brWork = new Float32Array(L);
-			const biWork = new Float32Array(L);
+			const filterLen = filterLength;
+			const corrReal = new Float32Array(filterLen * filterLen);
+			const corrImag = new Float32Array(filterLen * filterLen);
+			const crossReal = new Float32Array(filterLen);
+			const crossImag = new Float32Array(filterLen);
+			const filterReal = new Float32Array(filterLen);
+			const filterImag = new Float32Array(filterLen);
+			const arWork = new Float32Array(filterLen * filterLen);
+			const aiWork = new Float32Array(filterLen * filterLen);
+			const brWork = new Float32Array(filterLen);
+			const biWork = new Float32Array(filterLen);
 
 			// Iteration power buffer (recomputed each iteration from modified STFT)
 			const iterPowerT = new Float32Array(numBins * numFrames);
@@ -137,8 +139,8 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 				if (iter === 0) {
 					powerT = originalPowerT;
 				} else {
-					for (let i = 0; i < realT.length; i++) {
-						iterPowerT[i] = Math.max(realT[i]! * realT[i]! + imagT[i]! * imagT[i]!, 1e-10);
+					for (let ci = 0; ci < realT.length; ci++) {
+						iterPowerT[ci] = Math.max(realT[ci]! * realT[ci]! + imagT[ci]! * imagT[ci]!, 1e-10);
 					}
 
 					powerT = iterPowerT;
@@ -152,37 +154,37 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 					filterReal.fill(0);
 					filterImag.fill(0);
 
-					solveWpeFilter(realT, imagT, powerT, bo, numFrames, predictionDelay, L, filterReal, filterImag, corrReal, corrImag, crossReal, crossImag, arWork, aiWork, brWork, biWork);
+					solveWpeFilter(realT, imagT, powerT, bo, numFrames, predictionDelay, filterLen, filterReal, filterImag, corrReal, corrImag, crossReal, crossImag, arWork, aiWork, brWork, biWork);
 
 					// Apply prediction filter and subtract reverb estimate
-					for (let frame = predictionDelay + L; frame < numFrames; frame++) {
+					for (let frame = predictionDelay + filterLen; frame < numFrames; frame++) {
 						let predR = 0;
 						let predI = 0;
 
-						for (let tap = 0; tap < L; tap++) {
-							const pastIdx = bo + frame - predictionDelay - tap - 1;
-							const pR = realT[pastIdx]!;
-							const pI = imagT[pastIdx]!;
+						for (let tap = 0; tap < filterLen; tap++) {
+							const pastOffset = bo + frame - predictionDelay - tap - 1;
+							const pR = realT[pastOffset]!;
+							const pI = imagT[pastOffset]!;
 
 							predR += filterReal[tap]! * pR - filterImag[tap]! * pI;
 							predI += filterReal[tap]! * pI + filterImag[tap]! * pR;
 						}
 
-						const idx = bo + frame;
-						const newR = realT[idx]! - predR;
-						const newI = imagT[idx]! - predI;
+						const pos = bo + frame;
+						const newR = realT[pos]! - predR;
+						const newI = imagT[pos]! - predI;
 
 						// Clamp: output power must not exceed original power
 						const newPow = newR * newR + newI * newI;
-						const origPow = originalPowerT[idx]!;
+						const origPow = originalPowerT[pos]!;
 
 						if (newPow > origPow) {
 							const scale = Math.sqrt(origPow / newPow);
-							realT[idx] = newR * scale;
-							imagT[idx] = newI * scale;
+							realT[pos] = newR * scale;
+							imagT[pos] = newI * scale;
 						} else {
-							realT[idx] = newR;
-							imagT[idx] = newI;
+							realT[pos] = newR;
+							imagT[pos] = newI;
 						}
 					}
 				}
@@ -190,8 +192,9 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 
 			// Transpose back to frame-major for iSTFT
 			for (let frame = 0; frame < numFrames; frame++) {
-				const re = stftResult.real[frame]!;
-				const im = stftResult.imag[frame]!;
+				const re = stftResult.real[frame];
+				const im = stftResult.imag[frame];
+				if (!re || !im) continue;
 
 				for (let bin = 0; bin < numBins; bin++) {
 					re[bin] = realT[bin * numFrames + frame]!;
@@ -245,16 +248,16 @@ function solveWpeFilter(
 	crossReal.fill(0);
 	crossImag.fill(0);
 
-	const L = filterLength;
-	const D = predictionDelay;
+	const filterLen = filterLength;
+	const delay = predictionDelay;
 
-	for (let frame = D + L; frame < numFrames; frame++) {
+	for (let frame = delay + filterLen; frame < numFrames; frame++) {
 		const weight = 1 / powerT[binOffset + frame]!;
 		const targetR = realT[binOffset + frame]!;
 		const targetI = imagT[binOffset + frame]!;
 
-		for (let tap1 = 0; tap1 < L; tap1++) {
-			const pastIdx1 = binOffset + frame - D - tap1 - 1;
+		for (let tap1 = 0; tap1 < filterLen; tap1++) {
+			const pastIdx1 = binOffset + frame - delay - tap1 - 1;
 			const pR1 = realT[pastIdx1]!;
 			const pI1 = imagT[pastIdx1]!;
 
@@ -262,31 +265,31 @@ function solveWpeFilter(
 			crossImag[tap1] = (crossImag[tap1] ?? 0) + weight * (pR1 * targetI - pI1 * targetR);
 
 			// Upper triangle only (Hermitian: corr[i][j] = conj(corr[j][i]))
-			for (let tap2 = tap1; tap2 < L; tap2++) {
-				const pastIdx2 = binOffset + frame - D - tap2 - 1;
+			for (let tap2 = tap1; tap2 < filterLen; tap2++) {
+				const pastIdx2 = binOffset + frame - delay - tap2 - 1;
 				const pR2 = realT[pastIdx2]!;
 				const pI2 = imagT[pastIdx2]!;
 
-				corrReal[tap1 * L + tap2] = (corrReal[tap1 * L + tap2] ?? 0) + weight * (pR1 * pR2 + pI1 * pI2);
-				corrImag[tap1 * L + tap2] = (corrImag[tap1 * L + tap2] ?? 0) + weight * (pR1 * pI2 - pI1 * pR2);
+				corrReal[tap1 * filterLen + tap2] = (corrReal[tap1 * filterLen + tap2] ?? 0) + weight * (pR1 * pR2 + pI1 * pI2);
+				corrImag[tap1 * filterLen + tap2] = (corrImag[tap1 * filterLen + tap2] ?? 0) + weight * (pR1 * pI2 - pI1 * pR2);
 			}
 		}
 	}
 
 	// Fill lower triangle from conjugate of upper
-	for (let tap1 = 1; tap1 < L; tap1++) {
+	for (let tap1 = 1; tap1 < filterLen; tap1++) {
 		for (let tap2 = 0; tap2 < tap1; tap2++) {
-			corrReal[tap1 * L + tap2] = corrReal[tap2 * L + tap1]!;
-			corrImag[tap1 * L + tap2] = -corrImag[tap2 * L + tap1]!;
+			corrReal[tap1 * filterLen + tap2] = corrReal[tap2 * filterLen + tap1]!;
+			corrImag[tap1 * filterLen + tap2] = -corrImag[tap2 * filterLen + tap1]!;
 		}
 	}
 
 	// Regularize diagonal
-	for (let tap = 0; tap < L; tap++) {
-		corrReal[tap * L + tap] = (corrReal[tap * L + tap] ?? 0) + 1e-6;
+	for (let tap = 0; tap < filterLen; tap++) {
+		corrReal[tap * filterLen + tap] = (corrReal[tap * filterLen + tap] ?? 0) + 1e-6;
 	}
 
-	solveLinearSystem(corrReal, corrImag, crossReal, crossImag, L, outReal, outImag, arWork, aiWork, brWork, biWork);
+	solveLinearSystem(corrReal, corrImag, crossReal, crossImag, filterLen, outReal, outImag, arWork, aiWork, brWork, biWork);
 }
 
 function solveLinearSystem(aReal: Float32Array, aImag: Float32Array, bReal: Float32Array, bImag: Float32Array, size: number, outReal: Float32Array, outImag: Float32Array, ar: Float32Array, ai: Float32Array, br: Float32Array, bi: Float32Array): void {

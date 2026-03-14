@@ -1,5 +1,6 @@
-import { memo, useMemo, type FC } from "react";
-import { useSnapshot } from "valtio";
+import { memo, useCallback, useMemo, useRef, type FC } from "react";
+import { useSyncExternalStore } from "react";
+import { snapshot as valtioSnapshot, subscribe as valtioSubscribe } from "valtio/vanilla";
 import type { ProxyStore } from "./ProxyStore";
 
 const isSnapshot = (value: unknown): value is { _key: symbol } => typeof value === "object" && value !== null && "_key" in value && typeof (value as { _key: unknown })._key === "symbol";
@@ -73,37 +74,49 @@ function setAtPath<T>(object: T, path: PropPath, value: unknown): T {
 	return { ...object, [head]: updated } as T;
 }
 
-function resolveProxy(stores: Array<ProxyStore>, key: symbol): object | undefined {
+function resolveProxy(stores: Array<ProxyStore>, key: symbol): object {
 	for (const store of stores) {
 		const proxy = store.dangerouslyGetProxy(key);
 
 		if (proxy) return proxy;
 	}
 
-	return undefined;
+	throw new Error(`resnapshot: no store holds a proxy for snapshot key ${String(key)}`);
 }
 
 function useResnapshotAll(stores: Array<ProxyStore>, snapshots: Array<{ _key: symbol }>): Array<object> {
 	const proxies = useMemo(
 		() => snapshots.map((snap) => resolveProxy(stores, snap._key)),
-
 		[...stores, ...snapshots.map((snap) => snap._key)],
 	);
 
-	// Safe: snapshot count is stable per component (same prop shape across renders).
-	// When a proxy can't be resolved, fall back to the stale snapshot itself.
+	const lastSnapshots = useRef<Array<object>>([]);
 
-	return proxies.map((proxy, index) => {
-		if (proxy) {
-			// eslint-disable-next-line react-hooks/rules-of-hooks
-			return useSnapshot(proxy);
+	const getSnapshot = useCallback((): Array<object> => {
+		const next = proxies.map((proxy) => valtioSnapshot(proxy));
+		const last = lastSnapshots.current;
+
+		if (last.length === next.length && last.every((snap, index) => snap === next[index])) {
+			return last;
 		}
 
-		const stale = snapshots[index];
-		if (!stale) throw new Error(`resnapshot: no snapshot at index ${index}`);
+		lastSnapshots.current = next;
 
-		return stale;
-	});
+		return next;
+	}, [proxies]);
+
+	const subscribe = useCallback(
+		(callback: () => void) => {
+			const unsubscribes = proxies.map((proxy) => valtioSubscribe(proxy, callback));
+
+			return () => {
+				for (const unsub of unsubscribes) unsub();
+			};
+		},
+		[proxies],
+	);
+
+	return useSyncExternalStore(subscribe, getSnapshot);
 }
 
 interface StoreContext {
