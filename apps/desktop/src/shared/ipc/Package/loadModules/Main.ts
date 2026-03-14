@@ -1,4 +1,3 @@
-import { AudioChainModule } from "audio-chain-module";
 import { pathToFileURL } from "node:url";
 import { toJSONSchema } from "zod";
 import { registerPackage, type ModuleClass } from "../../../models/ModuleRegistry";
@@ -21,7 +20,7 @@ export class LoadPackageModulesMainIpc extends AsyncMainIpc<LoadPackageModulesIp
 		const result: Array<LoadedModuleInfo> = [];
 
 		for (const value of Object.values(exports)) {
-			if (AudioChainModule.is(value) && isAudioChainModule(value)) {
+			if (isAudioChainModule(value)) {
 				modules.set(value.moduleName, value);
 
 				result.push({

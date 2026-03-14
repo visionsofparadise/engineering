@@ -36,18 +36,13 @@ export function resampleDirect(
 
 		const proc = spawn(ffmpegPath, args, { stdio: ["pipe", "pipe", "pipe"] });
 
-		if (!proc.stdout || !proc.stderr || !proc.stdin) {
-			reject(new Error("Failed to create ffmpeg stdio streams"));
-			return;
-		}
-
 		const stdout = proc.stdout;
 		const stdin = proc.stdin;
 		const outputChunks: Array<Buffer> = [];
 		const stderrChunks: Array<Buffer> = [];
 
 		stdout.on("data", (chunk: Buffer) => outputChunks.push(chunk));
-		proc.stderr!.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+		proc.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
 
 		proc.on("error", (error) => {
 			reject(new Error(`Failed to spawn ffmpeg: ${error.message}`));
@@ -74,8 +69,8 @@ export function resampleDirect(
 			for (let frame = 0; frame < outFrames; frame++) {
 				for (let ch = 0; ch < numChannels; ch++) {
 					const arr = result[ch];
-					const val = view[frame * numChannels + ch];
-					if (arr && val !== undefined) arr[frame] = val;
+					const sample = view[frame * numChannels + ch];
+					if (arr && sample !== undefined) arr[frame] = sample;
 				}
 			}
 

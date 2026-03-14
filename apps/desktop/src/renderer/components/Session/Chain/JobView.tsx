@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "audio-chain-module";
+import type { IdentifiedChain } from "../../../hooks/useChain";
 import type { AppContext } from "../../../models/Context";
 import type { JobState } from "../../../models/State/Jobs";
 import { Button } from "../../ui/button";
@@ -9,8 +9,8 @@ interface JobViewProps {
 	readonly context: AppContext;
 	readonly jobState: JobState;
 	readonly onAbort: () => void;
-	readonly chain: ChainDefinition;
-	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
+	readonly chain: IdentifiedChain;
+	readonly setChain: (updater: (chain: IdentifiedChain) => IdentifiedChain) => void;
 }
 
 export const JobView: React.FC<JobViewProps> = ({ context, jobState, onAbort, chain, setChain }) => (

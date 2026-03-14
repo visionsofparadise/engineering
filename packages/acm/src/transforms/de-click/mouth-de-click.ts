@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DeClickModule, type DeClickProperties } from ".";
-import { AudioChainModuleInput } from "../../module";
+import type { AudioChainModuleInput } from "../../module";
 
 export const mouthDeClickSchema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.7).describe("Sensitivity"),

@@ -1,8 +1,7 @@
-import type { ChainDefinition } from "audio-chain-module";
-import { Settings2 } from "lucide-react";
-import { useCallback } from "react";
+import { resnapshot } from "../../../../models/ProxyStore/resnapshot";
+import type { IdentifiedChain } from "../../../../hooks/useChain";
+import { useCallback, type ReactNode } from "react";
 import type { AppContext } from "../../../../models/Context";
-import { Button } from "../../../ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../ui/popover";
 import { ParameterSwitch } from "./ParameterSwitch";
 import { getProperties } from "./utils/schema";
@@ -12,12 +11,13 @@ interface ParametersProps {
 	readonly module: string;
 	readonly index: number;
 	readonly context: AppContext;
-	readonly chain: ChainDefinition;
-	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
+	readonly chain: IdentifiedChain;
+	readonly setChain: (updater: (chain: IdentifiedChain) => IdentifiedChain) => void;
 	readonly disabled?: boolean;
+	readonly children: ReactNode;
 }
 
-export const Parameters: React.FC<ParametersProps> = ({ packageName, module, index, context, chain, setChain, disabled }) => {
+export const Parameters: React.FC<ParametersProps> = resnapshot(({ packageName, module, index, context, chain, setChain, disabled, children }) => {
 	const app = context.app;
 	const packageState = app.packages.find((ps) => ps.directory === packageName);
 	const mod = packageState?.modules.find((mi) => mi.moduleName === module);
@@ -38,23 +38,18 @@ export const Parameters: React.FC<ParametersProps> = ({ packageName, module, ind
 		[index, setChain],
 	);
 
-	if (entries.length === 0) return null;
+	if (entries.length === 0) return <>{children}</>;
 
 	return (
 		<Popover>
 			<PopoverTrigger asChild>
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-5 w-5 shrink-0"
-				>
-					<Settings2 className="h-3 w-3" />
-				</Button>
+				{children}
 			</PopoverTrigger>
 			<PopoverContent
-				className="w-64 space-y-3 p-3"
-				align="start"
+				className="w-72 space-y-5 p-3"
+				align="center"
 				side="left"
+				sideOffset={32}
 			>
 				{entries.map(([key, property]) => {
 					const label = property.description ?? key;
@@ -75,4 +70,4 @@ export const Parameters: React.FC<ParametersProps> = ({ packageName, module, ind
 			</PopoverContent>
 		</Popover>
 	);
-};
+});

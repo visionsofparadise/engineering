@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ChunkBuffer } from "../../chunk-buffer";
-import { StreamContext } from "../../module";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { highPassCoefficients, lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
@@ -54,8 +54,8 @@ export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperti
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);
-		const onnxProviders = context.executionProviders.filter((p) => p !== "gpu" && p !== "cpu-native");
-		this.session = await createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
+		const onnxProviders = context.executionProviders.filter((ep) => ep !== "gpu" && ep !== "cpu-native");
+		this.session = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {

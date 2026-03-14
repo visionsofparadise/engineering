@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { ExecutionProvider } from "../module";
+import type { ExecutionProvider } from "../module";
 
 export type FftBackend = "vkfft" | "fftw" | "js";
 

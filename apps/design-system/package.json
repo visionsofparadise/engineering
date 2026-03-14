@@ -1,5 +1,5 @@
 {
-  "name": "@engineering/design-system",
+  "name": "design-system",
   "version": "0.0.0",
   "type": "module",
   "private": true,

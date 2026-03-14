@@ -14,7 +14,7 @@ function InputShowcase() {
 			<h4 className="mb-3 font-mono text-[0.625rem] uppercase tracking-[0.2em] text-muted-foreground">
 				Input
 			</h4>
-			<div className="grid max-w-sm gap-4">
+			<div className="form-grid max-w-sm">
 				<div>
 					<Label htmlFor="default-input" className="mb-2 block">Default</Label>
 					<Input id="default-input" placeholder="Enter value..." />
@@ -42,7 +42,7 @@ function SelectShowcase() {
 			<h4 className="mb-3 font-mono text-[0.625rem] uppercase tracking-[0.2em] text-muted-foreground">
 				Select
 			</h4>
-			<div className="grid max-w-sm gap-4">
+			<div className="form-grid max-w-sm">
 				<div>
 					<Label className="mb-2 block">Format</Label>
 					<Select defaultValue="wav">
@@ -128,7 +128,7 @@ function SwitchShowcase() {
 			<h4 className="mb-3 font-mono text-[0.625rem] uppercase tracking-[0.2em] text-muted-foreground">
 				Switch
 			</h4>
-			<div className="grid max-w-sm gap-4">
+			<div className="form-grid max-w-sm">
 				<div className="flex items-center justify-between">
 					<Label htmlFor="bypass-switch">Bypass Module</Label>
 					<Switch id="bypass-switch" checked={enabled} onCheckedChange={setEnabled} />
@@ -157,7 +157,7 @@ function RealisticForm() {
 					<span className="text-sm font-medium text-card-foreground">Loudness</span>
 					<Switch checked={!bypass} onCheckedChange={(checked) => setBypass(!checked)} />
 				</div>
-				<div className="space-y-5">
+				<div className="form-grid">
 					<div>
 						<div className="mb-2 flex items-baseline justify-between">
 							<Label className="text-xs">Target</Label>

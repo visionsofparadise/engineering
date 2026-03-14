@@ -5,6 +5,7 @@ const chainModuleReferenceSchema = z.object({
 	module: z.string().min(1),
 	label: z.string().optional(),
 	options: z.record(z.string(), z.unknown()).optional(),
+	bypass: z.boolean().optional(),
 });
 
 const chainDefinitionSchema = z.object({

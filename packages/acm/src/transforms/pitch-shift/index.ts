@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { StreamContext } from "../../module";
+import type { StreamContext } from "../../module";
 import { FfmpegModule, type FfmpegProperties } from "../ffmpeg";
 
 export const schema = z.object({

@@ -55,9 +55,12 @@ export class WriteModule extends TargetModule<WriteProperties> {
 		this.useEncoding = encoding !== undefined && encoding.format !== "wav" && !!this.properties.ffmpegPath;
 
 		if (this.useEncoding && encoding) {
+			const ffmpegPath = this.properties.ffmpegPath;
+			if (!ffmpegPath) throw new Error("ffmpegPath is required for encoding");
+
 			const args = this.buildFfmpegArgs(encoding);
 
-			const proc = spawn(this.properties.ffmpegPath!, args, {
+			const proc = spawn(ffmpegPath, args, {
 				stdio: ["pipe", "ignore", "pipe"],
 			});
 

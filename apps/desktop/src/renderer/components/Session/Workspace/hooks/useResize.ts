@@ -13,8 +13,8 @@ export function useWorkspaceResize(containerRef: React.RefObject<HTMLDivElement 
 			if (!entry) return;
 
 			sessionStore.mutate(workspace, (proxy) => {
-				proxy.viewportWidth.transient.value = entry.contentRect.width;
-				proxy.viewportHeight.transient.value = entry.contentRect.height;
+				proxy.viewportWidth.committed.value = entry.contentRect.width;
+				proxy.viewportHeight.committed.value = entry.contentRect.height;
 			});
 		});
 

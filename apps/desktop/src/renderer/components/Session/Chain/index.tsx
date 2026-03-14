@@ -1,10 +1,10 @@
-import type { ChainDefinition } from "audio-chain-module";
+import { resnapshot } from "../../../models/ProxyStore/resnapshot";
+import { Download, FileAudio } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
-import { useSaveChain } from "../../../hooks/useChain";
+import type { IdentifiedChain } from "../../../hooks/useChain";
 import type { SessionContext } from "../../../models/Context";
 import { useJobsState, waitForJobComplete } from "../../../models/State/Jobs";
 import { Button } from "../../ui/button";
-import { ScrollArea } from "../../ui/scroll-area";
 import { ChainManagerMenu } from "./ChainManager/ChainManagerMenu";
 import { ChainSlots } from "./ChainSlots";
 import { JobView } from "./JobView";
@@ -13,9 +13,17 @@ interface ChainPanelProps {
 	readonly context: SessionContext;
 }
 
-export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
-	const { chain, sessionPath, queryClient, userDataPath, appStore, jobs } = context;
-	const saveChain = useSaveChain(sessionPath);
+function SignalFlowNode({ icon: Icon, label }: { icon: typeof FileAudio; label: string }) {
+	return (
+		<div className="flex items-center gap-2 border border-border bg-muted px-3 py-2">
+			<Icon className="h-3.5 w-3.5 text-muted-foreground" />
+			<span className="font-mono text-xs text-muted-foreground">{label}</span>
+		</div>
+	);
+}
+
+export const ChainPanel: React.FC<ChainPanelProps> = resnapshot(({ context }) => {
+	const { chain, saveChain, sessionPath, queryClient, userDataPath, appStore, jobs } = context;
 	const { startJob, updateModuleProgress, completeModule, completeChain } = useJobsState(appStore, jobs);
 	const activeJobIdRef = useRef<string | undefined>(undefined);
 
@@ -32,15 +40,15 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 	const transforms = chain.transforms;
 
 	const setChain = useCallback(
-		(updater: (c: ChainDefinition) => ChainDefinition) => {
-			saveChain.mutate(updater(chain));
+		(updater: (c: IdentifiedChain) => IdentifiedChain) => {
+			saveChain(updater(chain));
 		},
 		[chain, saveChain],
 	);
 
 	const handleChainChange = useCallback(
-		(updated: ChainDefinition) => {
-			saveChain.mutate(updated);
+		(updated: IdentifiedChain) => {
+			saveChain(updated);
 		},
 		[saveChain],
 	);
@@ -69,6 +77,10 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 			for (let moduleIndex = 0; moduleIndex < transforms.length; moduleIndex++) {
 				const transform = transforms[moduleIndex];
 				if (!transform) break;
+				if (transform.bypass) {
+					completeModule(id, moduleIndex);
+					continue;
+				}
 
 				const timestamp = Date.now();
 				const snapshotDir = `${sessionPath}/${timestamp}-${moduleIndex}-${transform.module}`;
@@ -104,19 +116,25 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 	}
 
 	return (
-		<div className="flex h-full flex-col">
-			<div className="flex items-center justify-between surface-panel-header px-3 py-2">
-				<span className="text-xs font-medium text-muted-foreground">Chain</span>
+		<div className="flex h-full flex-col p-3">
+			<div className="flex items-center justify-between pb-2">
+				<span className="font-mono text-[0.625rem] uppercase tracking-[0.2em] text-muted-foreground">Chain</span>
 				<ChainManagerMenu chain={chain} onChainChange={handleChainChange} userDataPath={userDataPath} />
 			</div>
-			<ScrollArea className="flex-1">
-				<ChainSlots context={context} chain={chain} setChain={setChain} />
-			</ScrollArea>
-			<div className="flex justify-end border-t border-border px-3 py-2">
+			<div className="relative flex flex-1 flex-col items-center overflow-y-auto">
+				<div className="absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 signal-line" />
+				<div className="relative z-10 flex-shrink-0">
+					<SignalFlowNode icon={FileAudio} label="Source" />
+				</div>
+				<div className="flex w-full flex-1 flex-col justify-center py-3">
+					<ChainSlots context={context} chain={chain} setChain={setChain} />
+				</div>
+				<div className="relative z-10 flex-shrink-0">
+					<SignalFlowNode icon={Download} label="Target" />
+				</div>
+			</div>
+			<div className="flex justify-end pt-3">
 				<Button
-					variant="default"
-					size="sm"
-					className="h-7 text-xs"
 					disabled={transforms.length === 0}
 					onClick={() => void handleApplyAll()}
 				>
@@ -125,4 +143,4 @@ export const ChainPanel: React.FC<ChainPanelProps> = ({ context }) => {
 			</div>
 		</div>
 	);
-};
+});

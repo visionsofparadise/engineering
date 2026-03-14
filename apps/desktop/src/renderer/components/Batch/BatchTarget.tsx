@@ -1,13 +1,14 @@
+import { FolderOpen } from "lucide-react";
 import { useCallback } from "react";
 import type { Snapshot } from "valtio/vanilla";
 import type { AppContext } from "../../models/Context";
 import type { ProxyStore } from "../../models/ProxyStore/ProxyStore";
 import type { AppState, BatchTarget as BatchTargetType } from "../../models/State/App";
-import { Button } from "../ui/button";
+import { ButtonBank } from "../ui/button-bank";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { ScrollArea } from "../ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Slider } from "../ui/slider";
 
 interface BatchTargetProps {
 	readonly app: Snapshot<AppState>;
@@ -15,6 +16,8 @@ interface BatchTargetProps {
 	readonly disabled: boolean;
 	readonly context: AppContext;
 }
+
+const MAX_CONCURRENCY = navigator.hardwareConcurrency || 16;
 
 export const BatchTarget: React.FC<BatchTargetProps> = ({ app, appStore, disabled, context }) => {
 	const target = app.batch.target;
@@ -46,138 +49,118 @@ export const BatchTarget: React.FC<BatchTargetProps> = ({ app, appStore, disable
 		[app, appStore],
 	);
 
+	const dirName = target.outputDir
+		? target.outputDir.split(/[\\/]/).pop() ?? target.outputDir
+		: undefined;
+
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex items-center border-b border-border px-3 py-2">
-				<span className="text-xs font-medium text-muted-foreground">Target</span>
-			</div>
 			<ScrollArea className="flex-1">
-				<div className="flex flex-col gap-4 p-3">
-					<div className="grid gap-2">
-						<Label className="text-xs">Output Directory</Label>
-						<div className="flex gap-1">
+				<div className="flex flex-col gap-7">
+					<div className="grid items-start gap-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))" }}>
+						<div className="grid gap-2">
+							<Label>Output Directory</Label>
+							<div className="flex items-center gap-1">
+								<div
+									className="surface-control flex h-10 min-w-0 flex-1 cursor-pointer items-center gap-2 px-3"
+									onClick={() => void handleBrowse()}
+								>
+									<span className={dirName ? "flex-1 truncate text-sm text-foreground" : "flex-1 truncate text-sm text-muted-foreground"}>
+										{dirName ?? "Select output directory..."}
+									</span>
+								</div>
+								<button
+									type="button"
+									className="surface-control flex h-10 w-10 shrink-0 items-center justify-center text-muted-foreground transition-all hover:text-foreground active:translate-y-px"
+									disabled={disabled}
+									onClick={() => void handleBrowse()}
+								>
+									<FolderOpen className="h-4 w-4" />
+								</button>
+							</div>
+							{target.outputDir && (
+								<p className="truncate text-[10px] text-muted-foreground">{target.outputDir}</p>
+							)}
+						</div>
+
+						<div className="grid gap-2">
+							<Label>Filename Template</Label>
 							<Input
-								value={target.outputDir}
-								onChange={(event) => update({ outputDir: event.target.value })}
-								placeholder="Select output directory..."
-								className="h-7 flex-1 text-xs"
+								value={target.template}
+								onChange={(event) => update({ template: event.target.value })}
+								placeholder="{name}"
 								disabled={disabled}
 							/>
-							<Button
-								variant="outline"
-								size="sm"
-								className="h-7 text-xs"
-								disabled={disabled}
-								onClick={() => void handleBrowse()}
-							>
-								Browse
-							</Button>
+							<p className="text-[10px] text-muted-foreground">
+								Variables: {"{name}"}, {"{ext}"}, {"{index}"}, {"{index:N}"}
+							</p>
 						</div>
 					</div>
 
-					<div className="grid gap-2">
-						<Label className="text-xs">Filename Template</Label>
-						<Input
-							value={target.template}
-							onChange={(event) => update({ template: event.target.value })}
-							placeholder="{name}"
-							className="h-7 text-xs"
-							disabled={disabled}
-						/>
-						<p className="text-[10px] text-muted-foreground">
-							Variables: {"{name}"}, {"{ext}"}, {"{index}"}, {"{index:N}"}
-						</p>
-					</div>
+					<div className="grid items-start gap-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(10rem, 1fr))" }}>
+						<div className="grid gap-2">
+							<Label>Format</Label>
+							<ButtonBank
+								value={target.format}
+								onValueChange={(value) => update({ format: value as BatchTargetType["format"] })}
+								options={["wav", "flac", "mp3", "aac"]}
+								disabled={disabled}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label className="text-xs">Format</Label>
-						<div className="flex gap-1">
-							{(["wav", "flac", "mp3", "aac"] as const).map((fmt) => (
-								<Button
-									key={fmt}
-									variant={target.format === fmt ? "default" : "outline"}
-									size="sm"
-									className="h-7 flex-1 text-xs uppercase"
+						{(target.format === "wav" || target.format === "flac") && (
+							<div className="grid gap-2">
+								<Label>Bit Depth</Label>
+								<ButtonBank
+									value={target.bitDepth ?? "24"}
+									onValueChange={(value) => update({ bitDepth: value as BatchTargetType["bitDepth"] })}
+									options={target.format === "wav" ? ["16", "24", "32", "32f"] : ["16", "24"]}
 									disabled={disabled}
-									onClick={() => update({ format: fmt })}
-								>
-									{fmt}
-								</Button>
-							))}
-						</div>
-					</div>
+								/>
+							</div>
+						)}
 
-					{(target.format === "wav" || target.format === "flac") && (
-						<div className="grid gap-2">
-							<Label className="text-xs">Bit Depth</Label>
-							<Select
-								value={target.bitDepth ?? "24"}
-								onValueChange={(value) => update({ bitDepth: value as BatchTargetType["bitDepth"] })}
+						{target.format === "mp3" && (
+							<div className="grid gap-2">
+								<Label>Bitrate</Label>
+								<ButtonBank
+									value={target.bitrate ?? "192k"}
+									onValueChange={(value) => update({ bitrate: value })}
+									options={["128k", "160k", "192k", "224k", "256k", "320k"]}
+									disabled={disabled}
+								/>
+							</div>
+						)}
+
+						{target.format === "aac" && (
+							<div className="grid gap-2">
+								<Label>Bitrate</Label>
+								<ButtonBank
+									value={target.bitrate ?? "192k"}
+									onValueChange={(value) => update({ bitrate: value })}
+									options={["64k", "96k", "128k", "160k", "192k", "256k", "320k"]}
+									disabled={disabled}
+								/>
+							</div>
+						)}
+
+						<div>
+							<div className="mb-2 flex items-baseline justify-between">
+								<Label>Concurrency</Label>
+								<span className="font-mono text-xs tabular-nums text-muted-foreground">
+									{app.batch.concurrency}
+								</span>
+							</div>
+							<Slider
+								value={[app.batch.concurrency]}
+								onValueChange={(values) => updateConcurrency(values[0] ?? 1)}
+								min={1}
+								max={MAX_CONCURRENCY}
+								step={1}
+								ticks={MAX_CONCURRENCY - 1}
 								disabled={disabled}
-							>
-								<SelectTrigger className="h-7 text-xs">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="16">16-bit</SelectItem>
-									<SelectItem value="24">24-bit</SelectItem>
-									{target.format === "wav" && <SelectItem value="32">32-bit</SelectItem>}
-									{target.format === "wav" && <SelectItem value="32f">32-bit float</SelectItem>}
-								</SelectContent>
-							</Select>
+							/>
 						</div>
-					)}
-
-					{target.format === "mp3" && (
-						<div className="grid gap-2">
-							<Label className="text-xs">Bitrate</Label>
-							<Select
-								value={target.bitrate ?? "192k"}
-								onValueChange={(value) => update({ bitrate: value })}
-								disabled={disabled}
-							>
-								<SelectTrigger className="h-7 text-xs">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{["128k", "160k", "192k", "224k", "256k", "320k"].map((br) => (
-										<SelectItem key={br} value={br}>{br}</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-					)}
-
-					{target.format === "aac" && (
-						<div className="grid gap-2">
-							<Label className="text-xs">Bitrate</Label>
-							<Select
-								value={target.bitrate ?? "192k"}
-								onValueChange={(value) => update({ bitrate: value })}
-								disabled={disabled}
-							>
-								<SelectTrigger className="h-7 text-xs">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{["64k", "96k", "128k", "160k", "192k", "256k", "320k"].map((br) => (
-										<SelectItem key={br} value={br}>{br}</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-					)}
-
-					<div className="grid gap-2">
-						<Label className="text-xs">Concurrency</Label>
-						<Input
-							type="number"
-							value={app.batch.concurrency}
-							onChange={(event) => updateConcurrency(Number(event.target.value))}
-							min={1}
-							className="h-7 text-xs"
-							disabled={disabled}
-						/>
 					</div>
 				</div>
 			</ScrollArea>

@@ -28,7 +28,7 @@ export const Session: React.FC<SessionProps> = ({ tab, context }) => {
 		},
 	});
 
-	const chain = useChain(sessionPath);
+	const { chain, save: saveChain } = useChain(sessionPath);
 
 	const workspace = useWorkspaceState(sessionStore);
 	const selection = useSelectionState(sessionStore);
@@ -47,13 +47,14 @@ export const Session: React.FC<SessionProps> = ({ tab, context }) => {
 			...context,
 			sessionPath,
 			chain,
+			saveChain,
 			sessionStore,
 			workspace,
 			selection,
 			playback,
 			playbackEngine,
 		};
-	}, [context, sessionPath, chain, snapshots.data, sessionStore, workspace, selection, playback, playbackEngine]);
+	}, [context, sessionPath, chain, saveChain, snapshots.data, sessionStore, workspace, selection, playback, playbackEngine]);
 
 	const snapshotList = snapshots.data ?? [];
 	const activeSnapshotFolder = tab.activeSnapshotFolder ?? snapshotList[snapshotList.length - 1];
@@ -65,7 +66,7 @@ export const Session: React.FC<SessionProps> = ({ tab, context }) => {
 	}, [activeSnapshotFolder, sessionPath, playbackEngine]);
 
 	const { undo, redo } = useUndoRedo(
-		sessionContext ?? { ...context, sessionPath, chain: { transforms: [] }, sessionStore, workspace, selection, playback, playbackEngine },
+		sessionContext ?? { ...context, sessionPath, chain: { transforms: [] }, saveChain, sessionStore, workspace, selection, playback, playbackEngine },
 		snapshotList,
 	);
 

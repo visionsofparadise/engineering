@@ -1,7 +1,8 @@
-import type { ChainDefinition } from "audio-chain-module";
+import type { IdentifiedChain } from "../../../hooks/useChain";
 import { Check, Loader2 } from "lucide-react";
 import type { AppContext } from "../../../models/Context";
 import type { ModuleJobState } from "../../../models/State/Jobs";
+import { cn } from "../../../utils/cn";
 import { Parameters } from "./Parameters/Parameters";
 
 interface JobSlotProps {
@@ -9,25 +10,26 @@ interface JobSlotProps {
 	readonly moduleJob: ModuleJobState;
 	readonly index: number;
 	readonly context: AppContext;
-	readonly chain: ChainDefinition;
-	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
+	readonly chain: IdentifiedChain;
+	readonly setChain: (updater: (chain: IdentifiedChain) => IdentifiedChain) => void;
 }
 
 export const JobSlot: React.FC<JobSlotProps> = ({ packageName, moduleJob, index, context, chain, setChain }) => (
-	<div className="relative flex items-center gap-1 overflow-hidden rounded border border-border px-2 py-1.5">
-		<div
-			className="absolute inset-0 bg-primary/10 transition-all duration-200"
-			style={{ width: `${moduleJob.progress * 100}%` }}
-		/>
-		<span
-			className={`relative flex-1 truncate text-xs ${moduleJob.status === "pending" ? "opacity-40" : ""}`}
-		>
-			{moduleJob.moduleName}
-		</span>
-		<Parameters packageName={packageName} module={moduleJob.moduleName} index={index} context={context} chain={chain} setChain={setChain} disabled />
-		<span className="relative shrink-0">
-			{moduleJob.status === "running" && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-			{moduleJob.status === "completed" && <Check className="h-3 w-3 text-primary" />}
-		</span>
-	</div>
+	<Parameters packageName={packageName} module={moduleJob.moduleName} index={index} context={context} chain={chain} setChain={setChain} disabled>
+		<button className={cn("relative z-10 w-full card-outline p-3 text-left overflow-hidden", moduleJob.status === "pending" && "opacity-50")}>
+			<div
+				className="absolute inset-0 bg-primary/10 transition-all duration-200"
+				style={{ width: `${moduleJob.progress * 100}%` }}
+			/>
+			<div className="relative flex w-full items-center gap-3">
+				<span className="flex-1 truncate text-sm font-medium text-card-foreground">
+					{moduleJob.moduleName}
+				</span>
+				<span className="shrink-0">
+					{moduleJob.status === "running" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+					{moduleJob.status === "completed" && <Check className="h-4 w-4 text-primary" />}
+				</span>
+			</div>
+		</button>
+	</Parameters>
 );

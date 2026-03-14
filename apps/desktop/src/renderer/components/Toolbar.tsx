@@ -1,8 +1,9 @@
-import { Menu, Monitor, Moon, Sun } from "lucide-react";
+import { Cpu, Download, FileAudio, FolderOpen, Menu, Monitor, Moon, Package, Save, Sun, X } from "lucide-react";
 import { useImportFile } from "../hooks/useImportFile";
 import type { AppContext } from "../models/Context";
 import { addTab } from "../utils/tabs";
 import { useTheme } from "./ThemeProvider";
+import { TitleBar } from "./TitleBar";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
@@ -75,82 +76,80 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context, onManagePackages, onM
 	};
 
 	return (
-		<div
-			className="relative flex h-10 items-center surface-panel-header px-2"
-			style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-		>
-			<div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<Button
-							variant="ghost"
-							size="icon"
-							className="h-7 w-7"
-						>
-							<Menu className="h-4 w-4" />
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="start">
-						<DropdownMenuItem
-							disabled={importFile.isPending}
-							onClick={() => void handleOpen()}
-						>
-							Open
-						</DropdownMenuItem>
-						<DropdownMenuItem onClick={() => void handleOpenSession()}>Open Session</DropdownMenuItem>
-						<DropdownMenuItem
-							disabled={!activeTab}
-							onClick={() => void handleSaveSession()}
-						>
-							Save Session
-						</DropdownMenuItem>
-						<DropdownMenuItem
-							disabled={!context.app.activeTabId}
-							onClick={() => window.dispatchEvent(new Event("open-export-modal"))}
-						>
-							Export
-						</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem onClick={onManagePackages}>
-							Manage Packages...
-						</DropdownMenuItem>
-						<DropdownMenuItem onClick={onManageBinaries}>
-							Binary Manager...
-						</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						<DropdownMenuSub>
-							<DropdownMenuSubTrigger>
-								{theme === "dark" ? <Moon className="h-4 w-4" /> : theme === "light" ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-								Theme
-							</DropdownMenuSubTrigger>
-							<DropdownMenuSubContent>
-								<DropdownMenuItem onClick={() => setTheme("light")}>
-									<Sun className="h-4 w-4" />
-									Light
-								</DropdownMenuItem>
-								<DropdownMenuItem onClick={() => setTheme("dark")}>
-									<Moon className="h-4 w-4" />
-									Dark
-								</DropdownMenuItem>
-								<DropdownMenuItem onClick={() => setTheme("system")}>
-									<Monitor className="h-4 w-4" />
-									System
-								</DropdownMenuItem>
-							</DropdownMenuSubContent>
-						</DropdownMenuSub>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem onClick={() => window.close()}>Close App</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</div>
-
-			<div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-				<span className="text-sm font-medium">Engineering</span>
-			</div>
-
-			<div className="flex-1" />
-
-			<div className="w-[138px]" />
-		</div>
+		<TitleBar>
+			<DropdownMenu>
+				<DropdownMenuTrigger asChild>
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-full w-10 rounded-none"
+					>
+						<Menu className="h-4 w-4" />
+					</Button>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="start">
+					<DropdownMenuItem
+						disabled={importFile.isPending}
+						onClick={() => void handleOpen()}
+					>
+						<FileAudio className="h-4 w-4" />
+						Open
+					</DropdownMenuItem>
+					<DropdownMenuItem onClick={() => void handleOpenSession()}>
+						<FolderOpen className="h-4 w-4" />
+						Open Session
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						disabled={!activeTab}
+						onClick={() => void handleSaveSession()}
+					>
+						<Save className="h-4 w-4" />
+						Save Session
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						disabled={!context.app.activeTabId}
+						onClick={() => window.dispatchEvent(new Event("open-export-modal"))}
+					>
+						<Download className="h-4 w-4" />
+						Export
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem onClick={onManagePackages}>
+						<Package className="h-4 w-4" />
+						Manage Packages...
+					</DropdownMenuItem>
+					<DropdownMenuItem onClick={onManageBinaries}>
+						<Cpu className="h-4 w-4" />
+						Manage Binaries...
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
+					<DropdownMenuSub>
+						<DropdownMenuSubTrigger>
+							{theme === "dark" ? <Moon className="h-4 w-4" /> : theme === "light" ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+							Theme
+						</DropdownMenuSubTrigger>
+						<DropdownMenuSubContent>
+							<DropdownMenuItem onClick={() => setTheme("light")}>
+								<Sun className="h-4 w-4" />
+								Light
+							</DropdownMenuItem>
+							<DropdownMenuItem onClick={() => setTheme("dark")}>
+								<Moon className="h-4 w-4" />
+								Dark
+							</DropdownMenuItem>
+							<DropdownMenuItem onClick={() => setTheme("system")}>
+								<Monitor className="h-4 w-4" />
+								System
+							</DropdownMenuItem>
+						</DropdownMenuSubContent>
+					</DropdownMenuSub>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem onClick={() => window.close()}>
+						<X className="h-4 w-4" />
+						Close App
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</TitleBar>
 	);
 };

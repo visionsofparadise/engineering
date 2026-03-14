@@ -1,18 +1,24 @@
+import { z } from "zod";
 import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
-export interface CutRegion {
-	readonly start: number;
-	readonly end: number;
-}
+const cutRegionSchema = z.object({
+	start: z.number().min(0).describe("Start (seconds)"),
+	end: z.number().min(0).describe("End (seconds)"),
+});
 
-export interface CutProperties extends TransformModuleProperties {
-	readonly regions: Array<CutRegion>;
-}
+export const schema = z.object({
+	regions: z.array(cutRegionSchema).default([]).describe("Regions"),
+});
+
+export type CutRegion = z.infer<typeof cutRegionSchema>;
+
+export interface CutProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 export class CutModule extends TransformModule<CutProperties> {
 	static override readonly moduleName = "Cut";
 	static override readonly moduleDescription = "Remove a region of audio";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is CutModule {
 		return TransformModule.is(value) && value.type[2] === "cut";
 	}

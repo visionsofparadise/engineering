@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DeClickModule, type DeClickProperties } from ".";
-import { AudioChainModuleInput } from "../../module";
+import type { AudioChainModuleInput } from "../../module";
 import type { OptionalProperties } from "../../utils/RequiredProperties";
 
 export const schema = z.object({

@@ -12,7 +12,7 @@ interface TypeLevel {
 const TYPE_SCALE: Array<TypeLevel> = [
 	{
 		name: "Display",
-		className: "text-3xl font-semibold tracking-tight text-foreground",
+		className: "type-display text-3xl text-foreground",
 		fontFamily: "DM Sans",
 		weight: "600",
 		size: "30px",

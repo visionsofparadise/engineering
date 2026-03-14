@@ -128,7 +128,7 @@ export const Ruler: React.FC<RulerProps> = ({ context }) => {
 	return (
 		<div
 			ref={rulerRef}
-			className="relative w-full border-b border-border surface-instrument-panel"
+			className="relative w-full"
 			style={{ height: RULER_HEIGHT, touchAction: "none" }}
 		>
 			<div
