@@ -90,8 +90,8 @@
 		/* Utility */
 		--muted: hsl(18 8% 94.5%);
 		--muted-foreground: hsl(18 5% 46%);
-		--border: hsl(18 10% 88%);
-		--input: hsl(18 10% 88%);
+		--border: hsl(18 10% 82%);
+		--input: hsl(18 10% 82%);
 		--ring: hsl(28 45% 42%);
 
 		/* Status */
@@ -178,9 +178,27 @@
 	/* ── Global base styles ── */
 	* {
 		@apply border-border;
+		scrollbar-color: var(--muted-foreground) transparent;
+	}
+	*::-webkit-scrollbar {
+		width: 10px;
+		height: 10px;
+	}
+	*::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	*::-webkit-scrollbar-thumb {
+		background: var(--muted-foreground);
+		border-radius: 5px;
+		border: 2px solid transparent;
+		background-clip: padding-box;
+	}
+	*::-webkit-scrollbar-thumb:hover {
+		background: var(--foreground);
+		background-clip: padding-box;
 	}
 	html {
-		font-size: 110%;
+		font-size: 100%;
 	}
 	body {
 		@apply bg-background text-foreground antialiased;
@@ -215,6 +233,7 @@
 @utility surface-panel-header {
 	background-color: var(--surface-panel-header);
 	border-bottom: 1px solid var(--border);
+	min-height: 3rem;
 }
 
 /* ── Recessed wells ── */
@@ -253,7 +272,16 @@
 /* ── Cards ── */
 
 @utility card-outline {
+	background-color: var(--card);
 	border: 2px solid var(--border);
+	padding: 1.25rem;
+}
+
+/* ── Signal flow ── */
+
+@utility signal-line {
+	background-color: var(--muted-foreground);
+	opacity: 0.4;
 }
 
 /* ── Specialized controls ── */
@@ -261,6 +289,22 @@
 @utility surface-slider-range {
 	background-color: var(--slider-range);
 	box-shadow: inset 0 2px 3px rgba(0,0,0,0.3), inset 0 -1px 1px rgba(255,255,255,0.1);
+}
+
+/* ── Typography ── */
+
+@utility type-display {
+	font-family: var(--font-display);
+	font-weight: 600;
+	letter-spacing: -0.025em;
+}
+
+/* ── Layout ── */
+
+@utility form-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 1.75rem;
 }
 
 /* ═══════════════════════════════════════════════════════════════

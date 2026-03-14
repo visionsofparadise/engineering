@@ -4,8 +4,8 @@ import type { Snapshot } from "valtio/vanilla";
 import type { AppContext } from "../../models/Context";
 import type { AppState, BatchFile } from "../../models/State/App";
 import type { ProxyStore } from "../../models/ProxyStore/ProxyStore";
-import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
+import { EmptyState } from "../Session/EmptyState";
 import { FileRow } from "./FileRow";
 
 interface FileListProps {
@@ -36,6 +36,7 @@ export const FileList: React.FC<FileListProps> = ({ app, appStore, running, onAb
 	const handleDrop = useCallback(
 		(event: DragEvent) => {
 			event.preventDefault();
+			event.stopPropagation();
 			if (running) return;
 
 			const droppedFiles: Array<BatchFile> = [];
@@ -70,55 +71,31 @@ export const FileList: React.FC<FileListProps> = ({ app, appStore, running, onAb
 		[files, setFiles],
 	);
 
-	const handleClear = useCallback(() => {
-		setFiles([]);
-	}, [setFiles]);
-
 	return (
 		<div
 			className="flex h-full flex-col"
 			onDragOver={handleDragOver}
 			onDrop={handleDrop}
 		>
-			<div className="flex items-center justify-between surface-panel-header px-3 py-2">
-				<span className="text-xs font-medium text-muted-foreground">Files ({files.length})</span>
-				<div className="flex gap-1">
-					<Button
-						variant="ghost"
-						size="sm"
-						className="h-7 text-xs"
-						disabled={running}
-						onClick={() => void handleAddFiles()}
-					>
-						Add
-					</Button>
-					<Button
-						variant="ghost"
-						size="sm"
-						className="h-7 text-xs"
-						disabled={running || files.length === 0}
-						onClick={handleClear}
-					>
-						Clear
-					</Button>
-				</div>
-			</div>
-			<ScrollArea className="flex-1">
-				<div className="flex flex-col gap-1 p-2">
-					{files.map((file, index) => (
-						<FileRow
-							key={`${file.path}-${index}`}
-							file={file}
-							name={basename(file.path)}
-							jobState={file.jobId ? context.jobs.jobs.get(file.jobId) : undefined}
-							running={running}
-							onRemove={() => handleRemove(index)}
-							onAbort={() => onAbortFile(index)}
-						/>
-					))}
-					{files.length === 0 && <p className="py-8 text-center text-xs text-muted-foreground">Drop audio files here or click Add</p>}
-				</div>
-			</ScrollArea>
+			{files.length === 0 ? (
+				<EmptyState onOpen={() => void handleAddFiles()} />
+			) : (
+				<ScrollArea className="flex-1">
+					<div className="flex flex-col gap-1 p-2">
+						{files.map((file, index) => (
+							<FileRow
+								key={`${file.path}-${index}`}
+								file={file}
+								name={basename(file.path)}
+								jobState={file.jobId ? context.jobs.jobs.get(file.jobId) : undefined}
+								running={running}
+								onRemove={() => handleRemove(index)}
+								onAbort={() => onAbortFile(index)}
+							/>
+						))}
+					</div>
+				</ScrollArea>
+			)}
 		</div>
 	);
 };

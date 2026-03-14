@@ -115,14 +115,14 @@ function DepthSystem() {
 				All depth is communicated through shadow. Raised = drop shadow. Pressed = inset shadow. Recessed = deep inset. No gradients simulate curvature.
 			</p>
 			<div className="grid grid-cols-3 gap-3">
-				{shadows.map((s) => (
-					<div key={s.name} className="card-outline p-3">
+				{shadows.map((shadow) => (
+					<div key={shadow.name} className="card-outline p-3">
 						<div
 							className="mx-auto mb-3 h-8 w-16 bg-muted"
-							style={{ boxShadow: `var(${s.name})` }}
+							style={{ boxShadow: `var(${shadow.name})` }}
 						/>
-						<span className="block font-mono text-[0.5625rem] text-foreground">{s.name}</span>
-						<span className="block text-[0.625rem] text-muted-foreground">{s.description}</span>
+						<span className="block font-mono text-[0.5625rem] text-foreground">{shadow.name}</span>
+						<span className="block text-[0.625rem] text-muted-foreground">{shadow.description}</span>
 					</div>
 				))}
 			</div>

@@ -23,8 +23,10 @@ const PLAYHEAD_POSITION = 0.4;
 const FREQ_LABELS = ["20k", "10k", "5k", "2k", "1k", "500", "200", "100", "20"];
 const AMP_LABELS = ["0", "-6", "-12", "-18", "-24", "-48"];
 
-const COLORMAPS: Array<{ id: string; label: string; colorFn: ColormapFn; waveColor: string }> = [
-	{ id: "viridis", label: "Viridis", colorFn: viridisColor, waveColor: "rgb(255, 160, 60)" },
+const DEFAULT_COLORMAP = { id: "viridis", label: "Viridis", colorFn: viridisColor, waveColor: "rgb(255, 160, 60)" };
+
+const COLORMAPS = [
+	DEFAULT_COLORMAP,
 	{ id: "lava", label: "Lava", colorFn: lavaColor, waveColor: "rgb(56, 189, 248)" },
 ];
 
@@ -236,7 +238,7 @@ function SelectionOverlay() {
 
 export function Workspace() {
 	const [activeColormap, setActiveColormap] = useState("lava");
-	const activeMap = COLORMAPS.find((cm) => cm.id === activeColormap) ?? COLORMAPS[0];
+	const activeMap = COLORMAPS.find((cm) => cm.id === activeColormap) ?? DEFAULT_COLORMAP;
 	const colormapFn = activeMap.colorFn;
 	const waveColor = activeMap.waveColor;
 

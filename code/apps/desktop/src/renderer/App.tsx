@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Logger } from "../shared/models/Logger/Logger";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Layout } from "./components/Layout";
 import { LoadingScreen } from "./components/LoadingScreen";
@@ -13,23 +12,28 @@ import { main, type MainWithEvents } from "./models/Main";
 import { MainEvents } from "./models/MainEvents";
 import { useCreateState } from "./models/ProxyStore/hooks/useCreateState";
 import { ProxyStore } from "./models/ProxyStore/ProxyStore";
+import type { AppState } from "./models/State/App";
 import { loadAppState, useAppState } from "./models/State/App";
 import type { JobsState } from "./models/State/Jobs";
 import { useJobsState } from "./models/State/Jobs";
-
-const logger = new Logger("renderer");
-Logger.level = "debug";
-
-const queryClient = new QueryClient({
-	defaultOptions: {
-		queries: {
-			retry: false,
-			refetchOnWindowFocus: false,
-		},
-	},
-});
+import { Logger } from "../shared/models/Logger/Logger";
 
 export const App: React.FC = () => {
+	const logger = useMemo(() => {
+		const logger = new Logger("renderer");
+		Logger.level = "debug";
+		return logger;
+	}, []);
+
+	const queryClient = useMemo(() => new QueryClient({
+		defaultOptions: {
+			queries: {
+				retry: false,
+				refetchOnWindowFocus: false,
+			},
+		},
+	}), []);
+
 	const appStore = useMemo(() => new ProxyStore(), []);
 
 	const mainWithEvents = useMemo<MainWithEvents>(
@@ -49,12 +53,6 @@ export const App: React.FC = () => {
 		queryClient,
 	);
 
-	const app = useAppState(initialState ?? {}, appStore);
-	const jobs = useCreateState<JobsState>({ jobs: new Map() }, appStore);
-
-	useJobsState(appStore, jobs);
-	useWindowState(app, appStore, mainWithEvents);
-
 	const { data: windowId } = useQuery(
 		{
 			queryKey: ["windowId"],
@@ -73,38 +71,61 @@ export const App: React.FC = () => {
 		queryClient,
 	);
 
+	if (!initialState || !windowId || !userDataPath) {
+		return (
+			<div className="flex h-screen items-center justify-center bg-background">
+				<div className="animate-pulse text-muted-foreground">Loading...</div>
+			</div>
+		);
+	}
+
+	return (
+		<AppInner
+			initialState={initialState}
+			appStore={appStore}
+			main={mainWithEvents}
+			windowId={windowId}
+			userDataPath={userDataPath}
+			logger={logger}
+			queryClient={queryClient}
+		/>
+	);
+};
+
+interface AppInnerProps {
+	readonly initialState: Omit<AppState, "_key">;
+	readonly appStore: ProxyStore;
+	readonly main: MainWithEvents;
+	readonly windowId: string;
+	readonly userDataPath: string;
+	readonly logger: Logger;
+	readonly queryClient: QueryClient;
+}
+
+const AppInner: React.FC<AppInnerProps> = ({ initialState, appStore, main: mainWithEvents, windowId, userDataPath, logger, queryClient }) => {
+	const app = useAppState(initialState, appStore);
+	const jobs = useCreateState<JobsState>({ jobs: new Map() }, appStore);
+
+	useJobsState(appStore, jobs);
+	useWindowState(app, appStore, mainWithEvents);
 	useAutosave(app, appStore, mainWithEvents, userDataPath);
 
 	const context = useMemo(
-		(): AppContext | undefined => (windowId && userDataPath ? { app, appStore, jobs, logger, main: mainWithEvents, queryClient, userDataPath, windowId } : undefined),
-		[windowId, userDataPath, app, appStore, jobs, mainWithEvents],
+		(): AppContext => ({ app, appStore, jobs, logger, main: mainWithEvents, queryClient, userDataPath, windowId }),
+		[app, appStore, jobs, logger, mainWithEvents, queryClient, userDataPath, windowId],
 	);
 
 	const packagesInitialized = useRef(false);
 
 	useEffect(() => {
-		if (!context || packagesInitialized.current) return;
+		if (packagesInitialized.current) return;
 
 		packagesInitialized.current = true;
 		void initializeAllPackages(context);
 	}, [context]);
 
-	const handleSkipPackage = useCallback(
-		(index: number) => {
-			if (!context) return;
-
-			context.appStore.mutate(context.app, (proxy) => {
-				const entry = proxy.packages[index];
-
-				if (entry) entry.status = "skipped";
-			});
-		},
-		[context],
-	);
-
 	const handleRetryPackage = useCallback(
 		(index: number) => {
-			if (!context) return;
 			const config = context.app.packageUrls[index];
 			if (!config) return;
 			void initializePackage(config, index, context);
@@ -112,15 +133,11 @@ export const App: React.FC = () => {
 		[context],
 	);
 
-	const packagesReady = context?.app.packages.length === 0 || context?.app.packages.every((entry) => entry.status === "ready" || entry.status === "skipped" || entry.status === "error");
+	const [userContinued, setUserContinued] = useState(false);
 
-	if (!context) {
-		return (
-			<div className="flex h-screen items-center justify-center bg-background">
-				<div className="animate-pulse text-muted-foreground">Loading...</div>
-			</div>
-		);
-	}
+	const allPackagesDone = context.app.packages.length === 0 || context.app.packages.every((entry) => entry.status === "ready" || entry.status === "skipped" || entry.status === "error");
+	const hasPackageErrors = context.app.packages.some((entry) => entry.status === "error");
+	const packagesReady = allPackagesDone && (!hasPackageErrors || userContinued);
 
 	return (
 		<QueryClientProvider client={queryClient}>
@@ -131,8 +148,8 @@ export const App: React.FC = () => {
 					) : (
 						<LoadingScreen
 							context={context}
-							onSkip={handleSkipPackage}
 							onRetry={handleRetryPackage}
+							onContinue={() => setUserContinued(true)}
 						/>
 					)}
 				</ErrorBoundary>

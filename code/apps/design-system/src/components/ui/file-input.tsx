@@ -10,7 +10,7 @@ interface FileInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement
 }
 
 const FileInput = React.forwardRef<HTMLInputElement, FileInputProps>(
- ({ className, value, onValueChange, accept, placeholder = "No file loaded", ...props }, _ref) => {
+ ({ className, value, onValueChange, accept, placeholder = "No file selected", ...props }, _ref) => {
  const internalRef = React.useRef<HTMLInputElement>(null)
 
  const handleClick = () => {
@@ -33,51 +33,33 @@ const FileInput = React.forwardRef<HTMLInputElement, FileInputProps>(
  }
 
  return (
- <div className={cn("flex items-center gap-2", className)}>
+ <div className={cn("flex items-center gap-1", className)}>
  <div
- className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5"
- style={{
- background: 'linear-gradient(170deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.02) 25%, transparent 50%, transparent 75%, rgba(255,255,255,0.03) 100%) #000',
- boxShadow: [
- 'inset 0 1px 0 rgba(255,255,255,0.18)',
- 'inset 0 -1px 0 rgba(255,255,255,0.04)',
- 'inset 1px 0 0 rgba(255,255,255,0.08)',
- 'inset -1px 0 0 rgba(255,255,255,0.03)',
- 'inset 0 2px 8px rgba(0,0,0,0.8)',
- '0 1px 0 rgba(255,255,255,0.06)',
- ].join(', '),
- border: '1px solid rgba(255,255,255,0.1)',
- }}
+ className="surface-control flex h-10 min-w-0 flex-1 cursor-pointer items-center gap-2 px-3"
+ onClick={handleClick}
  >
  <span className={cn(
-"flex-1 truncate font-mono text-[0.625rem] tabular-nums",
- value ? "text-primary" : "text-neutral-600"
+"flex-1 truncate text-sm",
+ value ? "text-foreground" : "text-muted-foreground"
  )}>
- {value || placeholder}
+ {value ?? placeholder}
  </span>
  {value && (
  <button
  type="button"
  onClick={handleClear}
- className="shrink-0 text-neutral-500 transition-colors hover:text-neutral-300"
+ className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
  >
- <X className="h-3 w-3" />
+ <X className="h-3.5 w-3.5" />
  </button>
  )}
  </div>
  <button
  type="button"
  onClick={handleClick}
- className="shrink-0 border border-border bg-muted p-1.5 text-muted-foreground transition-all hover:text-foreground active:translate-y-px"
- style={{
- boxShadow: [
- 'inset 0 2px 3px -1px rgba(255,255,255,0.15)',
- 'inset 0 -2px 3px -1px rgba(0,0,0,0.25)',
- '0 1px 2px rgba(0,0,0,0.15)',
- ].join(', '),
- }}
+ className="surface-control flex h-10 w-10 shrink-0 items-center justify-center text-muted-foreground transition-all hover:text-foreground active:translate-y-px"
  >
- <FolderOpen className="h-3.5 w-3.5" />
+ <FolderOpen className="h-4 w-4" />
  </button>
  <input
  ref={internalRef}

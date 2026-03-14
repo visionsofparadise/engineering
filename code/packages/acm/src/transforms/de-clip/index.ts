@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AudioChunk, StreamContext } from "../../module";
+import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({

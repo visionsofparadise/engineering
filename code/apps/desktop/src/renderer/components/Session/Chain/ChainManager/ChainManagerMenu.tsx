@@ -1,6 +1,7 @@
-import type { ChainDefinition } from "audio-chain-module";
 import { useQueryClient } from "@tanstack/react-query";
+import type { IdentifiedChain } from "../../../../hooks/useChain";
 import { useState } from "react";
+import { Download, Save, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../../../ui/button";
 import {
@@ -19,8 +20,8 @@ import { deleteChain, loadChain, saveChain } from "./chains";
 import { useChains } from "./useChains";
 
 interface ChainManagerMenuProps {
-	readonly chain: ChainDefinition;
-	readonly onChainChange: (chain: ChainDefinition) => void;
+	readonly chain: IdentifiedChain;
+	readonly onChainChange: (chain: IdentifiedChain) => void;
 	readonly userDataPath: string;
 }
 
@@ -36,7 +37,10 @@ export const ChainManagerMenu: React.FC<ChainManagerMenuProps> = ({ chain, onCha
 
 	const handleLoad = async (filename: string) => {
 		const loaded = await loadChain(userDataPath, filename);
-		onChainChange(loaded);
+		onChainChange({
+			...loaded,
+			transforms: loaded.transforms.map((transform) => ({ ...transform, id: crypto.randomUUID() })),
+		});
 		setLoadedLabel(loaded.label ?? "");
 		setSaveLabel(loaded.label ?? "");
 	};
@@ -127,28 +131,11 @@ export const ChainManagerMenu: React.FC<ChainManagerMenuProps> = ({ chain, onCha
 				align="end"
 				className="w-56"
 			>
-				<DropdownMenuLabel className="text-xs">Saved Chains</DropdownMenuLabel>
-				{savedChains && savedChains.length > 0 ? (
-					savedChains.map((entry) => (
-						<DropdownMenuItem
-							key={entry.filename}
-							className="text-xs"
-							onSelect={() => void handleLoad(entry.filename)}
-						>
-							{entry.label}
-						</DropdownMenuItem>
-					))
-				) : (
-					<div className="px-2 py-1.5 text-xs text-muted-foreground">No saved chains</div>
-				)}
-
-				<DropdownMenuSeparator />
-
 				<DropdownMenuItem
 					asChild
 					onSelect={(event) => event.preventDefault()}
 				>
-					<div className="flex gap-1">
+					<div className="flex gap-2">
 						<Input
 							placeholder="Chain name..."
 							value={saveLabel}
@@ -156,12 +143,11 @@ export const ChainManagerMenu: React.FC<ChainManagerMenuProps> = ({ chain, onCha
 							onKeyDown={(event) => {
 								if (event.key === "Enter") void handleSave();
 							}}
-							className="h-7 flex-1 text-xs"
+							className="h-8 flex-1 text-sm"
 						/>
 						<Button
-							variant="ghost"
 							size="sm"
-							className="h-7 text-xs"
+							className="h-8 surface-control"
 							disabled={!saveLabel.trim()}
 							onClick={() => void handleSave()}
 						>
@@ -172,14 +158,35 @@ export const ChainManagerMenu: React.FC<ChainManagerMenuProps> = ({ chain, onCha
 
 				<DropdownMenuSeparator />
 
+				<DropdownMenuLabel className="flex items-center gap-3">
+					<Save className="h-4 w-4" />
+					Saved Chains
+				</DropdownMenuLabel>
+				{savedChains && savedChains.length > 0 ? (
+					savedChains.map((entry) => (
+						<DropdownMenuItem
+							key={entry.filename}
+							onSelect={() => void handleLoad(entry.filename)}
+						>
+							{entry.label}
+						</DropdownMenuItem>
+					))
+				) : (
+					<div className="px-3 py-1.5 text-sm text-muted-foreground">No saved chains</div>
+				)}
+
+				<DropdownMenuSeparator />
+
 				{savedChains && savedChains.length > 0 && (
 					<DropdownMenuSub>
-						<DropdownMenuSubTrigger className="text-xs">Delete</DropdownMenuSubTrigger>
+						<DropdownMenuSubTrigger>
+							<Trash2 className="h-4 w-4" />
+							Delete
+						</DropdownMenuSubTrigger>
 						<DropdownMenuSubContent>
 							{savedChains.map((entry) => (
 								<DropdownMenuItem
 									key={entry.filename}
-									className="text-xs"
 									onSelect={() => void handleDelete(entry.filename, entry.label)}
 								>
 									{entry.label}
@@ -190,26 +197,26 @@ export const ChainManagerMenu: React.FC<ChainManagerMenuProps> = ({ chain, onCha
 				)}
 
 				<DropdownMenuItem
-					className="text-xs"
 					onSelect={() => void handleImport()}
 				>
-					Import...
+					<Upload className="h-4 w-4" />
+					Import
 				</DropdownMenuItem>
 				<DropdownMenuItem
-					className="text-xs"
 					onSelect={() => void handleExport()}
 				>
-					Export...
+					<Download className="h-4 w-4" />
+					Export
 				</DropdownMenuItem>
 
 				<DropdownMenuSeparator />
 
 				<DropdownMenuItem
-					className="text-xs"
 					disabled={chain.transforms.length === 0}
 					onSelect={handleClear}
 				>
-					Clear Chain
+					<X className="h-4 w-4" />
+					Clear
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>

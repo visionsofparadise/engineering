@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "audio-chain-module";
+import type { IdentifiedChain } from "../hooks/useChain";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Snapshot } from "valtio/vanilla";
 import type { Logger } from "../../shared/models/Logger/Logger";
@@ -24,7 +24,8 @@ export interface AppContext {
 
 export interface SessionContext extends AppContext {
 	readonly sessionPath: string;
-	readonly chain: ChainDefinition;
+	readonly chain: IdentifiedChain;
+	readonly saveChain: (chain: IdentifiedChain) => void;
 	readonly sessionStore: ProxyStore;
 	readonly workspace: Snapshot<WorkspaceState>;
 	readonly selection: Snapshot<SelectionState>;

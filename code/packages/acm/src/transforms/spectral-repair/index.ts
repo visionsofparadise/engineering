@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ChunkBuffer } from "../../chunk-buffer";
-import { StreamContext } from "../../module";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { detectFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { istft, stft } from "../../utils/stft";

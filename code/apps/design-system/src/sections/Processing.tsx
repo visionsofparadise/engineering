@@ -64,6 +64,16 @@ const DEMO_CHAIN: Array<ModuleDefinition> = [
 	},
 ];
 
+function SelectParameter({ parameter }: { parameter: ParameterDefinition & { type: "select" } }) {
+	const [selected, setSelected] = useState(parameter.defaultValue);
+	return (
+		<div>
+			<Label className="mb-2 block text-[0.6875rem]">{parameter.name}</Label>
+			<ButtonBank value={selected} onValueChange={setSelected} options={parameter.options} />
+		</div>
+	);
+}
+
 function ParameterControl({ parameter }: { parameter: ParameterDefinition }) {
 	const [sliderValue, setSliderValue] = useState([parameter.type === "slider" ? parameter.defaultValue : 0]);
 	const [toggleValue, setToggleValue] = useState(parameter.type === "toggle" ? parameter.defaultValue : false);
@@ -99,13 +109,7 @@ function ParameterControl({ parameter }: { parameter: ParameterDefinition }) {
 	}
 
 	if (parameter.type === "select") {
-		const [selected, setSelected] = useState(parameter.defaultValue);
-		return (
-			<div>
-				<Label className="mb-2 block text-[0.6875rem]">{parameter.name}</Label>
-				<ButtonBank value={selected} onValueChange={setSelected} options={parameter.options} />
-			</div>
-		);
+		return <SelectParameter parameter={parameter} />;
 	}
 
 	if (parameter.type === "toggle") {
@@ -149,32 +153,31 @@ function ModuleCard({ module, onToggleBypass }: { module: ModuleDefinition; onTo
 				<PopoverTrigger asChild>
 					<button
 						className={cn(
-							"w-72 card-outline text-left transition-colors",
+							"flex w-72 items-center gap-3 card-outline p-3 text-left transition-colors",
 							isBypassed &&"opacity-50",
 						)}
 					>
-						<div className="flex w-full items-center gap-3 px-3 py-2.5">
-							<Switch
-								checked={!isBypassed}
-								disabled={isIncomplete}
-								onCheckedChange={(e) => { e.stopPropagation?.(); onToggleBypass(); }}
-								onClick={(e) => e.stopPropagation()}
-							/>
-							<div className="flex flex-1 items-center gap-2">
-								<span className={cn(
-									"text-sm font-medium text-card-foreground",
-									isBypassed &&"line-through text-muted-foreground",
-								)}>
-									{module.name}
+						<Switch
+							checked={!isBypassed}
+							disabled={isIncomplete}
+							onCheckedChange={() => { onToggleBypass(); }}
+							onPointerDown={(ev) => ev.stopPropagation()}
+							onClick={(ev) => ev.stopPropagation()}
+						/>
+						<div className="flex flex-1 items-center gap-2">
+							<span className={cn(
+								"text-sm font-medium text-card-foreground",
+								isBypassed &&"line-through text-muted-foreground",
+							)}>
+								{module.name}
+							</span>
+							{isIncomplete && (
+								<span className="bg-[var(--color-status-warning)]/10 px-1.5 py-0.5 font-mono text-[0.5625rem] uppercase tracking-wider text-[var(--color-status-warning)]">
+									incomplete
 								</span>
-								{isIncomplete && (
-									<span className="bg-[var(--color-status-warning)]/10 px-1.5 py-0.5 font-mono text-[0.5625rem] uppercase tracking-wider text-[var(--color-status-warning)]">
-										incomplete
-									</span>
-								)}
-							</div>
-							<Settings className="h-3 w-3 text-muted-foreground" />
+							)}
 						</div>
+						<Settings className="h-3 w-3 text-muted-foreground" />
 					</button>
 				</PopoverTrigger>
 				<PopoverContent className="w-72" side="left" align="start">
@@ -217,8 +220,8 @@ export function Processing() {
 
 	const toggleBypass = (index: number) => {
 		setChain((prev) =>
-			prev.map((m, i) =>
-				i === index ? { ...m, state: m.state === "bypassed" ? "active" : "bypassed" } : m
+			prev.map((mod, ix) =>
+				ix === index ? { ...mod, state: mod.state === "bypassed" ? "active" : "bypassed" } : mod
 			)
 		);
 	};
@@ -248,11 +251,11 @@ export function Processing() {
 				</h4>
 				<div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
 					<div className="flex items-center gap-2">
-						<div className="h-3 w-3 card-outline" />
+						<div className="h-3 w-3 card-outline p-0" />
 						<span>Active</span>
 					</div>
 					<div className="flex items-center gap-2">
-						<div className="h-3 w-3 card-outline opacity-50" />
+						<div className="h-3 w-3 card-outline p-0 opacity-50" />
 						<span>Bypassed</span>
 					</div>
 					<div className="flex items-center gap-2">

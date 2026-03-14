@@ -52,11 +52,14 @@ export interface ModulePackageState extends ModulePackageConfig {
 	readonly status: "pending" | "cloning" | "building" | "loading" | "ready" | "skipped" | "error";
 	readonly error?: string;
 	readonly version?: string;
+	readonly name?: string;
+	readonly description?: string;
 	readonly modules: ReadonlyArray<LoadedModuleInfo>;
 }
 
 export interface AppState extends State {
 	readonly activeTabId: string | undefined;
+	readonly batchActive: boolean;
 	readonly tabs: ReadonlyArray<TabEntry>;
 	readonly theme: Theme;
 	readonly windowState?: WindowState;
@@ -80,18 +83,16 @@ async function deriveTabsFromSessions(main: MainWithEvents, userDataPath: string
 
 			if (snapshots.length === 0) continue;
 
-			let label = folder;
+			// Extract filename from guid-filename folder format
+			const guidPrefix = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/;
+			let label = guidPrefix.test(folder) ? folder.replace(guidPrefix, "") : folder;
+
 			try {
 				const chainContent = await main.readFile(`${sessionPath}/chain.json`);
 				const chain = JSON.parse(chainContent) as { label?: string };
 				if (chain.label) label = chain.label;
 			} catch {
-				// no chain.json or no label — derive from first snapshot
-				const firstSnapshot = snapshots[0];
-				if (firstSnapshot) {
-					const sourceMatch = /-(.+)$/.exec(firstSnapshot);
-					if (sourceMatch?.[1]) label = sourceMatch[1];
-				}
+				// no chain.json
 			}
 
 			tabs.push({
@@ -163,7 +164,7 @@ async function resolveBundledBinaries(
 	return binaries;
 }
 
-export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState, "_key"> | undefined> {
+export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState, "_key">> {
 	const userDataPath = await main.getUserDataPath();
 	const resourcesPath = await main.getResourcesPath();
 	const path = `${userDataPath}/state.json`;
@@ -181,12 +182,13 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 		? saved.activeTabId
 		: tabs[0]?.id;
 
-	const binaries = await resolveBundledBinaries(saved.binaries as Record<string, string> | undefined, resourcesPath, main);
+	const binaries = await resolveBundledBinaries(saved.binaries, resourcesPath, main);
 
 	return {
 		theme: saved.theme ?? "dark",
 		tabs,
 		activeTabId,
+		batchActive: false,
 		windowState: saved.windowState,
 		batch: saved.batch ?? defaultBatchConfig(),
 		binaries,
@@ -196,7 +198,7 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 }
 
 const CORE_PACKAGE_URLS: ReadonlyArray<ModulePackageConfig> = [
-	{ url: "https://github.com/engineering/acm", directory: "acm" },
+	{ url: "https://github.com/visionsofparadise/audio-chain-module.git", directory: "audio-chain-module" },
 ];
 
 function defaultBatchConfig(): BatchConfig {
@@ -219,6 +221,7 @@ export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snap
 			theme: "dark",
 			tabs: [],
 			activeTabId: undefined,
+			batchActive: false,
 			batch: defaultBatchConfig(),
 			binaries: {},
 			packageUrls: CORE_PACKAGE_URLS,

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
-import { ChunkBuffer } from "../../chunk-buffer";
-import { StreamContext } from "../../module";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { StreamContext } from "../../module";
 import { FfmpegModule, type FfmpegProperties } from "../ffmpeg";
 
 export const schema = z.object({

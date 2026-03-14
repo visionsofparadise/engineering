@@ -1,10 +1,14 @@
+import { z } from "zod";
 import { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
+export const schema = z.object({});
+
 export class ReverseModule extends TransformModule {
 	static override readonly moduleName = "Reverse";
 	static override readonly moduleDescription = "Reverse audio playback direction";
+	static override readonly schema = schema;
 	static override is(value: unknown): value is ReverseModule {
 		return TransformModule.is(value) && value.type[2] === "reverse";
 	}

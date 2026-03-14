@@ -1,5 +1,5 @@
-import { ChunkBuffer } from "../../chunk-buffer";
-import { StreamContext } from "../../module";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { z } from "zod";
 import { highPassCoefficients, lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
@@ -52,8 +52,8 @@ export class DialogueIsolateModule extends TransformModule<DialogueIsolateProper
 		await super.setup(context);
 
 		this.sourceSampleRate = context.sampleRate;
-		const onnxProviders = context.executionProviders.filter((p) => p !== "gpu" && p !== "cpu-native");
-		this.session = await createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
+		const onnxProviders = context.executionProviders.filter((ep) => ep !== "gpu" && ep !== "cpu-native");
+		this.session = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
 
 		initMixedRadix();
 	}

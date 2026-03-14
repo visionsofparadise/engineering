@@ -1,7 +1,7 @@
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
-import { ChunkBuffer } from "../../chunk-buffer";
-import { AudioChunk, StreamContext } from "../../module";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { createFftWorkspace, fft, hanningWindow, type FftWorkspace } from "../../utils/stft";
 

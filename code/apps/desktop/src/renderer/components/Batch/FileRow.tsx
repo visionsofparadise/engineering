@@ -1,6 +1,7 @@
 import { Check, Loader2, X } from "lucide-react";
 import type { BatchFile } from "../../models/State/App";
 import type { JobState } from "../../models/State/Jobs";
+import { cn } from "../../utils/cn";
 import { Button } from "../ui/button";
 
 interface FileRowProps {
@@ -17,44 +18,46 @@ export const FileRow: React.FC<FileRowProps> = ({ file, name, jobState, running,
 	const progress = jobState?.modules[0]?.progress ?? 0;
 
 	return (
-		<div className="relative flex items-center gap-1 overflow-hidden rounded border border-border px-2 py-1.5">
+		<div className={cn("relative card-outline p-0 overflow-hidden", status === "idle" && running && "opacity-50")}>
 			{status === "running" && (
 				<div
-					className="absolute inset-0 bg-status-processing/10 transition-all duration-200"
+					className="absolute inset-0 bg-primary/10 transition-all duration-200"
 					style={{ width: `${progress * 100}%` }}
 				/>
 			)}
-			<span
-				className="relative flex-1 truncate text-xs"
-				title={file.path}
-			>
-				{name}
-			</span>
-			<span className="relative shrink-0">
-				{status === "idle" && !running && (
-					<Button
-						variant="ghost"
-						size="icon"
-						className="h-5 w-5"
-						onClick={onRemove}
-					>
-						<X className="h-3 w-3" />
-					</Button>
-				)}
-				{status === "idle" && running && <span className="text-[10px] text-status-queued">Queued</span>}
-				{status === "running" && (
-					<Button
-						variant="ghost"
-						size="icon"
-						className="h-5 w-5"
-						onClick={onAbort}
-					>
-						<Loader2 className="h-3 w-3 animate-spin text-status-processing" />
-					</Button>
-				)}
-				{status === "completed" && <Check className="h-3 w-3 text-status-complete" />}
-				{status === "aborted" && <span className="text-[10px] text-status-error">Aborted</span>}
-			</span>
+			<div className="relative flex items-center gap-3 px-3 py-2">
+				<span
+					className="flex-1 truncate text-sm font-medium text-card-foreground"
+					title={file.path}
+				>
+					{name}
+				</span>
+				<span className="shrink-0">
+					{status === "idle" && !running && (
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-6 w-6"
+							onClick={onRemove}
+						>
+							<X className="h-3 w-3" />
+						</Button>
+					)}
+					{status === "idle" && running && <span className="text-[10px] text-muted-foreground">Queued</span>}
+					{status === "running" && (
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-6 w-6"
+							onClick={onAbort}
+						>
+							<Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+						</Button>
+					)}
+					{status === "completed" && <Check className="h-4 w-4 text-primary" />}
+					{status === "aborted" && <span className="text-[10px] text-muted-foreground">Aborted</span>}
+				</span>
+			</div>
 		</div>
 	);
 };

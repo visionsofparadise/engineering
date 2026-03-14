@@ -8,7 +8,8 @@ export function useImportFile(context: AppContext) {
 	return useMutation({
 		mutationFn: async (filePath: string) => {
 			const { userDataPath } = context;
-			const sessionId = crypto.randomUUID();
+			const fileName = filePath.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? "Untitled";
+			const sessionId = `${crypto.randomUUID()}-${fileName}`;
 			const sessionPath = `${userDataPath}/sessions/${sessionId}`;
 
 			await context.main.ensureDirectory(sessionPath);

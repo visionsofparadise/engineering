@@ -1,5 +1,5 @@
-import { AudioChunk, ExecutionProvider, StreamMeta } from "../module";
-import { TransformModule } from "../transform";
+import type { AudioChunk, ExecutionProvider, StreamMeta } from "../module";
+import type { TransformModule } from "../transform";
 
 const defaultProviders: ReadonlyArray<ExecutionProvider> = ["gpu", "cpu-native", "cpu"];
 

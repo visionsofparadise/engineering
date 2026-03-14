@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ChunkBuffer } from "../../chunk-buffer";
-import { StreamContext } from "../../module";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { detectFftBackend, type FftBackend } from "../../utils/fft-backend";
@@ -57,11 +57,11 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 		this.sourceSampleRate = context.sampleRate;
 		this.fftAddonOptions = { vkfftPath: this.properties.vkfftAddonPath || undefined, fftwPath: this.properties.fftwAddonPath || undefined };
 		// Use CPU FFT only — vkfft GPU overhead is counterproductive for small 512-point FFTs
-		const cpuProviders = context.executionProviders.filter((p) => p !== "gpu");
+		const cpuProviders = context.executionProviders.filter((ep) => ep !== "gpu");
 		this.fftBackend = detectFftBackend(cpuProviders.length > 0 ? cpuProviders : ["cpu"], this.fftAddonOptions);
-		const onnxProviders = context.executionProviders.filter((p) => p !== "gpu" && p !== "cpu-native");
-		this.session1 = await createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath1, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
-		this.session2 = await createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath2, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
+		const onnxProviders = context.executionProviders.filter((ep) => ep !== "gpu" && ep !== "cpu-native");
+		this.session1 = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath1, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
+		this.session2 = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath2, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -86,7 +86,7 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 				input16k = resampled[0] ?? channel;
 			}
 
-			const denoised16k = await this.processDtln(input16k);
+			const denoised16k = this.processDtln(input16k);
 
 			// Resample back to original sample rate if needed
 			let output: Float32Array = denoised16k;
@@ -110,7 +110,7 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 		}
 	}
 
-	private async processDtln(signal: Float32Array): Promise<Float32Array> {
+	private processDtln(signal: Float32Array): Float32Array {
 		const session1 = this.session1;
 		const session2 = this.session2;
 

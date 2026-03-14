@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ChunkBuffer } from "../../chunk-buffer";
-import { AudioChunk, StreamContext } from "../../module";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({

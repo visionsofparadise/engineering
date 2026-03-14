@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ChunkBuffer } from "../../chunk-buffer";
-import { AudioChainModuleInput, StreamContext } from "../../module";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { AudioChainModuleInput, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 import { lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
 
@@ -216,10 +216,10 @@ function approximateMedian(values: Float32Array): number {
 	let min = values[0] ?? 0;
 	let max = values[0] ?? 0;
 
-	for (let i = 1; i < len; i++) {
-		const v = values[i] ?? 0;
-		if (v < min) min = v;
-		if (v > max) max = v;
+	for (let si = 1; si < len; si++) {
+		const sample = values[si] ?? 0;
+		if (sample < min) min = sample;
+		if (sample > max) max = sample;
 	}
 
 	if (min === max) return min;
@@ -228,19 +228,19 @@ function approximateMedian(values: Float32Array): number {
 	const bins = new Uint32Array(numBins);
 	const scale = (numBins - 1) / (max - min);
 
-	for (let i = 0; i < len; i++) {
-		const bin = Math.floor(((values[i] ?? 0) - min) * scale);
+	for (let si = 0; si < len; si++) {
+		const bin = Math.floor(((values[si] ?? 0) - min) * scale);
 		bins[bin] = (bins[bin] ?? 0) + 1;
 	}
 
 	const target = len >>> 1;
 	let count = 0;
 
-	for (let i = 0; i < numBins; i++) {
-		count += bins[i] ?? 0;
+	for (let bi = 0; bi < numBins; bi++) {
+		count += bins[bi] ?? 0;
 
 		if (count > target) {
-			return min + (i + 0.5) / scale;
+			return min + (bi + 0.5) / scale;
 		}
 	}
 

@@ -44,19 +44,24 @@ export async function initializePackage(config: ModulePackageConfig, index: numb
 		const modules = await main.loadPackageModules({ bundlePath, packageName: config.directory });
 
 		let version: string | undefined;
+		let name: string | undefined;
+		let description: string | undefined;
 
 		try {
 			const raw = await main.readFile(`${cloneDir}/package.json`);
-			const packageJson = JSON.parse(raw) as { version?: string };
+			const packageJson = JSON.parse(raw) as { version?: string; name?: string; description?: string };
 
 			version = packageJson.version;
+			name = packageJson.name;
+			description = packageJson.description;
 		} catch {
 			mutatePackage(appStore, app, index, { status: "error", error: "Failed to read package.json", modules: [...modules] });
 			return;
 		}
 
-		mutatePackage(appStore, app, index, { status: "ready", modules: [...modules], version });
+		mutatePackage(appStore, app, index, { status: "ready", modules: [...modules], version, name, description });
 	} catch (error) {
+		console.error(`[initializePackage] ${config.directory} failed:`, error);
 		const message = error instanceof Error ? error.message : String(error);
 
 		mutatePackage(appStore, app, index, { status: "error", error: message });

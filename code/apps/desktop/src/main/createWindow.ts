@@ -18,7 +18,7 @@ const WINDOW_CONFIG = {
 	minHeight: 400,
 	titleBarStyle: "hidden" as const,
 	titleBarOverlay: {
-		color: "#0a0a0a",
+		color: "#201e1d",
 		symbolColor: "#e5e5e5",
 		height: 44,
 	},
@@ -41,7 +41,7 @@ export const createWindow = (dependencies: WindowFactoryDependencies): BrowserWi
 		},
 	});
 
-	const isDev = MAIN_WINDOW_VITE_DEV_SERVER_URL !== undefined;
+	const isDev = MAIN_WINDOW_VITE_DEV_SERVER_URL !== "";
 
 	browserWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
 		callback({

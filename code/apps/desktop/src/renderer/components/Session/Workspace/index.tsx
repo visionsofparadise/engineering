@@ -1,3 +1,4 @@
+import { resnapshot } from "../../../models/ProxyStore/resnapshot";
 import { useCallback, useEffect, useRef } from "react";
 import type { SessionContext } from "../../../models/Context";
 import { clampPixelsPerSecond, getMinPixelsPerSecond } from "../../../utils/time";
@@ -19,7 +20,7 @@ interface WorkspaceProps {
 	readonly context: SessionContext;
 }
 
-export const Workspace: React.FC<WorkspaceProps> = ({ context }) => {
+export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 	const { workspace, sessionStore } = context;
 	const lanesRef = useRef<HTMLDivElement>(null);
 
@@ -74,23 +75,17 @@ export const Workspace: React.FC<WorkspaceProps> = ({ context }) => {
 	const laneHeight = viewportHeight > 0 ? viewportHeight / channelCount : 0;
 
 	return (
-		<div className="flex h-full flex-col surface-panel">
-			<div className="flex flex-shrink-0">
-				<div
-					style={{ width: FREQUENCY_AXIS_WIDTH }}
-					className="border-b border-r border-border surface-instrument-panel"
-				/>
-				<div className="flex-1">
+		<div className="flex h-full min-w-0 flex-col overflow-hidden surface-instrument-panel">
+			<div className="flex flex-shrink-0 border-b border-border pt-2">
+				<div style={{ width: FREQUENCY_AXIS_WIDTH }} />
+				<div className="min-w-0 flex-1 overflow-hidden">
 					<Ruler context={context} />
 				</div>
-				<div
-					style={{ width: AMPLITUDE_AXIS_WIDTH }}
-					className="border-b border-l border-border surface-instrument-panel"
-				/>
+				<div style={{ width: AMPLITUDE_AXIS_WIDTH }} />
 			</div>
 
-			<div className="flex flex-1 overflow-hidden">
-				<div className="flex flex-shrink-0 flex-col border-r border-border">
+			<div className="flex min-w-0 flex-1 overflow-hidden">
+				<div className="flex flex-shrink-0 flex-col">
 					{channels.map((channelIndex) => (
 						<FrequencyAxis
 							key={channelIndex}
@@ -104,7 +99,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ context }) => {
 
 				<div
 					ref={lanesRef}
-					className="relative flex-1 overflow-hidden surface-channel"
+					className="relative min-w-0 flex-1 overflow-hidden surface-channel"
 					onWheel={handleWheel}
 					onPointerDown={selectionHandlers.onPointerDown}
 					onPointerMove={selectionHandlers.onPointerMove}
@@ -130,7 +125,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ context }) => {
 					<CursorIndicator context={context} />
 				</div>
 
-				<div className="flex flex-shrink-0 flex-col border-l border-border">
+				<div className="flex flex-shrink-0 flex-col">
 					{channels.map((channelIndex) => (
 						<AmplitudeAxis
 							key={channelIndex}
@@ -141,4 +136,4 @@ export const Workspace: React.FC<WorkspaceProps> = ({ context }) => {
 			</div>
 		</div>
 	);
-};
+});

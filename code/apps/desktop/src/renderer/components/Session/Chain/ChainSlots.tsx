@@ -1,21 +1,18 @@
-import type { ChainDefinition } from "audio-chain-module";
-import { useCallback, useRef, useState } from "react";
+import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
+import { useCallback } from "react";
+import type { IdentifiedChain } from "../../../hooks/useChain";
 import type { AppContext } from "../../../models/Context";
 import { ChainSlot } from "./ChainSlot";
-import { ModuleMenu, type ModuleSelection } from "./ModuleMenu";
+import { ADD_MODULE_TRIGGER_CLASS, ModuleMenu, type ModuleSelection } from "./ModuleMenu";
 
 interface ChainSlotsProps {
 	readonly context: AppContext;
-	readonly chain: ChainDefinition;
-	readonly setChain: (updater: (chain: ChainDefinition) => ChainDefinition) => void;
+	readonly chain: IdentifiedChain;
+	readonly setChain: (updater: (chain: IdentifiedChain) => IdentifiedChain) => void;
 	readonly disabled?: boolean;
 }
 
 export const ChainSlots: React.FC<ChainSlotsProps> = ({ context, chain, setChain, disabled }) => {
-	const transforms = chain.transforms;
-	const [dragIndex, setDragIndex] = useState<number | undefined>(undefined);
-	const dragOverIndex = useRef<number | undefined>(undefined);
-
 	const handleRemove = useCallback(
 		(index: number) => {
 			setChain((current) => ({ ...current, transforms: current.transforms.filter((_, position) => position !== index) }));
@@ -25,57 +22,86 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ context, chain, setChain
 
 	const handleAdd = useCallback(
 		(selection: ModuleSelection) => {
-			setChain((current) => ({ ...current, transforms: [...current.transforms, { package: selection.packageName, module: selection.moduleName }] }));
+			setChain((current) => ({
+				...current,
+				transforms: [...current.transforms, { id: crypto.randomUUID(), package: selection.packageName, module: selection.moduleName }],
+			}));
 		},
 		[setChain],
 	);
 
-	const handleDragStart = useCallback((index: number) => {
-		setDragIndex(index);
-	}, []);
+	const handleDragEnd = useCallback(
+		(result: DropResult) => {
+			if (!result.destination || result.source.index === result.destination.index) return;
 
-	const handleDragOver = useCallback((event: React.DragEvent, index: number) => {
-		event.preventDefault();
-		dragOverIndex.current = index;
-	}, []);
+			const from = result.source.index;
+			const to = result.destination.index;
+			const item = chain.transforms[from];
+			if (!item) return;
 
-	const handleDrop = useCallback(() => {
-		const targetIndex = dragOverIndex.current;
-		if (dragIndex !== undefined && targetIndex !== undefined && dragIndex !== targetIndex) {
-			setChain((current) => {
-				const updated = [...current.transforms];
-				const [moved] = updated.splice(dragIndex, 1);
-				if (moved) updated.splice(targetIndex, 0, moved);
-				return { ...current, transforms: updated };
-			});
-		}
-		setDragIndex(undefined);
-		dragOverIndex.current = undefined;
-	}, [dragIndex, setChain]);
+			const without = [...chain.transforms.slice(0, from), ...chain.transforms.slice(from + 1)];
+			const reordered = [...without.slice(0, to), item, ...without.slice(to)];
+
+			setChain(() => ({ ...chain, transforms: reordered }));
+		},
+		[chain, setChain],
+	);
 
 	return (
-		<div className="flex flex-col gap-1 p-2">
-			{transforms.map((transform, index) => (
-				<div
-					key={`${transform.module}-${index}`}
-					draggable={!disabled}
-					onDragStart={() => handleDragStart(index)}
-					onDragOver={(event) => handleDragOver(event, index)}
-					onDrop={handleDrop}
-				>
-					<ChainSlot
-						packageName={transform.package}
-						module={transform.module}
-						index={index}
-						context={context}
-						disabled={disabled}
-						onRemove={() => handleRemove(index)}
-						chain={chain}
-						setChain={setChain}
+		<div className="flex flex-col items-center gap-3">
+			<DragDropContext onDragEnd={handleDragEnd}>
+				<Droppable droppableId="chain-slots">
+					{(provided) => (
+						<div
+							ref={provided.innerRef}
+							{...provided.droppableProps}
+							className="flex w-full flex-col gap-3"
+						>
+							{chain.transforms.map((transform, index) => (
+								<Draggable
+									key={transform.id}
+									draggableId={transform.id}
+									index={index}
+									isDragDisabled={disabled}
+								>
+									{(provided) => (
+										<div
+											ref={provided.innerRef}
+											{...provided.draggableProps}
+											className="relative z-10 w-full"
+										>
+											<ChainSlot
+												packageName={transform.package}
+												module={transform.module}
+												index={index}
+												context={context}
+												disabled={disabled}
+												onRemove={() => handleRemove(index)}
+												chain={chain}
+												setChain={setChain}
+												dragHandleProps={provided.dragHandleProps ?? undefined}
+											/>
+										</div>
+									)}
+								</Draggable>
+							))}
+							{provided.placeholder}
+						</div>
+					)}
+				</Droppable>
+			</DragDropContext>
+			{!disabled && (
+				<div className="relative z-10 w-full">
+					<ModuleMenu
+						app={context.app}
+						onSelect={handleAdd}
+						triggerClassName={ADD_MODULE_TRIGGER_CLASS}
+						triggerLabel="+ Add Module"
+						popoverAlign="center"
+						popoverSideOffset={12}
 					/>
 				</div>
-			))}
-			{!disabled && <ModuleMenu app={context.app} onSelect={handleAdd} />}
+			)}
 		</div>
 	);
 };
