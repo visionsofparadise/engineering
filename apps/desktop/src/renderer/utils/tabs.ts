@@ -46,7 +46,7 @@ export function removeTab(tabId: string, context: TabContextWithMain): void {
 	});
 
 	if (tab.workingDir) {
-		void main.stat(tab.workingDir).catch(() => undefined);
+		void main.deleteFile(tab.workingDir).catch(() => undefined);
 	}
 }
 

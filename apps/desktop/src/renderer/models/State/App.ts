@@ -7,6 +7,7 @@ import { useCreateState } from "../ProxyStore/hooks/useCreateState";
 import type { ProxyStore } from "../ProxyStore/ProxyStore";
 
 export type Theme = "light" | "dark" | "system";
+export type SpectralTheme = "lava" | "viridis";
 
 export interface BatchTarget {
 	readonly outputDir: string;
@@ -62,6 +63,7 @@ export interface AppState extends State {
 	readonly batchActive: boolean;
 	readonly tabs: ReadonlyArray<TabEntry>;
 	readonly theme: Theme;
+	readonly spectralTheme: SpectralTheme;
 	readonly windowState?: WindowState;
 	readonly batch: BatchConfig;
 	readonly binaries: Record<string, string>;
@@ -186,6 +188,7 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 
 	return {
 		theme: saved.theme ?? "dark",
+		spectralTheme: saved.spectralTheme ?? "lava",
 		tabs,
 		activeTabId,
 		batchActive: false,
@@ -219,6 +222,7 @@ export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snap
 	return useCreateState<AppState>(
 		{
 			theme: "dark",
+			spectralTheme: "lava",
 			tabs: [],
 			activeTabId: undefined,
 			batchActive: false,

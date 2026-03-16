@@ -1,5 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 
+export type FrequencyScale = "linear" | "log" | "mel" | "erb";
+
+const FREQUENCY_SCALE_FROM_BYTE: Record<number, FrequencyScale> = { 0: "linear", 1: "log", 2: "mel", 3: "erb" };
+
 export interface SpectrogramHeader {
 	readonly sampleRate: number;
 	readonly channels: number;
@@ -7,7 +11,7 @@ export interface SpectrogramHeader {
 	readonly hopSize: number;
 	readonly numFrames: number;
 	readonly numBins: number;
-	readonly frequencyScale: number;
+	readonly frequencyScale: FrequencyScale;
 	readonly minFrequency: number;
 	readonly maxFrequency: number;
 }
@@ -25,7 +29,7 @@ async function loadSpectrogramHeader(filePath: string): Promise<SpectrogramHeade
 		hopSize: view.getUint32(12, true),
 		numFrames: view.getUint32(16, true),
 		numBins: view.getUint32(20, true),
-		frequencyScale: view.getUint8(24),
+		frequencyScale: FREQUENCY_SCALE_FROM_BYTE[view.getUint8(24)] ?? "log",
 		minFrequency: view.getFloat32(25, true),
 		maxFrequency: view.getFloat32(29, true),
 	};

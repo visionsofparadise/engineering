@@ -15,7 +15,7 @@ export interface WorkspaceState extends State {
 export function useWorkspaceState(store: ProxyStore): Snapshot<WorkspaceState> {
 	return useCreateState<WorkspaceState>(
 		{
-			pixelsPerSecond: new Transient(100, { minimum: 10, maximum: 8192 }),
+			pixelsPerSecond: new Transient(100, { minimum: 0.01, maximum: 262144 }),
 			scrollX: new Transient(0, { minimum: 0 }),
 			viewportWidth: new Transient(0),
 			viewportHeight: new Transient(0),

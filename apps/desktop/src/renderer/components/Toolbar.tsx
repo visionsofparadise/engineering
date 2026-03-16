@@ -1,4 +1,5 @@
-import { Cpu, Download, FileAudio, FolderOpen, Menu, Monitor, Moon, Package, Save, Sun, X } from "lucide-react";
+import { Cpu, Download, FileAudio, Flame, FolderOpen, Menu, Monitor, Moon, Package, Palette, Save, Sun, X } from "lucide-react";
+import type { SpectralTheme } from "../models/State/App";
 import { useImportFile } from "../hooks/useImportFile";
 import type { AppContext } from "../models/Context";
 import { addTab } from "../utils/tabs";
@@ -123,6 +124,26 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context, onManagePackages, onM
 						Manage Binaries...
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
+					<DropdownMenuSub>
+						<DropdownMenuSubTrigger>
+							<Palette className="h-4 w-4" />
+							Spectral Theme
+						</DropdownMenuSubTrigger>
+						<DropdownMenuSubContent>
+							<DropdownMenuItem onClick={() => {
+								context.appStore.mutate(context.app, (proxy) => { (proxy as { spectralTheme: SpectralTheme }).spectralTheme = "lava"; });
+							}}>
+								<Flame className="h-4 w-4" />
+								Lava {context.app.spectralTheme === "lava" ? "\u2713" : ""}
+							</DropdownMenuItem>
+							<DropdownMenuItem onClick={() => {
+								context.appStore.mutate(context.app, (proxy) => { (proxy as { spectralTheme: SpectralTheme }).spectralTheme = "viridis"; });
+							}}>
+								<Palette className="h-4 w-4" />
+								Viridis {context.app.spectralTheme === "viridis" ? "\u2713" : ""}
+							</DropdownMenuItem>
+						</DropdownMenuSubContent>
+					</DropdownMenuSub>
 					<DropdownMenuSub>
 						<DropdownMenuSubTrigger>
 							{theme === "dark" ? <Moon className="h-4 w-4" /> : theme === "light" ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}

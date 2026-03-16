@@ -1,24 +1,47 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { SessionContext } from "../../../../models/Context";
 
-export function useWorkspaceResize(containerRef: React.RefObject<HTMLDivElement | null>, context: SessionContext): void {
+export function useWorkspaceResize(context: SessionContext): (node: HTMLDivElement | null) => void {
 	const { workspace, sessionStore } = context;
+	const observerRef = useRef<ResizeObserver | null>(null);
 
-	useEffect(() => {
-		const container = containerRef.current;
-		if (!container) return;
+	const callbackRef = useCallback(
+		(node: HTMLDivElement | null) => {
+			if (observerRef.current) {
+				observerRef.current.disconnect();
+				observerRef.current = null;
+			}
 
-		const observer = new ResizeObserver((entries) => {
-			const entry = entries[0];
-			if (!entry) return;
+			if (!node) return;
 
+			const rect = node.getBoundingClientRect();
 			sessionStore.mutate(workspace, (proxy) => {
-				proxy.viewportWidth.committed.value = entry.contentRect.width;
-				proxy.viewportHeight.committed.value = entry.contentRect.height;
+				proxy.viewportWidth.committed.value = rect.width;
+				proxy.viewportHeight.committed.value = rect.height;
 			});
-		});
 
-		observer.observe(container);
-		return () => observer.disconnect();
-	}, [containerRef, workspace, sessionStore]);
+			const observer = new ResizeObserver((entries) => {
+				const entry = entries[0];
+				if (!entry) return;
+
+				sessionStore.mutate(workspace, (proxy) => {
+					proxy.viewportWidth.committed.value = entry.contentRect.width;
+					proxy.viewportHeight.committed.value = entry.contentRect.height;
+				});
+			});
+
+			observer.observe(node);
+			observerRef.current = observer;
+		},
+		[workspace, sessionStore],
+	);
+
+	useEffect(
+		() => () => {
+			observerRef.current?.disconnect();
+		},
+		[],
+	);
+
+	return callbackRef;
 }
