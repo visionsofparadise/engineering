@@ -32,10 +32,29 @@ export function useAutosave(app: Snapshot<AppState>, store: ProxyStore, main: Ma
 			}, 500);
 		});
 
+		const handleBeforeUnload = () => {
+			if (debounceRef.current) {
+				clearTimeout(debounceRef.current);
+				debounceRef.current = null;
+				const json = JSON.stringify(proxy, null, 2);
+				void main.writeFile(statePath, json).catch(() => {});
+			}
+		};
+
+		window.addEventListener("beforeunload", handleBeforeUnload);
+
 		return () => {
 			unsubscribe();
+			window.removeEventListener("beforeunload", handleBeforeUnload);
 
-			if (debounceRef.current) clearTimeout(debounceRef.current);
+			if (debounceRef.current) {
+				clearTimeout(debounceRef.current);
+				debounceRef.current = null;
+
+				// Flush pending save
+				const json = JSON.stringify(proxy, null, 2);
+				void main.writeFile(statePath, json).catch(() => {});
+			}
 		};
 	}, [proxy, main, app, userDataPath]);
 }

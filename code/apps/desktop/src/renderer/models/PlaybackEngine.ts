@@ -3,28 +3,38 @@ import type { ProxyStore } from "./ProxyStore/ProxyStore";
 import type { PlaybackState } from "./State/Playback";
 import type { SelectionState } from "./State/Selection";
 
+interface Ref<T> {
+	readonly current: T;
+}
+
 export class PlaybackEngine {
 	private readonly _store: ProxyStore;
-	private readonly _playback: Snapshot<PlaybackState>;
+	private readonly _playbackRef: Ref<Snapshot<PlaybackState>>;
+	private readonly _selectionRef: Ref<Snapshot<SelectionState>>;
 	private readonly _audio: HTMLAudioElement;
 	private _rafId: number | null = null;
 	private _durationMs = 0;
+	private _sampleRate = 0;
 
-	constructor(store: ProxyStore, playback: Snapshot<PlaybackState>) {
+	constructor(store: ProxyStore, playbackRef: Ref<Snapshot<PlaybackState>>, selectionRef: Ref<Snapshot<SelectionState>>) {
 		this._store = store;
-		this._playback = playback;
+		this._playbackRef = playbackRef;
+		this._selectionRef = selectionRef;
 		this._audio = new Audio();
 		this._audio.preload = "auto";
 
 		this._audio.addEventListener("ended", () => {
-			if (this._playback.isLooping) {
-				this._audio.currentTime = 0;
+			const playback = this._playbackRef.current;
+
+			if (playback.isLooping) {
+				const bounds = this.getLoopBounds(this._selectionRef.current, this._sampleRate);
+				this._audio.currentTime = bounds.startMs / 1000;
 
 				void this._audio.play();
 			} else {
 				this._stopRafLoop();
 
-				this._store.mutate(this._playback, (proxy) => {
+				this._store.mutate(playback, (proxy) => {
 					proxy.isPlaying = false;
 				});
 			}
@@ -36,13 +46,13 @@ export class PlaybackEngine {
 	}
 
 	load(audioPath: string): void {
-		if (this._playback.isPlaying) {
+		if (this._playbackRef.current.isPlaying) {
 			this.pause();
 		}
 
 		this._audio.src = `media:///${audioPath.replace(/\\/g, "/")}`;
 
-		this._store.mutate(this._playback, (proxy) => {
+		this._store.mutate(this._playbackRef.current, (proxy) => {
 			proxy.currentMs.committed.value = 0;
 		});
 	}
@@ -52,7 +62,7 @@ export class PlaybackEngine {
 
 		await this._audio.play();
 
-		this._store.mutate(this._playback, (proxy) => {
+		this._store.mutate(this._playbackRef.current, (proxy) => {
 			proxy.isPlaying = true;
 		});
 
@@ -64,7 +74,7 @@ export class PlaybackEngine {
 		this._stopRafLoop();
 		this._commitCurrentMs();
 
-		this._store.mutate(this._playback, (proxy) => {
+		this._store.mutate(this._playbackRef.current, (proxy) => {
 			proxy.isPlaying = false;
 		});
 	}
@@ -74,7 +84,7 @@ export class PlaybackEngine {
 		this._stopRafLoop();
 		this._audio.currentTime = 0;
 
-		this._store.mutate(this._playback, (proxy) => {
+		this._store.mutate(this._playbackRef.current, (proxy) => {
 			proxy.isPlaying = false;
 			proxy.currentMs.committed.value = 0;
 		});
@@ -84,8 +94,8 @@ export class PlaybackEngine {
 		const clamped = Math.max(0, Math.min(ms, this._durationMs));
 		this._audio.currentTime = clamped / 1000;
 
-		this._store.mutate(this._playback, (proxy) => {
-			if (this._playback.isPlaying) {
+		this._store.mutate(this._playbackRef.current, (proxy) => {
+			if (this._playbackRef.current.isPlaying) {
 				proxy.currentMs.transient.value = clamped;
 			} else {
 				proxy.currentMs.committed.value = clamped;
@@ -94,11 +104,11 @@ export class PlaybackEngine {
 	}
 
 	skipForward(ms = 5000): void {
-		this.seek(this._playback.currentMs.value + ms);
+		this.seek(this._playbackRef.current.currentMs.value + ms);
 	}
 
 	skipBackward(ms = 5000): void {
-		this.seek(this._playback.currentMs.value - ms);
+		this.seek(this._playbackRef.current.currentMs.value - ms);
 	}
 
 	skipToStart(): void {
@@ -113,7 +123,7 @@ export class PlaybackEngine {
 		const clamped = Math.max(0, Math.min(1, value));
 		this._audio.volume = clamped;
 
-		this._store.mutate(this._playback, (proxy) => {
+		this._store.mutate(this._playbackRef.current, (proxy) => {
 			proxy.volume = clamped;
 		});
 	}
@@ -122,15 +132,19 @@ export class PlaybackEngine {
 		const clamped = Math.max(0.25, Math.min(4, rate));
 		this._audio.playbackRate = clamped;
 
-		this._store.mutate(this._playback, (proxy) => {
+		this._store.mutate(this._playbackRef.current, (proxy) => {
 			proxy.playbackRate = clamped;
 		});
 	}
 
 	setIsLooping(isLooping: boolean): void {
-		this._store.mutate(this._playback, (proxy) => {
+		this._store.mutate(this._playbackRef.current, (proxy) => {
 			proxy.isLooping = isLooping;
 		});
+	}
+
+	setSampleRate(rate: number): void {
+		this._sampleRate = rate;
 	}
 
 	getLoopBounds(selection: Snapshot<SelectionState> | undefined, sampleRate: number): { startMs: number; endMs: number } {
@@ -164,12 +178,12 @@ export class PlaybackEngine {
 
 		const tick = (): void => {
 			const currentMs = this._audio.currentTime * 1000;
-			this._store.mutate(this._playback, (proxy) => {
+			this._store.mutate(this._playbackRef.current, (proxy) => {
 				proxy.currentMs.transient.value = currentMs;
 			});
 
-			if (this._playback.isLooping) {
-				const bounds = this.getLoopBounds(undefined, 0);
+			if (this._playbackRef.current.isLooping) {
+				const bounds = this.getLoopBounds(this._selectionRef.current, this._sampleRate);
 				if (currentMs >= bounds.endMs && bounds.endMs > 0) {
 					this._audio.currentTime = bounds.startMs / 1000;
 				}
@@ -191,7 +205,7 @@ export class PlaybackEngine {
 	private _commitCurrentMs(): void {
 		const currentMs = this._audio.currentTime * 1000;
 
-		this._store.mutate(this._playback, (proxy) => {
+		this._store.mutate(this._playbackRef.current, (proxy) => {
 			proxy.currentMs.committed.value = currentMs;
 		});
 	}

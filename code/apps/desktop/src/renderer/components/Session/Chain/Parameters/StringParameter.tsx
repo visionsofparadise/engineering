@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "../../../ui/input";
 import { Label } from "../../../ui/label";
 
@@ -11,6 +11,7 @@ interface StringParameterProps {
 
 export const StringParameter: React.FC<StringParameterProps> = ({ label, initialValue, onCommit, disabled }) => {
 	const [value, setValue] = useState(initialValue);
+	useEffect(() => setValue(initialValue), [initialValue]);
 
 	return (
 		<div className="space-y-1">

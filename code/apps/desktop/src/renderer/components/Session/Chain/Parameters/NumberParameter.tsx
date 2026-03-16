@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "../../../ui/input";
 import { Label } from "../../../ui/label";
 import { Slider } from "../../../ui/slider";
@@ -14,6 +14,7 @@ interface NumberParameterProps {
 
 export const NumberParameter: React.FC<NumberParameterProps> = ({ label, initialValue, property, onCommit, disabled }) => {
 	const [value, setValue] = useState(initialValue);
+	useEffect(() => setValue(initialValue), [initialValue]);
 
 	const min = property.minimum;
 	const max = property.maximum;
