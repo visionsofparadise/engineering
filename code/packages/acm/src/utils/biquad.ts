@@ -84,6 +84,19 @@ export function highPassCoefficients(sampleRate: number, frequency: number): Biq
 	};
 }
 
+export function bandPassCoefficients(sampleRate: number, centerFreq: number, quality: number): BiquadCoefficients {
+	const w0 = (2 * Math.PI * centerFreq) / sampleRate;
+	const cosW0 = Math.cos(w0);
+	const sinW0 = Math.sin(w0);
+	const alpha = sinW0 / (2 * quality);
+	const a0 = 1 + alpha;
+
+	return {
+		fb: [alpha / a0, 0, -alpha / a0],
+		fa: [1.0, (-2 * cosW0) / a0, (1 - alpha) / a0],
+	};
+}
+
 export function preFilterCoefficients(sampleRate: number): BiquadCoefficients {
 	if (sampleRate === 48000) {
 		return {

@@ -1,10 +1,12 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
-import { highPassCoefficients, lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
+import { applyBandpass } from "../../utils/apply-bandpass";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
-import { bitReverse, butterflyStages } from "../../utils/stft";
+import { filterOnnxProviders } from "../../utils/onnx-providers";
+import { resampleDirect } from "../../utils/resample-direct";
+import { stft, istft } from "../../utils/stft";
 
 export interface StemGains {
 	readonly vocals: number;
@@ -19,19 +21,17 @@ export const schema = z.object({
 		.default("")
 		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "htdemucs", download: "https://github.com/facebookresearch/demucs" })
 		.describe("HTDemucs source separation model (.onnx) — requires .onnx.data file alongside"),
+	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
 	onnxAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" }).describe("ONNX Runtime native addon"),
 	highPass: z.number().min(0).max(500).multipleOf(10).default(0).describe("High Pass"),
 	lowPass: z.number().min(0).max(22050).multipleOf(100).default(0).describe("Low Pass"),
 });
 
-export interface MusicRebalanceProperties extends TransformModuleProperties {
-	readonly modelPath: string;
-	readonly onnxAddonPath: string;
+export interface MusicRebalanceProperties extends z.infer<typeof schema>, TransformModuleProperties {
 	readonly stems: StemGains;
-	readonly highPass?: number;
-	readonly lowPass?: number;
 }
 
+const HTDEMUCS_SAMPLE_RATE = 44100;
 const FFT_SIZE = 4096;
 const HOP_SIZE = 1024;
 const SEGMENT_SAMPLES = 343980; // 7.8s at 44100Hz
@@ -47,15 +47,16 @@ export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperti
 	}
 
 	override readonly type = ["async-module", "transform", "music-rebalance"] as const;
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private session?: OnnxSession;
+	private sourceSampleRate = HTDEMUCS_SAMPLE_RATE;
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);
-		const onnxProviders = context.executionProviders.filter((ep) => ep !== "gpu" && ep !== "cpu-native");
-		this.session = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
+		this.sourceSampleRate = context.sampleRate;
+		this.session = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: filterOnnxProviders(context.executionProviders) });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -63,13 +64,22 @@ export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperti
 			throw new Error("MusicRebalanceTransformModule not set up — ONNX session not initialized");
 		}
 
-		const frames = buffer.frames;
+		const originalFrames = buffer.frames;
 		const channels = buffer.channels;
-		const chunk = await buffer.read(0, frames);
+		const chunk = await buffer.read(0, originalFrames);
 
 		// Get stereo input (duplicate mono if needed)
-		const left = chunk.samples[0] ?? new Float32Array(frames);
-		const right = channels >= 2 ? (chunk.samples[1] ?? left) : left;
+		let left = chunk.samples[0] ?? new Float32Array(originalFrames);
+		let right = channels >= 2 ? (chunk.samples[1] ?? left) : left;
+
+		// Resample to 44100Hz if needed
+		if (this.sourceSampleRate !== HTDEMUCS_SAMPLE_RATE) {
+			const resampled = await resampleDirect(this.properties.ffmpegPath, [left, right], this.sourceSampleRate, HTDEMUCS_SAMPLE_RATE);
+			left = resampled[0] ?? left;
+			right = resampled[1] ?? right;
+		}
+
+		const frames = left.length;
 
 		// Normalize: subtract mean, divide by std
 		const stereo = new Float32Array(2 * frames);
@@ -167,8 +177,8 @@ export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperti
 			// Compute STFT for both channels
 			const stftInputLeft = reflectPad(paddedLeft, stftPadConst, stftPadConst, stftLenConst);
 			const stftInputRight = reflectPad(paddedRight, stftPadConst, stftPadConst, stftLenConst);
-			const stftLeft = computeStft(stftInputLeft);
-			const stftRight = computeStft(stftInputRight);
+			const stftLeft = computeStftScaled(stftInputLeft);
+			const stftRight = computeStftScaled(stftInputRight);
 
 			// Build x tensor: complex-as-channels [1, 4, 2048, nbFrames-4]
 			xData.fill(0);
@@ -237,7 +247,7 @@ export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperti
 						}
 					}
 
-					const freqWaveform = computeIstft(freqRealBuffers, freqImagBuffers, FFT_SIZE, HOP_SIZE, stftLenConst);
+					const freqWaveform = computeIstftScaled(freqRealBuffers, freqImagBuffers, stftLenConst);
 
 					// Sum time + freq branches, accumulate with crossfade
 					const freqOffset = stftPadConst + pad;
@@ -293,20 +303,20 @@ export class MusicRebalanceModule extends TransformModule<MusicRebalanceProperti
 			outputChannels.push(output);
 		}
 
-		// Apply optional bandpass cleanup
-		const { highPass, lowPass } = this.properties;
+		applyBandpass(outputChannels, HTDEMUCS_SAMPLE_RATE, this.properties.highPass, this.properties.lowPass);
 
-		if (highPass || lowPass) {
-			const sampleRate = 44100; // htdemucs operates at 44100
+		// Resample back to original sample rate if needed
+		if (this.sourceSampleRate !== HTDEMUCS_SAMPLE_RATE) {
+			const resampled = await resampleDirect(this.properties.ffmpegPath, outputChannels, HTDEMUCS_SAMPLE_RATE, this.sourceSampleRate);
 
-			for (const channel of outputChannels) {
-				if (highPass) {
-					zeroPhaseBiquadFilter(channel, highPassCoefficients(sampleRate, highPass));
-				}
+			for (let ch = 0; ch < outputChannels.length; ch++) {
+				const resampledCh = resampled[ch];
+				if (!resampledCh) continue;
 
-				if (lowPass) {
-					zeroPhaseBiquadFilter(channel, lowPassCoefficients(sampleRate, lowPass));
-				}
+				// Ensure output matches original input length
+				const finalCh = new Float32Array(originalFrames);
+				finalCh.set(resampledCh.subarray(0, Math.min(resampledCh.length, originalFrames)));
+				outputChannels[ch] = finalCh;
 			}
 		}
 
@@ -327,13 +337,18 @@ export function musicRebalance(
 	modelPath: string,
 	stems: Partial<StemGains>,
 	options?: {
+		ffmpegPath?: string;
 		onnxAddonPath?: string;
 		id?: string;
 	},
 ): MusicRebalanceModule {
-	return new MusicRebalanceModule({
+	const parsed = schema.parse({
 		modelPath,
-		onnxAddonPath: options?.onnxAddonPath ?? "",
+		ffmpegPath: options?.ffmpegPath,
+		onnxAddonPath: options?.onnxAddonPath,
+	});
+	return new MusicRebalanceModule({
+		...parsed,
 		stems: {
 			vocals: stems.vocals ?? 1,
 			drums: stems.drums ?? 1,
@@ -367,150 +382,46 @@ function reflectPad(signal: Float32Array, padLeft: number, padRight: number, tot
 	return result;
 }
 
-const periodicHannCache = new Map<number, Float32Array>();
-
-function periodicHannWindow(size: number): Float32Array {
-	const cached = periodicHannCache.get(size);
-
-	if (cached) return cached;
-
-	const window = new Float32Array(size);
-
-	for (let index = 0; index < size; index++) {
-		window[index] = 0.5 * (1 - Math.cos((2 * Math.PI * index) / size));
-	}
-
-	periodicHannCache.set(size, window);
-
-	return window;
-}
-
 interface ComplexStft {
 	real: Array<Float32Array>;
 	imag: Array<Float32Array>;
 }
 
-function computeStft(signal: Float32Array): ComplexStft {
-	const window = periodicHannWindow(FFT_SIZE);
+function computeStftScaled(signal: Float32Array): ComplexStft {
 	const scale = 1 / Math.sqrt(FFT_SIZE);
-	const real: Array<Float32Array> = [];
-	const imag: Array<Float32Array> = [];
-	const nbBins = FFT_SIZE / 2 + 1;
-	const windowed = new Float32Array(FFT_SIZE);
-	const fftRe = new Float32Array(FFT_SIZE);
-	const fftIm = new Float32Array(FFT_SIZE);
+	const result = stft(signal, FFT_SIZE, HOP_SIZE);
 
-	for (let start = 0; start + FFT_SIZE <= signal.length; start += HOP_SIZE) {
-
-		for (let index = 0; index < FFT_SIZE; index++) {
-			windowed[index] = (signal[start + index] ?? 0) * (window[index] ?? 0);
+	for (const frame of result.real) {
+		for (let index = 0; index < frame.length; index++) {
+			frame[index] = (frame[index] ?? 0) * scale;
 		}
-
-		const { re, im } = fftForward(windowed, fftRe, fftIm);
-		const frameReal = new Float32Array(nbBins);
-		const frameImag = new Float32Array(nbBins);
-
-		for (let index = 0; index < nbBins; index++) {
-			frameReal[index] = (re[index] ?? 0) * scale;
-			frameImag[index] = (im[index] ?? 0) * scale;
-		}
-
-		real.push(frameReal);
-		imag.push(frameImag);
 	}
 
-	return { real, imag };
+	for (const frame of result.imag) {
+		for (let index = 0; index < frame.length; index++) {
+			frame[index] = (frame[index] ?? 0) * scale;
+		}
+	}
+
+	return result;
 }
 
-function computeIstft(real: Array<Float32Array>, imag: Array<Float32Array>, fftSize: number, hopSize: number, outputLength: number): Float32Array {
-	const window = periodicHannWindow(fftSize);
-	const scale = Math.sqrt(fftSize);
-	const output = new Float32Array(outputLength);
-	const windowSum = new Float32Array(outputLength);
-	const nbBins = fftSize / 2 + 1;
-	const fullRe = new Float32Array(fftSize);
-	const fullIm = new Float32Array(fftSize);
-	const ifftOutRe = new Float32Array(fftSize);
-	const ifftOutIm = new Float32Array(fftSize);
+function computeIstftScaled(real: Array<Float32Array>, imag: Array<Float32Array>, outputLength: number): Float32Array {
+	// Undo the 1/sqrt(N) scaling from computeStftScaled before passing to istft
+	const scale = Math.sqrt(FFT_SIZE);
 
-	for (let frame = 0; frame < real.length; frame++) {
-		const re = real[frame];
-		const im = imag[frame];
-
-		if (!re || !im) continue;
-
-		// Reconstruct full spectrum
-		fullRe.fill(0);
-		fullIm.fill(0);
-
-		for (let index = 0; index < nbBins; index++) {
-			fullRe[index] = (re[index] ?? 0) * scale;
-			fullIm[index] = (im[index] ?? 0) * scale;
-		}
-
-		for (let index = 1; index < nbBins - 1; index++) {
-			fullRe[fftSize - index] = fullRe[index] ?? 0;
-			fullIm[fftSize - index] = -(fullIm[index] ?? 0);
-		}
-
-		const timeDomain = fftInverse(fullRe, fullIm, ifftOutRe, ifftOutIm);
-		const offset = frame * hopSize;
-
-		for (let index = 0; index < fftSize; index++) {
-			const pos = offset + index;
-
-			if (pos < outputLength) {
-				const wv = window[index] ?? 0;
-				output[pos] = (output[pos] ?? 0) + ((timeDomain[index] ?? 0) * wv) / fftSize;
-				windowSum[pos] = (windowSum[pos] ?? 0) + wv * wv;
-			}
+	for (const frame of real) {
+		for (let index = 0; index < frame.length; index++) {
+			frame[index] = (frame[index] ?? 0) * scale;
 		}
 	}
 
-	for (let index = 0; index < outputLength; index++) {
-		const ws = windowSum[index] ?? 0;
-
-		if (ws > 1e-8) {
-			output[index] = (output[index] ?? 0) / ws;
+	for (const frame of imag) {
+		for (let index = 0; index < frame.length; index++) {
+			frame[index] = (frame[index] ?? 0) * scale;
 		}
 	}
 
-	return output;
-}
-
-// --- Minimal FFT implementation ---
-
-function fftForward(input: Float32Array, wRe?: Float32Array, wIm?: Float32Array): { re: Float32Array; im: Float32Array } {
-	const size = input.length;
-	const re = wRe ?? new Float32Array(size);
-	const im = wIm ?? new Float32Array(size);
-
-	re.set(input);
-
-	if (wIm) im.fill(0);
-
-	if (size <= 1) return { re, im };
-
-	bitReverse(re, im, size);
-	butterflyStages(re, im, size);
-
-	return { re, im };
-}
-
-function fftInverse(re: Float32Array, im: Float32Array, wOutRe?: Float32Array, wOutIm?: Float32Array): Float32Array {
-	const size = re.length;
-	const outRe = wOutRe ?? Float32Array.from(re);
-	const outIm = wOutIm ?? new Float32Array(size);
-
-	if (wOutRe) outRe.set(re);
-
-	for (let index = 0; index < size; index++) {
-		outIm[index] = -(im[index] ?? 0);
-	}
-
-	bitReverse(outRe, outIm, size);
-	butterflyStages(outRe, outIm, size);
-
-	return outRe;
+	return istft({ real, imag, frames: real.length, fftSize: FFT_SIZE }, HOP_SIZE, outputLength);
 }
 

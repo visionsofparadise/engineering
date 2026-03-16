@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({
 	threshold: z.number().min(0).max(1).multipleOf(0.001).default(0.001).describe("Threshold"),
@@ -10,12 +10,7 @@ export const schema = z.object({
 	end: z.boolean().default(true).describe("End"),
 });
 
-export interface TrimProperties extends TransformModuleProperties {
-	readonly threshold?: number;
-	readonly margin?: number;
-	readonly start?: boolean;
-	readonly end?: boolean;
-}
+export interface TrimProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 export class TrimModule extends TransformModule<TrimProperties> {
 	static override readonly moduleName = "Trim";
@@ -26,7 +21,7 @@ export class TrimModule extends TransformModule<TrimProperties> {
 	}
 
 	override readonly type = ["async-module", "transform", "trim"] as const;
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private trimSampleRate = 44100;
@@ -43,18 +38,26 @@ export class TrimModule extends TransformModule<TrimProperties> {
 
 		if (channels === 0 || frames === 0) return;
 
-		const threshold = this.properties.threshold ?? 0.001;
-		const marginSeconds = this.properties.margin ?? 0.01;
+		const threshold = this.properties.threshold;
+		const marginSeconds = this.properties.margin;
 		const marginFrames = Math.round(marginSeconds * this.trimSampleRate);
-		const trimStart = this.properties.start !== false;
-		const trimEnd = this.properties.end !== false;
+		const trimStart = this.properties.start;
+		const trimEnd = this.properties.end;
+
+		// Check for all-silence before computing start/end
+		const firstAbove = findFirstAbove(allAudio.samples, frames, threshold);
+
+		if (firstAbove >= frames) {
+			// Entire audio is below threshold — trim to nothing
+			await buffer.truncate(0);
+			return;
+		}
 
 		let startFrame = 0;
 		let endFrame = frames;
 
 		if (trimStart) {
-			startFrame = findFirstAbove(allAudio.samples, frames, threshold);
-			startFrame = Math.max(0, startFrame - marginFrames);
+			startFrame = Math.max(0, firstAbove - marginFrames);
 		}
 
 		if (trimEnd) {
@@ -113,11 +116,6 @@ function findLastAbove(samples: Array<Float32Array>, frames: number, threshold: 
 }
 
 export function trim(options?: { threshold?: number; margin?: number; start?: boolean; end?: boolean; id?: string }): TrimModule {
-	return new TrimModule({
-		threshold: options?.threshold,
-		margin: options?.margin,
-		start: options?.start,
-		end: options?.end,
-		id: options?.id,
-	});
+	const parsed = schema.parse(options ?? {});
+	return new TrimModule({ ...parsed, id: options?.id });
 }

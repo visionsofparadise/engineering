@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { z } from "zod";
 import type { AudioChunk, StreamMeta } from "../module";
 import { SourceModule, type SourceModuleProperties } from "../source";
+import { deinterleaveBuffer } from "../utils/interleave";
 
 export const schema = z.object({
 	path: z.string().default("").meta({ input: "file", mode: "open" }),
@@ -56,10 +57,21 @@ export class ReadModule extends SourceModule<ReadProperties> {
 	private useTranscode = false;
 
 	async _init(): Promise<StreamMeta> {
-		const isWav = await this.detectWav();
+		// Open file once and check for WAV/RF64 magic
+		const fh = await open(this.properties.path, "r").catch(() => undefined);
 
-		if (isWav) {
-			return this.initWav();
+		if (fh) {
+			const header = Buffer.alloc(12);
+			await fh.read(header, 0, 12, 0);
+			const magic = header.toString("ascii", 0, 4);
+			const isWav = (magic === "RIFF" || magic === "RF64") && header.toString("ascii", 8, 12) === "WAVE";
+
+			if (isWav) {
+				this.fileHandle = fh;
+				return this.initWav();
+			}
+
+			await fh.close();
 		}
 
 		if (!this.properties.ffmpegPath || !this.properties.ffprobePath) {
@@ -70,31 +82,24 @@ export class ReadModule extends SourceModule<ReadProperties> {
 		return this.initTranscode();
 	}
 
-	private async detectWav(): Promise<boolean> {
-		try {
-			const fh = await open(this.properties.path, "r");
-			const header = Buffer.alloc(12);
-			await fh.read(header, 0, 12, 0);
-			await fh.close();
-			return header.toString("ascii", 0, 4) === "RIFF" && header.toString("ascii", 8, 12) === "WAVE";
-		} catch {
-			return false;
-		}
-	}
-
 	private async initWav(): Promise<StreamMeta> {
+		const fh = this.fileHandle;
+		if (!fh) throw new Error("File handle not initialized");
+
 		const fileInfo = await stat(this.properties.path);
-		this.fileHandle = await open(this.properties.path, "r");
 
-		const header = Buffer.alloc(44);
-		await this.fileHandle.read(header, 0, 44, 0);
+		const header = Buffer.alloc(12);
+		await fh.read(header, 0, 12, 0);
 
-		const riff = header.toString("ascii", 0, 4);
+		const magic = header.toString("ascii", 0, 4);
 		const wave = header.toString("ascii", 8, 12);
 
-		if (riff !== "RIFF" || wave !== "WAVE") {
+		if ((magic !== "RIFF" && magic !== "RF64") || wave !== "WAVE") {
 			throw new Error(`Not a WAV file: "${this.properties.path}"`);
 		}
+
+		const isRf64 = magic === "RF64";
+		let ds64DataSize: number | undefined;
 
 		let offset = 12;
 		const fileSize = fileInfo.size;
@@ -102,13 +107,21 @@ export class ReadModule extends SourceModule<ReadProperties> {
 		const chunkHeader = Buffer.alloc(8);
 
 		while (offset < fileSize) {
-			await this.fileHandle.read(chunkHeader, 0, 8, offset);
+			await fh.read(chunkHeader, 0, 8, offset);
 			const chunkId = chunkHeader.toString("ascii", 0, 4);
 			const chunkSize = chunkHeader.readUInt32LE(4);
 
-			if (chunkId === "fmt ") {
+			if (chunkId === "ds64") {
+				const ds64Data = Buffer.alloc(Math.min(chunkSize, 28));
+				await fh.read(ds64Data, 0, ds64Data.length, offset + 8);
+				// bytes 8-15: data size (64-bit LE)
+				ds64DataSize = Number(ds64Data.readBigUInt64LE(8));
+			} else if (chunkId === "JUNK") {
+				// Skip JUNK chunks (placeholder for ds64 in pre-allocated headers)
+			} else if (chunkId === "fmt ") {
+				if (chunkSize < 16) throw new Error("WAV fmt chunk too small");
 				const fmtData = Buffer.alloc(chunkSize);
-				await this.fileHandle.read(fmtData, 0, chunkSize, offset + 8);
+				await fh.read(fmtData, 0, chunkSize, offset + 8);
 
 				const audioFormat = fmtData.readUInt16LE(0);
 				const channels = fmtData.readUInt16LE(2);
@@ -119,7 +132,8 @@ export class ReadModule extends SourceModule<ReadProperties> {
 				format = { sampleRate, channels, bitsPerSample, audioFormat, blockAlign, dataOffset: 0, dataSize: 0 };
 			} else if (chunkId === "data") {
 				if (!format) throw new Error("WAV file has data chunk before fmt chunk");
-				format = { ...format, dataOffset: offset + 8, dataSize: chunkSize };
+				const dataSize = isRf64 && ds64DataSize !== undefined ? ds64DataSize : chunkSize;
+				format = { ...format, dataOffset: offset + 8, dataSize };
 				break;
 			}
 
@@ -183,7 +197,7 @@ export class ReadModule extends SourceModule<ReadProperties> {
 		return {
 			sampleRate: probe.sampleRate,
 			channels: this.outputChannels,
-			duration: probe.duration,
+			duration: Math.round(probe.duration * probe.sampleRate),
 		};
 	}
 
@@ -281,22 +295,8 @@ export class ReadModule extends SourceModule<ReadProperties> {
 		}
 
 		const frames = usableBytes / bytesPerFrame;
-		const floats = new Float32Array(data.buffer, data.byteOffset, usableBytes / 4);
-
-		const samples: Array<Float32Array> = [];
-		for (let ch = 0; ch < this.outputChannels; ch++) {
-			samples.push(new Float32Array(frames));
-		}
-
-		for (let frame = 0; frame < frames; frame++) {
-			for (let ch = 0; ch < this.outputChannels; ch++) {
-				const channel = samples[ch];
-				const value = floats[frame * this.outputChannels + ch];
-				if (channel && value !== undefined) {
-					channel[frame] = value;
-				}
-			}
-		}
+		const sampleBuffer = Buffer.from(data.buffer, data.byteOffset, usableBytes);
+		const samples = deinterleaveBuffer(sampleBuffer, this.outputChannels);
 
 		const offset = this.frameOffset;
 		this.frameOffset += frames;
@@ -316,10 +316,20 @@ export class ReadModule extends SourceModule<ReadProperties> {
 
 		const proc = this.ffmpegProcess;
 		if (proc) {
+			proc.kill();
 			await new Promise<void>((resolve) => {
 				proc.on("close", () => resolve());
 				if (proc.exitCode !== null) resolve();
 			});
+			this.ffmpegProcess = undefined;
+		}
+		this.stdout = undefined;
+		this.remainder = undefined;
+	}
+
+	protected override _teardown(): void {
+		if (this.ffmpegProcess) {
+			this.ffmpegProcess.kill();
 			this.ffmpegProcess = undefined;
 		}
 		this.stdout = undefined;

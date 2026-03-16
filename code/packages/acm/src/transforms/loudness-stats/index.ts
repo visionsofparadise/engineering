@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChunk, StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
 import { biquadFilter, preFilterCoefficients, rlbFilterCoefficients } from "../../utils/biquad";
 
 export const schema = z.object({});
@@ -23,7 +23,7 @@ export class LoudnessStatsModule extends TransformModule {
 	}
 
 	override readonly type = ["async-module", "transform", "loudness-stats"] as const;
-	readonly bufferSize = Infinity;
+	readonly bufferSize = WHOLE_FILE;
 	readonly latency = Infinity;
 
 	private measureSampleRate = 48000;
@@ -67,8 +67,7 @@ export class LoudnessStatsModule extends TransformModule {
 
 		const truePeak = 20 * Math.log10(Math.max(this.truePeakValue, 1e-10));
 
-		const loudValues = momentary.filter((value) => value > -70);
-		const range = loudValues.length >= 2 ? Math.max(...loudValues) - Math.min(...loudValues) : 0;
+		const range = computeLra(shortTerm);
 
 		this.stats = { integrated, shortTerm, momentary, truePeak, range };
 	}
@@ -161,6 +160,26 @@ function computeIntegratedLoudness(kWeighted: Array<Float32Array>, channels: num
 	const relativeMean = relativeGated.reduce((sum, value) => sum + Math.pow(10, value / 10), 0) / relativeGated.length;
 
 	return 10 * Math.log10(relativeMean);
+}
+
+function computeLra(shortTermLoudness: Array<number>): number {
+	const absoluteGated = shortTermLoudness.filter((value) => value > -70);
+
+	if (absoluteGated.length < 2) return 0;
+
+	const absoluteMean = absoluteGated.reduce((sum, value) => sum + Math.pow(10, value / 10), 0) / absoluteGated.length;
+	const relativeThreshold = 10 * Math.log10(absoluteMean) - 20;
+
+	const relativeGated = absoluteGated.filter((value) => value > relativeThreshold);
+
+	if (relativeGated.length < 2) return 0;
+
+	relativeGated.sort((lhs, rhs) => lhs - rhs);
+
+	const p10Index = Math.floor(relativeGated.length * 0.1);
+	const p95Index = Math.min(Math.ceil(relativeGated.length * 0.95) - 1, relativeGated.length - 1);
+
+	return (relativeGated[p95Index] ?? 0) - (relativeGated[p10Index] ?? 0);
 }
 
 export function loudnessStats(options?: { id?: string }): LoudnessStatsModule {

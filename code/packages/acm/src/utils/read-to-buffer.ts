@@ -3,12 +3,14 @@ import { WaveFile } from "wavefile";
 import { ChunkBuffer } from "../chunk-buffer";
 import type { StreamMeta } from "../module";
 
-export interface ReadToBufferResult {
-	readonly buffer: ChunkBuffer;
-	readonly context: StreamMeta;
+export interface WavSamples {
+	readonly samples: Array<Float32Array>;
+	readonly sampleRate: number;
+	readonly channels: number;
+	readonly duration: number;
 }
 
-export async function readToBuffer(path: string): Promise<ReadToBufferResult> {
+export async function readWavSamples(path: string): Promise<WavSamples> {
 	const data = await readFile(path);
 	const wav = new WaveFile(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
 	wav.toBitDepth("32f");
@@ -20,7 +22,6 @@ export async function readToBuffer(path: string): Promise<ReadToBufferResult> {
 	const channels = fmt.numChannels;
 
 	let samples: Array<Float32Array>;
-
 	if (channels === 1) {
 		samples = [new Float32Array(rawSamples as Float64Array)];
 	} else {
@@ -28,12 +29,17 @@ export async function readToBuffer(path: string): Promise<ReadToBufferResult> {
 	}
 
 	const duration = samples[0]?.length ?? 0;
+	return { samples, sampleRate, channels, duration };
+}
+
+export interface ReadToBufferResult {
+	readonly buffer: ChunkBuffer;
+	readonly context: StreamMeta;
+}
+
+export async function readToBuffer(path: string): Promise<ReadToBufferResult> {
+	const { samples, sampleRate, channels, duration } = await readWavSamples(path);
 	const buffer = new ChunkBuffer(duration, channels);
-
 	await buffer.append(samples);
-
-	return {
-		buffer,
-		context: { sampleRate, channels, duration },
-	};
+	return { buffer, context: { sampleRate, channels, duration } };
 }

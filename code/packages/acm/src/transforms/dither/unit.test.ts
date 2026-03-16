@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { DitherTransformModule, dither } from ".";
+import { dither } from ".";
 
-describe("DitherTransformModule", () => {
+describe("DitherModule", () => {
 	it("quantizes samples to 16-bit grid", () => {
 		const unit = dither(16);
 		const levels = Math.pow(2, 15);

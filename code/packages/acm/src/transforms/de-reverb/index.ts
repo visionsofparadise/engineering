@@ -2,8 +2,9 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
-import { detectFftBackend, type FftBackend } from "../../utils/fft-backend";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
+import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
+import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
 
 export const schema = z.object({
@@ -40,7 +41,7 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 	}
 
 	override readonly type = ["async-module", "transform", "de-reverb"] as const;
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private fftBackend: FftBackend = "js";
@@ -48,8 +49,9 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
-		this.fftAddonOptions = { vkfftPath: this.properties.vkfftAddonPath || undefined, fftwPath: this.properties.fftwAddonPath || undefined };
-		this.fftBackend = detectFftBackend(context.executionProviders, this.fftAddonOptions);
+		const fft = initFftBackend(context.executionProviders, this.properties);
+		this.fftBackend = fft.backend;
+		this.fftAddonOptions = fft.addonOptions;
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -58,30 +60,53 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 		const fftSize = 1024;
 		const hopSize = fftSize / 4;
 		const numBins = fftSize / 2 + 1;
-		const numStftFrames = Math.floor((frames - fftSize) / hopSize) + 1;
-		const stftOutput = numStftFrames > 0 ? {
+		const paddedLength = Math.max(frames, fftSize);
+		const numStftFrames = Math.floor((paddedLength - fftSize) / hopSize) + 1;
+		const stftOutput = {
 			real: Array.from({ length: numStftFrames }, () => new Float32Array(numBins)),
 			imag: Array.from({ length: numStftFrames }, () => new Float32Array(numBins)),
-		} : undefined;
+		};
+
+		const chunk = await buffer.read(0, frames);
+
+		// Pre-allocate arrays once, reuse across channels
+		// numStftFrames is the max possible; actual numFrames from stft() may be <=
+		const flatSize = numBins * numStftFrames;
+		const realT = new Float32Array(flatSize);
+		const imagT = new Float32Array(flatSize);
+		const originalPowerT = new Float32Array(flatSize);
+		const iterPowerT = new Float32Array(flatSize);
+		const binEnergy = new Float32Array(numBins);
+
+		const { predictionDelay, filterLength, iterations } = this.properties;
+		const filterLen = filterLength;
+		const corrReal = new Float32Array(filterLen * filterLen);
+		const corrImag = new Float32Array(filterLen * filterLen);
+		const crossReal = new Float32Array(filterLen);
+		const crossImag = new Float32Array(filterLen);
+		const filterReal = new Float32Array(filterLen);
+		const filterImag = new Float32Array(filterLen);
+		const arWork = new Float32Array(filterLen * filterLen);
+		const aiWork = new Float32Array(filterLen * filterLen);
+		const brWork = new Float32Array(filterLen);
+		const biWork = new Float32Array(filterLen);
 
 		for (let ch = 0; ch < channels; ch++) {
-			const chunk = await buffer.read(0, frames);
-			const channel = chunk.samples[ch];
+			let channel = chunk.samples[ch];
 
 			if (!channel) continue;
+
+			if (channel.length < fftSize) {
+				const padded = new Float32Array(fftSize);
+				padded.set(channel);
+				channel = padded;
+			}
 
 			const stftResult = stft(channel, fftSize, hopSize, stftOutput, this.fftBackend, this.fftAddonOptions);
 			const numFrames = stftResult.frames;
 
-			if (numFrames === 0) continue;
-
-			const { predictionDelay, filterLength, iterations } = this.properties;
-
 			// Transpose to bin-major layout: flat array indexed as [bin * numFrames + frame]
 			// This makes the per-bin frame iteration sequential in memory
-			const realT = new Float32Array(numBins * numFrames);
-			const imagT = new Float32Array(numBins * numFrames);
-
 			for (let frame = 0; frame < numFrames; frame++) {
 				const re = stftResult.real[frame];
 				const im = stftResult.imag[frame];
@@ -94,15 +119,13 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 			}
 
 			// Original power per bin (bin-major), used as upper bound for clamping
-			const originalPowerT = new Float32Array(numBins * numFrames);
+			const usedSize = numBins * numFrames;
 
-			for (let ci = 0; ci < realT.length; ci++) {
+			for (let ci = 0; ci < usedSize; ci++) {
 				originalPowerT[ci] = Math.max(realT[ci]! * realT[ci]! + imagT[ci]! * imagT[ci]!, 1e-10);
 			}
 
 			// Compute per-bin energy to skip silent bins
-			const binEnergy = new Float32Array(numBins);
-
 			for (let bin = 0; bin < numBins; bin++) {
 				const offset = bin * numFrames;
 				let energy = 0;
@@ -117,29 +140,13 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 			const meanEnergy = binEnergy.reduce((sum, sample) => sum + sample, 0) / numBins;
 			const energyThreshold = meanEnergy * 1e-4;
 
-			// Pre-allocate work arrays
-			const filterLen = filterLength;
-			const corrReal = new Float32Array(filterLen * filterLen);
-			const corrImag = new Float32Array(filterLen * filterLen);
-			const crossReal = new Float32Array(filterLen);
-			const crossImag = new Float32Array(filterLen);
-			const filterReal = new Float32Array(filterLen);
-			const filterImag = new Float32Array(filterLen);
-			const arWork = new Float32Array(filterLen * filterLen);
-			const aiWork = new Float32Array(filterLen * filterLen);
-			const brWork = new Float32Array(filterLen);
-			const biWork = new Float32Array(filterLen);
-
-			// Iteration power buffer (recomputed each iteration from modified STFT)
-			const iterPowerT = new Float32Array(numBins * numFrames);
-
 			for (let iter = 0; iter < iterations; iter++) {
 				let powerT: Float32Array;
 
 				if (iter === 0) {
 					powerT = originalPowerT;
 				} else {
-					for (let ci = 0; ci < realT.length; ci++) {
+					for (let ci = 0; ci < usedSize; ci++) {
 						iterPowerT[ci] = Math.max(realT[ci]! * realT[ci]! + imagT[ci]! * imagT[ci]!, 1e-10);
 					}
 
@@ -202,14 +209,9 @@ export class DeReverbModule extends TransformModule<DeReverbProperties> {
 				}
 			}
 
-			const dereverberated = istft(stftResult, hopSize, frames, this.fftBackend, this.fftAddonOptions);
-			const allChannels: Array<Float32Array> = [];
+			const dereverberated = istft(stftResult, hopSize, paddedLength, this.fftBackend, this.fftAddonOptions).subarray(0, frames);
 
-			for (let writeCh = 0; writeCh < channels; writeCh++) {
-				allChannels.push(writeCh === ch ? dereverberated : (chunk.samples[writeCh] ?? new Float32Array(frames)));
-			}
-
-			await buffer.write(0, allChannels);
+			await buffer.write(0, replaceChannel(chunk, ch, dereverberated, channels));
 		}
 	}
 

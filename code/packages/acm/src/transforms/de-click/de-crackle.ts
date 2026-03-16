@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { DeClickModule, type DeClickProperties } from ".";
 import type { AudioChainModuleInput } from "../../module";
-import type { OptionalProperties } from "../../utils/RequiredProperties";
 
 export const schema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
+	maxClickDuration: z.number().min(1).max(1000).multipleOf(1).default(20).describe("Max Click Duration"),
 });
 
 export interface DeCrackleProperties extends z.infer<typeof schema>, DeClickProperties {}
@@ -19,8 +19,8 @@ export class DeCrackleModule extends DeClickModule<DeCrackleProperties> {
 
 	override readonly type = ["async-module", "transform", "de-click", "de-crackle"];
 
-	constructor(properties: OptionalProperties<AudioChainModuleInput<DeCrackleProperties>, "maxClickDuration">) {
-		super({ ...properties, ...schema.encode(properties), maxClickDuration: 20 });
+	constructor(properties: AudioChainModuleInput<DeCrackleProperties>) {
+		super({ ...properties, ...schema.encode(properties) });
 	}
 
 	override clone(overrides?: Partial<DeCrackleProperties>): DeCrackleModule {

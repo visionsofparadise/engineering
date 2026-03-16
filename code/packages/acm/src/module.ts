@@ -25,6 +25,7 @@ export interface StreamMeta {
 
 export interface StreamContext extends StreamMeta {
 	readonly executionProviders: ReadonlyArray<ExecutionProvider>;
+	readonly memoryLimit: number;
 }
 
 export interface RenderOptions {
@@ -37,11 +38,11 @@ export interface RenderOptions {
 
 export interface AudioChainModuleProperties {
 	readonly id?: string;
-	readonly targets: Array<AudioChainModule>;
+	readonly next: AudioChainModule | null;
 	readonly previousProperties?: AudioChainModuleProperties;
 }
 
-export type AudioChainModuleInput<P extends AudioChainModuleProperties = AudioChainModuleProperties> = OptionalProperties<P, "targets">;
+export type AudioChainModuleInput<P extends AudioChainModuleProperties = AudioChainModuleProperties> = OptionalProperties<P, "next">;
 
 export type { ZodType as ModuleSchema } from "zod";
 
@@ -76,7 +77,7 @@ export abstract class AudioChainModule<P extends AudioChainModuleProperties = Au
 	constructor(properties?: AudioChainModuleInput<P>) {
 		this.properties = {
 			...properties,
-			targets: properties?.targets ?? [],
+			next: properties?.next ?? null,
 		} as P;
 	}
 
@@ -84,8 +85,8 @@ export abstract class AudioChainModule<P extends AudioChainModuleProperties = Au
 		return this.properties.id;
 	}
 
-	get targets(): Array<AudioChainModule> {
-		return this.properties.targets;
+	get next(): AudioChainModule | null {
+		return this.properties.next;
 	}
 
 	on<K extends keyof ModuleEventMap>(event: K, listener: EventListener<K>): void {
@@ -111,14 +112,17 @@ export abstract class AudioChainModule<P extends AudioChainModuleProperties = Au
 
 	abstract clone(overrides?: Partial<AudioChainModuleProperties>): AudioChainModule;
 
-	to(target: AudioChainModule): void {
-		this.properties.targets.push(target);
+	to(module: AudioChainModule): void {
+		(this.properties as { next: AudioChainModule | null }).next = module;
 	}
 
 	async setup(context: StreamContext): Promise<void> {
 		this.sourceTotalFrames = context.duration;
 
-		await Promise.all([this._setup(context), ...this.targets.map((target) => target.setup(context))]);
+		await Promise.all([
+			Promise.resolve(this._setup(context)),
+			this.next ? this.next.setup(context) : undefined,
+		]);
 
 		this.emit("setup");
 	}
@@ -128,7 +132,7 @@ export abstract class AudioChainModule<P extends AudioChainModuleProperties = Au
 	}
 
 	async teardown(): Promise<void> {
-		await Promise.all(this.targets.map((target) => target.teardown()));
+		if (this.next) await this.next.teardown();
 
 		await this._teardown();
 	}

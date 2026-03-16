@@ -7,10 +7,7 @@ export const schema = z.object({
 	method: z.enum(["ar", "sparse"]).default("ar").describe("Method"),
 });
 
-export interface DeClipProperties extends TransformModuleProperties {
-	readonly threshold?: number;
-	readonly method: "ar" | "sparse";
-}
+export interface DeClipProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 /**
  * Detects clipped samples and reconstructs the original waveform using
@@ -48,7 +45,7 @@ export class DeClipModule extends TransformModule<DeClipProperties> {
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
 		const samples = chunk.samples.map((channel) => {
 			const output = new Float32Array(channel);
-			const clipThreshold = this.properties.threshold ?? detectClipThreshold(channel);
+			const clipThreshold = this.properties.threshold;
 
 			const regions = detectClippedRegions(channel, clipThreshold);
 
@@ -70,18 +67,6 @@ export class DeClipModule extends TransformModule<DeClipProperties> {
 interface ClipRegion {
 	start: number;
 	end: number;
-}
-
-function detectClipThreshold(signal: Float32Array): number {
-	let peak = 0;
-
-	for (const sample of signal) {
-		const abs = Math.abs(sample);
-
-		if (abs > peak) peak = abs;
-	}
-
-	return peak * 0.99;
 }
 
 function detectClippedRegions(signal: Float32Array, threshold: number): Array<ClipRegion> {
@@ -131,7 +116,7 @@ function reconstructClippedRegion(signal: Float32Array, start: number, end: numb
 			}
 
 			const sign = (contextSignal[index] ?? 0) >= 0 ? 1 : -1;
-			const constrained = Math.abs(predicted) >= threshold ? predicted : sign * (threshold + Math.abs(predicted - sign * threshold) * 0.5);
+			const constrained = Math.abs(predicted) >= threshold ? predicted : sign * threshold;
 
 			contextSignal[index] = constrained;
 		}
@@ -195,9 +180,6 @@ function levinsonDurbin(autocorr: Float32Array, order: number): Float32Array {
 }
 
 export function deClip(options?: { threshold?: number; method?: "ar" | "sparse"; id?: string }): DeClipModule {
-	return new DeClipModule({
-		threshold: options?.threshold,
-		method: options?.method ?? "ar",
-		id: options?.id,
-	});
+	const parsed = schema.parse(options ?? {});
+	return new DeClipModule({ ...parsed, id: options?.id });
 }

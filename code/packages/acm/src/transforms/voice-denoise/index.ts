@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
+import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
-import { detectFftBackend, type FftBackend } from "../../utils/fft-backend";
+import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { istft, stft } from "../../utils/stft";
 import { resampleDirect } from "../../utils/resample-direct";
 
@@ -42,7 +43,7 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 
 	override readonly type = ["async-module", "transform", "voice-denoise"] as const;
 
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private session1?: OnnxSession;
@@ -55,13 +56,14 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 		await super.setup(context);
 
 		this.sourceSampleRate = context.sampleRate;
-		this.fftAddonOptions = { vkfftPath: this.properties.vkfftAddonPath || undefined, fftwPath: this.properties.fftwAddonPath || undefined };
 		// Use CPU FFT only — vkfft GPU overhead is counterproductive for small 512-point FFTs
 		const cpuProviders = context.executionProviders.filter((ep) => ep !== "gpu");
-		this.fftBackend = detectFftBackend(cpuProviders.length > 0 ? cpuProviders : ["cpu"], this.fftAddonOptions);
-		const onnxProviders = context.executionProviders.filter((ep) => ep !== "gpu" && ep !== "cpu-native");
-		this.session1 = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath1, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
-		this.session2 = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath2, { executionProviders: onnxProviders.length > 0 ? onnxProviders : ["cpu"] });
+		const fft = initFftBackend(cpuProviders.length > 0 ? cpuProviders : ["cpu"], this.properties);
+		this.fftBackend = fft.backend;
+		this.fftAddonOptions = fft.addonOptions;
+		const onnxProviders = filterOnnxProviders(context.executionProviders);
+		this.session1 = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath1, { executionProviders: onnxProviders });
+		this.session2 = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath2, { executionProviders: onnxProviders });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -118,6 +120,15 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 			throw new Error("ONNX sessions not initialized");
 		}
 
+		// Zero-pad short signals to minimum block length
+		const originalLength = signal.length;
+
+		if (originalLength < BLOCK_LEN) {
+			const padded = new Float32Array(BLOCK_LEN);
+			padded.set(signal);
+			signal = padded;
+		}
+
 		const totalFrames = signal.length;
 		const output = new Float32Array(totalFrames);
 
@@ -138,7 +149,6 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 			fftSize: BLOCK_LEN,
 		};
 		const stftOutput = { real: [new Float32Array(FFT_BINS)], imag: [new Float32Array(FFT_BINS)] };
-		let outputOffset = 0;
 
 		for (let offset = 0; offset + BLOCK_LEN <= totalFrames; offset += BLOCK_SHIFT) {
 			// Extract block
@@ -152,7 +162,6 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 			if (!realFrame || !imagFrame) continue;
 
 			// Compute log magnitude
-
 			for (let bin = 0; bin < FFT_BINS; bin++) {
 				const re = realFrame[bin] ?? 0;
 				const im = imagFrame[bin] ?? 0;
@@ -190,30 +199,17 @@ export class VoiceDenoiseModule extends TransformModule<VoiceDenoiseProperties> 
 
 			if (!denoisedFrame) continue;
 
-			// Step 5: Overlap-add output (only the shift portion)
-			if (offset === 0) {
-				// First block: write the full block
-				for (let index = 0; index < BLOCK_LEN && index < totalFrames; index++) {
-					output[index] = denoisedFrame.data[index] ?? 0;
+			// Step 5: Overlap-add — add full block at offset position per DTLN reference
+			for (let index = 0; index < BLOCK_LEN; index++) {
+				const outIdx = offset + index;
+
+				if (outIdx < totalFrames) {
+					output[outIdx] = (output[outIdx] ?? 0) + (denoisedFrame.data[index] ?? 0);
 				}
-				outputOffset = BLOCK_LEN;
-			} else {
-				// Subsequent blocks: only add the new BLOCK_SHIFT samples
-				const writeStart = offset + BLOCK_LEN - BLOCK_SHIFT;
-
-				for (let index = 0; index < BLOCK_SHIFT; index++) {
-					const outIdx = writeStart + index;
-
-					if (outIdx < totalFrames) {
-						output[outIdx] = denoisedFrame.data[BLOCK_LEN - BLOCK_SHIFT + index] ?? 0;
-					}
-				}
-
-				outputOffset = Math.max(outputOffset, writeStart + BLOCK_SHIFT);
 			}
 		}
 
-		return output;
+		return originalLength < output.length ? output.subarray(0, originalLength) : output;
 	}
 
 	protected override _teardown(): void {

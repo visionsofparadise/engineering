@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
-import { detectFftBackend, type FftBackend } from "../../utils/fft-backend";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
+import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
+import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
 
 export interface SpectralRegion {
@@ -39,7 +40,7 @@ export class SpectralRepairModule extends TransformModule<SpectralRepairProperti
 
 	override readonly type = ["async-module", "transform", "spectral-repair"] as const;
 
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private repairSampleRate = 44100;
@@ -49,8 +50,9 @@ export class SpectralRepairModule extends TransformModule<SpectralRepairProperti
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
 		this.repairSampleRate = context.sampleRate;
-		this.fftAddonOptions = { vkfftPath: this.properties.vkfftAddonPath || undefined, fftwPath: this.properties.fftwAddonPath || undefined };
-		this.fftBackend = detectFftBackend(context.executionProviders, this.fftAddonOptions);
+		const fft = initFftBackend(context.executionProviders, this.properties);
+		this.fftBackend = fft.backend;
+		this.fftAddonOptions = fft.addonOptions;
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -60,17 +62,25 @@ export class SpectralRepairModule extends TransformModule<SpectralRepairProperti
 		const fftSize = 2048;
 		const hopSize = fftSize / 4;
 		const halfSize = fftSize / 2 + 1;
-		const numStftFrames = Math.floor((frames - fftSize) / hopSize) + 1;
-		const stftOutput = numStftFrames > 0 ? {
+		const paddedLength = Math.max(frames, fftSize);
+		const numStftFrames = Math.floor((paddedLength - fftSize) / hopSize) + 1;
+		const stftOutput = {
 			real: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
 			imag: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
-		} : undefined;
+		};
+
+		const chunk = await buffer.read(0, frames);
 
 		for (let ch = 0; ch < channels; ch++) {
-			const chunk = await buffer.read(0, frames);
-			const channel = chunk.samples[ch];
+			let channel = chunk.samples[ch];
 
 			if (!channel) continue;
+
+			if (channel.length < fftSize) {
+				const padded = new Float32Array(fftSize);
+				padded.set(channel);
+				channel = padded;
+			}
 
 			const stftResult = stft(channel, fftSize, hopSize, stftOutput, this.fftBackend, this.fftAddonOptions);
 			const freqPerBin = sampleRate / fftSize;
@@ -85,9 +95,9 @@ export class SpectralRepairModule extends TransformModule<SpectralRepairProperti
 				interpolateTfRegion(stftResult.real, stftResult.imag, startFrame, endFrame, startBin, endBin);
 			}
 
-			const repaired = istft(stftResult, hopSize, frames, this.fftBackend, this.fftAddonOptions);
+			const repaired = istft(stftResult, hopSize, paddedLength, this.fftBackend, this.fftAddonOptions).subarray(0, frames);
 
-			await buffer.write(0, ch === 0 ? [repaired, ...(channels > 1 ? [chunk.samples[1] ?? new Float32Array(frames)] : [])] : [chunk.samples[0] ?? new Float32Array(frames), repaired]);
+			await buffer.write(0, replaceChannel(chunk, ch, repaired, channels));
 		}
 	}
 
@@ -96,21 +106,34 @@ export class SpectralRepairModule extends TransformModule<SpectralRepairProperti
 	}
 }
 
+/**
+ * Jacobi-style iteration: reads from source arrays, writes to separate buffers,
+ * then swaps. This avoids the directional bias of in-place (Gauss-Seidel) updates.
+ */
 function interpolateTfRegion(real: Array<Float32Array>, imag: Array<Float32Array>, startFrame: number, endFrame: number, startBin: number, endBin: number): void {
 	const iterations = 5;
 	const clampedStart = Math.max(0, startFrame);
 	const clampedEnd = Math.min(real.length, endFrame);
 
+	if (clampedStart >= clampedEnd) return;
+
+	const halfSize = real[0]?.length ?? 0;
+	const clampedStartBin = Math.max(0, startBin);
+	const clampedEndBin = Math.min(halfSize, endBin);
+
+	// Allocate write buffers for the region
+	const regionFrames = clampedEnd - clampedStart;
+	const regionBins = clampedEndBin - clampedStartBin;
+	const writeReal = new Float32Array(regionFrames * regionBins);
+	const writeImag = new Float32Array(regionFrames * regionBins);
+
 	for (let iter = 0; iter < iterations; iter++) {
+		// Read from current state, write to buffers
 		for (let frame = clampedStart; frame < clampedEnd; frame++) {
 			const realFrame = real[frame];
 			const imagFrame = imag[frame];
 
 			if (!realFrame || !imagFrame) continue;
-
-			const halfSize = realFrame.length;
-			const clampedStartBin = Math.max(0, startBin);
-			const clampedEndBin = Math.min(halfSize, endBin);
 
 			for (let bin = clampedStartBin; bin < clampedEndBin; bin++) {
 				let realSum = 0;
@@ -147,9 +170,24 @@ function interpolateTfRegion(real: Array<Float32Array>, imag: Array<Float32Array
 				}
 
 				if (count > 0) {
-					realFrame[bin] = realSum / count;
-					imagFrame[bin] = imagSum / count;
+					const bufferIndex = (frame - clampedStart) * regionBins + (bin - clampedStartBin);
+					writeReal[bufferIndex] = realSum / count;
+					writeImag[bufferIndex] = imagSum / count;
 				}
+			}
+		}
+
+		// Copy write buffers back to source arrays
+		for (let frame = clampedStart; frame < clampedEnd; frame++) {
+			const realFrame = real[frame];
+			const imagFrame = imag[frame];
+
+			if (!realFrame || !imagFrame) continue;
+
+			for (let bin = clampedStartBin; bin < clampedEndBin; bin++) {
+				const bufferIndex = (frame - clampedStart) * regionBins + (bin - clampedStartBin);
+				realFrame[bin] = writeReal[bufferIndex] ?? 0;
+				imagFrame[bin] = writeImag[bufferIndex] ?? 0;
 			}
 		}
 	}

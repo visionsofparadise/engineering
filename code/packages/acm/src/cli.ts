@@ -33,9 +33,22 @@ program
 				process.exit(1);
 			}
 
+			const chunkSize = options.chunkSize ? parseInt(options.chunkSize, 10) : undefined;
+			const highWaterMark = options.highWaterMark ? parseInt(options.highWaterMark, 10) : undefined;
+
+			if (chunkSize !== undefined && (!Number.isFinite(chunkSize) || chunkSize <= 0)) {
+				process.stderr.write(`Error: --chunk-size must be a positive integer, got "${options.chunkSize}"\n`);
+				process.exit(1);
+			}
+
+			if (highWaterMark !== undefined && (!Number.isFinite(highWaterMark) || highWaterMark <= 0)) {
+				process.stderr.write(`Error: --high-water-mark must be a positive integer, got "${options.highWaterMark}"\n`);
+				process.exit(1);
+			}
+
 			const renderOptions = {
-				chunkSize: options.chunkSize ? Number(options.chunkSize) : undefined,
-				highWaterMark: options.highWaterMark ? Number(options.highWaterMark) : undefined,
+				chunkSize,
+				highWaterMark,
 			};
 
 			process.stdout.write(`Processing pipeline: ${pipelinePath}\n`);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChunk } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({
 	ceiling: z.number().min(0).max(1).multipleOf(0.01).default(1.0).describe("Ceiling"),
@@ -18,7 +18,7 @@ export class NormalizeModule extends TransformModule<NormalizeProperties> {
 	}
 
 	override readonly type = ["async-module", "transform", "normalize"] as const;
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private peak = 0;
@@ -27,17 +27,18 @@ export class NormalizeModule extends TransformModule<NormalizeProperties> {
 	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {
 		await super._buffer(chunk, buffer);
 
-		for (const channel of chunk.samples) {
-			for (const sample of channel) {
-				const absolute = Math.abs(sample);
-
-				if (absolute > this.peak) this.peak = absolute;
+		for (let ch = 0; ch < chunk.samples.length; ch++) {
+			const channel = chunk.samples[ch] ?? new Float32Array(0);
+			for (let si = 0; si < channel.length; si++) {
+				const absolute = Math.abs(channel[si] ?? 0);
+				if (Number.isFinite(absolute) && absolute > this.peak) this.peak = absolute;
 			}
 		}
 	}
 
 	override _process(_buffer: ChunkBuffer): void {
-		this.scale = this.peak === 0 ? 1 : this.properties.ceiling / this.peak;
+		const raw = this.peak === 0 ? 1 : this.properties.ceiling / this.peak;
+		this.scale = Number.isFinite(raw) ? raw : 1;
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {

@@ -1,6 +1,8 @@
 import { ChunkBuffer } from "./chunk-buffer";
 import { AudioChainModule, type AudioChainModuleProperties, type AudioChunk, type StreamContext } from "./module";
 
+export const WHOLE_FILE = Infinity;
+
 export interface TransformTiming {
 	readonly totalMs: number;
 	readonly samplesProcessed: number;
@@ -9,7 +11,6 @@ export interface TransformTiming {
 }
 
 export interface TransformModuleProperties extends AudioChainModuleProperties {
-	readonly storageThreshold?: number;
 	readonly streamChunkSize?: number;
 	readonly overlap?: number;
 }
@@ -51,6 +52,7 @@ export abstract class TransformModule<P extends TransformModuleProperties = Tran
 
 	protected override _setup(context: StreamContext): void {
 		this.streamContext = context;
+		this.bufferOffset = 0;
 		this.timingTotalMs = 0;
 		this.timingSamplesProcessed = 0;
 		this.hasStarted = false;
@@ -85,7 +87,7 @@ export abstract class TransformModule<P extends TransformModuleProperties = Tran
 
 		const channels = this.streamContext?.channels ?? chunk.samples.length;
 
-		this.chunkBuffer ??= new ChunkBuffer(this.bufferSize, channels, this.properties.storageThreshold);
+		this.chunkBuffer ??= new ChunkBuffer(this.bufferSize, channels, this.streamContext?.memoryLimit);
 
 		const samplesIn = chunk.duration;
 		const start = performance.now();
@@ -102,7 +104,7 @@ export abstract class TransformModule<P extends TransformModuleProperties = Tran
 		}
 
 		// Emit when buffer reaches bufferSize
-		if (this.bufferSize !== Infinity && this.chunkBuffer.frames >= this.bufferSize) {
+		if (this.bufferSize !== WHOLE_FILE && this.chunkBuffer.frames >= this.bufferSize) {
 			await this.processAndEmit(controller);
 			this.emit("progress", { framesProcessed: this.timingSamplesProcessed, sourceTotalFrames: this.sourceTotalFrames });
 		} else {
@@ -125,9 +127,12 @@ export abstract class TransformModule<P extends TransformModuleProperties = Tran
 			return;
 		}
 
-		await this.processAndEmit(controller);
-		await this.chunkBuffer.close();
-		this.chunkBuffer = undefined;
+		try {
+			await this.processAndEmit(controller);
+		} finally {
+			await this.chunkBuffer.close();
+			this.chunkBuffer = undefined;
+		}
 		this.emit("finished");
 	}
 
@@ -150,9 +155,9 @@ export abstract class TransformModule<P extends TransformModuleProperties = Tran
 	private async emitBuffer(controller: TransformStreamDefaultController<AudioChunk>): Promise<void> {
 		if (!this.chunkBuffer) return;
 
-		const chunkSize = this.bufferSize === 0 ? this.chunkBuffer.frames : Math.min(this.bufferSize === Infinity ? Infinity : this.bufferSize, this.outputChunkSize);
+		const chunkSize = this.bufferSize === 0 ? this.chunkBuffer.frames : Math.min(this.bufferSize === WHOLE_FILE ? WHOLE_FILE : this.bufferSize, this.outputChunkSize);
 
-		const emitSize = chunkSize === Infinity ? this.outputChunkSize : chunkSize;
+		const emitSize = chunkSize === WHOLE_FILE ? this.outputChunkSize : chunkSize;
 
 		for await (const chunk of this.chunkBuffer.iterate(emitSize)) {
 			const adjusted: AudioChunk = {
@@ -171,7 +176,7 @@ export abstract class TransformModule<P extends TransformModuleProperties = Tran
 		this.bufferOffset += this.chunkBuffer.frames;
 
 		// Keep overlap frames for next cycle
-		if (this.overlap > 0 && this.bufferSize !== Infinity) {
+		if (this.overlap > 0 && this.bufferSize !== WHOLE_FILE) {
 			const overlapStart = this.chunkBuffer.frames - this.overlap;
 
 			if (overlapStart > 0) {

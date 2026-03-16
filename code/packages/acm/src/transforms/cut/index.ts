@@ -29,11 +29,13 @@ export class CutModule extends TransformModule<CutProperties> {
 
 	private cutSampleRate = 44100;
 	private sortedRegions: Array<CutRegion> = [];
+	private cumulativeRemovedFrames = 0;
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
 		this.cutSampleRate = context.sampleRate;
 		this.sortedRegions = [...this.properties.regions].sort((left, right) => left.start - right.start);
+		this.cumulativeRemovedFrames = 0;
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk | undefined {
@@ -66,7 +68,13 @@ export class CutModule extends TransformModule<CutProperties> {
 
 		const totalKept = keepRanges.reduce((sum, range) => sum + (range.end - range.start), 0);
 
-		if (totalKept === chunk.duration) return chunk;
+		const removedFrames = chunk.duration - totalKept;
+		const adjustedOffset = chunk.offset - this.cumulativeRemovedFrames;
+		this.cumulativeRemovedFrames += removedFrames;
+
+		if (totalKept === chunk.duration) {
+			return { samples: chunk.samples, offset: adjustedOffset, duration: chunk.duration };
+		}
 
 		const channels = chunk.samples.length;
 		const output: Array<Float32Array> = [];
@@ -90,7 +98,7 @@ export class CutModule extends TransformModule<CutProperties> {
 			output.push(out);
 		}
 
-		return { samples: output, offset: chunk.offset, duration: totalKept };
+		return { samples: output, offset: adjustedOffset, duration: totalKept };
 	}
 
 	clone(overrides?: Partial<CutProperties>): CutModule {

@@ -2,7 +2,9 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
+import { waitForDrain } from "../../utils/ffmpeg";
+import { deinterleaveBuffer, interleave } from "../../utils/interleave";
 
 export const schema = z.object({
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
@@ -23,7 +25,7 @@ export class FfmpegModule<P extends FfmpegProperties = FfmpegProperties> extends
 	}
 
 	override readonly type: ReadonlyArray<string> = ["async-module", "transform", "ffmpeg"];
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private resolvedBinaryPath?: string;
@@ -135,7 +137,7 @@ function runFfmpeg(binaryPath: string, args: Array<string>, buffer: ChunkBuffer,
 			}
 
 			const outputBuffer = Buffer.concat(outputChunks);
-			const samples = deinterleave(outputBuffer, context.channels);
+			const samples = deinterleaveBuffer(outputBuffer, context.channels);
 			resolve(samples);
 		});
 
@@ -143,13 +145,13 @@ function runFfmpeg(binaryPath: string, args: Array<string>, buffer: ChunkBuffer,
 			// Ignore EPIPE/EOF — expected when filters like trim close stdin early
 		});
 
-		void writeBufferToStdin(stdin, buffer, context).catch(() => {
+		void writeBufferToStdin(proc, stdin, buffer, context).catch(() => {
 			// Ignore write errors — ffmpeg may close stdin before all data is written
 		});
 	});
 }
 
-async function writeBufferToStdin(stdin: NodeJS.WritableStream, buffer: ChunkBuffer, _context: StreamContext): Promise<void> {
+async function writeBufferToStdin(proc: ChildProcess, stdin: NodeJS.WritableStream, buffer: ChunkBuffer, _context: StreamContext): Promise<void> {
 	const chunkSize = 44100;
 
 	for await (const chunk of buffer.iterate(chunkSize)) {
@@ -159,48 +161,9 @@ async function writeBufferToStdin(stdin: NodeJS.WritableStream, buffer: ChunkBuf
 		const canWrite = stdin.write(buf);
 
 		if (!canWrite) {
-			await new Promise<void>((resolve) => {
-				stdin.once("drain", resolve);
-			});
+			await waitForDrain(proc, stdin);
 		}
 	}
 
 	stdin.end();
-}
-
-function interleave(samples: Array<Float32Array>, frames: number, channels: number): Float32Array {
-	const interleaved = new Float32Array(frames * channels);
-
-	for (let frame = 0; frame < frames; frame++) {
-		for (let ch = 0; ch < channels; ch++) {
-			interleaved[frame * channels + ch] = samples[ch]?.[frame] ?? 0;
-		}
-	}
-
-	return interleaved;
-}
-
-function deinterleave(buffer: Buffer, channels: number): Array<Float32Array> {
-	const totalSamples = buffer.length / 4;
-	const frames = Math.floor(totalSamples / channels);
-	const result: Array<Float32Array> = [];
-
-	for (let ch = 0; ch < channels; ch++) {
-		result.push(new Float32Array(frames));
-	}
-
-	const view = new Float32Array(buffer.buffer, buffer.byteOffset, totalSamples);
-
-	for (let frame = 0; frame < frames; frame++) {
-		for (let ch = 0; ch < channels; ch++) {
-			const channelArray = result[ch];
-			const value = view[frame * channels + ch];
-
-			if (channelArray && value !== undefined) {
-				channelArray[frame] = value;
-			}
-		}
-	}
-
-	return result;
 }

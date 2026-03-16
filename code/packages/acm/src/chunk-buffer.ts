@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion -- tight interleave loops with bounds-checked typed array access */
 import { open, unlink, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import type { AudioChunk } from "./module";
 
 export type BufferStorage = "memory" | "file";
 
-const STORAGE_THRESHOLD = 10 * 1024 * 1024; // 10MB
+const DEFAULT_STORAGE_THRESHOLD = 10 * 1024 * 1024; // 10MB
 
 export class ChunkBuffer {
 	private _frames = 0;
@@ -24,8 +25,11 @@ export class ChunkBuffer {
 	private fileFramesWritten = 0;
 	private fileChannels = 0;
 
-	constructor(bufferSize: number, channels: number, storageThreshold = STORAGE_THRESHOLD) {
-		this.storageThreshold = storageThreshold;
+	constructor(bufferSize: number, channels: number, memoryLimit?: number) {
+		// Compute threshold from memory limit — use ~4% of available memory, clamped to reasonable range
+		this.storageThreshold = memoryLimit
+			? Math.max(1024 * 1024, Math.min(memoryLimit * 0.04, 64 * 1024 * 1024))
+			: DEFAULT_STORAGE_THRESHOLD;
 		this._channels = channels;
 
 		const initialCapacity = bufferSize === Infinity ? 44100 : bufferSize;
@@ -242,15 +246,17 @@ export class ChunkBuffer {
 		const channels = this._channels;
 		const frames = this.memoryWriteOffset;
 
-		const buf = Buffer.alloc(frames * channels * 4);
+		const interleaved = new Float32Array(frames * channels);
 
 		for (let frame = 0; frame < frames; frame++) {
+			const base = frame * channels;
 			for (let ch = 0; ch < channels; ch++) {
 				const memBuf = this.memoryChannels[ch];
-				buf.writeFloatLE(memBuf ? memBuf[frame] ?? 0 : 0, (frame * channels + ch) * 4);
+				interleaved[base + ch] = memBuf ? memBuf[frame] ?? 0 : 0;
 			}
 		}
 
+		const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
 		await handle.write(buf, 0, buf.length, 0);
 		this.fileFramesWritten = frames;
 
@@ -283,14 +289,16 @@ export class ChunkBuffer {
 		const channels = this._channels;
 
 		// Interleave all samples into a single buffer for one write call
-		const buf = Buffer.alloc(duration * channels * 4);
+		const interleaved = new Float32Array(duration * channels);
 
 		for (let frame = 0; frame < duration; frame++) {
+			const base = frame * channels;
 			for (let ch = 0; ch < channels; ch++) {
-				buf.writeFloatLE(samples[ch]?.[frame] ?? 0, (frame * channels + ch) * 4);
+				interleaved[base + ch] = samples[ch]?.[frame] ?? 0;
 			}
 		}
 
+		const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
 		const offset = this.fileOffset(this.fileFramesWritten, 0);
 		await handle.write(buf, 0, buf.length, offset);
 
@@ -309,7 +317,8 @@ export class ChunkBuffer {
 
 		await this.tempHandle.read(buf, 0, byteLength, filePos);
 
-		// Deinterleave into per-channel arrays
+		// Deinterleave using Float32Array view
+		const interleaved = new Float32Array(buf.buffer, buf.byteOffset, frames * channels);
 		const samples: Array<Float32Array> = [];
 
 		for (let ch = 0; ch < this._channels; ch++) {
@@ -317,11 +326,12 @@ export class ChunkBuffer {
 		}
 
 		for (let frame = 0; frame < frames; frame++) {
+			const base = frame * channels;
 			for (let ch = 0; ch < channels; ch++) {
 				const channel = samples[ch];
 
 				if (channel) {
-					channel[frame] = buf.readFloatLE((frame * channels + ch) * 4);
+					channel[frame] = interleaved[base + ch]!;
 				}
 			}
 		}
@@ -335,14 +345,16 @@ export class ChunkBuffer {
 		const channels = this._channels;
 
 		// Interleave into a single buffer for one write call
-		const buf = Buffer.alloc(duration * channels * 4);
+		const interleaved = new Float32Array(duration * channels);
 
 		for (let frame = 0; frame < duration; frame++) {
+			const base = frame * channels;
 			for (let ch = 0; ch < channels; ch++) {
-				buf.writeFloatLE(samples[ch]?.[frame] ?? 0, (frame * channels + ch) * 4);
+				interleaved[base + ch] = samples[ch]?.[frame] ?? 0;
 			}
 		}
 
+		const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
 		const filePos = this.fileOffset(offset, 0);
 		await handle.write(buf, 0, buf.length, filePos);
 

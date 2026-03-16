@@ -3,14 +3,11 @@ import type { AudioChunk } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({
-	bitDepth: z.enum(["16", "24"]).default("16").describe("Bit Depth"),
+	bitDepth: z.union([z.literal(16), z.literal(24)]).default(16).describe("Bit Depth"),
 	noiseShaping: z.boolean().default(false).describe("Noise Shaping"),
 });
 
-export interface DitherProperties extends TransformModuleProperties {
-	readonly bitDepth: 16 | 24;
-	readonly noiseShaping?: boolean;
-}
+export interface DitherProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 export class DitherModule extends TransformModule<DitherProperties> {
 	static override readonly moduleName = "Dither";
@@ -24,14 +21,18 @@ export class DitherModule extends TransformModule<DitherProperties> {
 	override readonly bufferSize = 0;
 	override readonly latency = 0;
 
-	private lastError = 0;
+	private lastError: Array<number> = [];
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
 		const { bitDepth, noiseShaping } = this.properties;
 		const quantizationLevels = Math.pow(2, bitDepth - 1);
 		const lsb = 1 / quantizationLevels;
 
-		const samples = chunk.samples.map((channel) => {
+		while (this.lastError.length < chunk.samples.length) {
+			this.lastError.push(0);
+		}
+
+		const samples = chunk.samples.map((channel, ch) => {
 			const output = new Float32Array(channel.length);
 
 			for (let index = 0; index < channel.length; index++) {
@@ -41,13 +42,13 @@ export class DitherModule extends TransformModule<DitherProperties> {
 				let dithered = sample + tpdfNoise;
 
 				if (noiseShaping) {
-					dithered += this.lastError;
+					dithered += this.lastError[ch] ?? 0;
 				}
 
 				const quantized = Math.round(dithered * quantizationLevels) / quantizationLevels;
 
 				if (noiseShaping) {
-					this.lastError = dithered - quantized;
+					this.lastError[ch] = dithered - quantized;
 				}
 
 				output[index] = quantized;
@@ -71,9 +72,6 @@ export function dither(
 		id?: string;
 	},
 ): DitherModule {
-	return new DitherModule({
-		bitDepth,
-		noiseShaping: options?.noiseShaping,
-		id: options?.id,
-	});
+	const parsed = schema.parse({ bitDepth, noiseShaping: options?.noiseShaping });
+	return new DitherModule({ ...parsed, id: options?.id });
 }

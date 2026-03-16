@@ -64,6 +64,17 @@ export function detectFftBackend(executionProviders: ReadonlyArray<ExecutionProv
 	return "js";
 }
 
+export interface FftBackendConfig {
+	readonly backend: FftBackend;
+	readonly addonOptions: { vkfftPath?: string; fftwPath?: string };
+}
+
+export function initFftBackend(executionProviders: ReadonlyArray<ExecutionProvider>, properties: { vkfftAddonPath?: string; fftwAddonPath?: string }): FftBackendConfig {
+	const addonOptions = { vkfftPath: properties.vkfftAddonPath, fftwPath: properties.fftwAddonPath };
+	const backend = detectFftBackend(executionProviders, addonOptions);
+	return { backend, addonOptions };
+}
+
 export function getFftAddon(backend: FftBackend, options?: { vkfftPath?: string; fftwPath?: string }): FftAddon | null {
 	if (backend === "vkfft") return tryLoadVkfft(options?.vkfftPath);
 	if (backend === "fftw") return tryLoadFftw(options?.fftwPath);
