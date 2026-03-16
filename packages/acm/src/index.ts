@@ -7,11 +7,10 @@ export { ChunkBuffer, type BufferStorage } from "./chunk-buffer";
 export { AudioChainModule, type AudioChainModuleInput, type AudioChainModuleProperties } from "./module";
 export { SourceModule, type RenderTiming, type SourceModuleProperties } from "./source";
 export { TargetModule, type TargetModuleProperties } from "./target";
-export { TransformModule, type TransformModuleProperties, type TransformTiming } from "./transform";
+export { TransformModule, WHOLE_FILE, type TransformModuleProperties, type TransformTiming } from "./transform";
 
 // Composition
 export { chain } from "./composites/chain";
-export { fan, FanTransform, type FanTransformProperties } from "./composites/fan";
 
 // Chain format
 export { validateChainDefinition, type ChainDefinition, type ChainModuleReference } from "./chain-format";

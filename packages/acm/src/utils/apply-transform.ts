@@ -8,7 +8,7 @@ export async function applyTransform(
 	context: StreamMeta,
 	transform: TransformModule,
 ): Promise<Array<Float32Array>> {
-	await transform.setup({ ...context, executionProviders: defaultProviders });
+	await transform.setup({ ...context, executionProviders: defaultProviders, memoryLimit: 256 * 1024 * 1024 });
 
 	try {
 		const stream = transform.createTransform();

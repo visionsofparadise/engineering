@@ -4,7 +4,7 @@ import type { AudioChainModuleInput } from "../../module";
 
 export const mouthDeClickSchema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.7).describe("Sensitivity"),
-	maxClickDuration: z.number().min(1).max(1000).multipleOf(1).default(20).describe("Max Click Duration"),
+	maxClickDuration: z.number().min(1).max(1000).multipleOf(1).default(50).describe("Max Click Duration"),
 });
 
 export interface MouthDeClickProperties extends z.infer<typeof mouthDeClickSchema>, DeClickProperties {}
@@ -19,7 +19,7 @@ export class MouthDeClickModule extends DeClickModule<MouthDeClickProperties> {
 	override readonly type = ["async-module", "transform", "de-click", "mouth-de-click"];
 
 	constructor(properties: AudioChainModuleInput<MouthDeClickProperties>) {
-		super({ ...properties, maxClickDuration: 50 });
+		super({ ...properties, ...mouthDeClickSchema.encode(properties) });
 	}
 
 	override clone(overrides?: Partial<MouthDeClickProperties>): MouthDeClickModule {

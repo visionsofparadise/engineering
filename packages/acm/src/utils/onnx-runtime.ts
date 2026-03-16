@@ -28,11 +28,23 @@ interface OnnxAddonSession {
 const require = createRequire(import.meta.url);
 
 export function createOnnxSession(addonPath: string, modelPath: string, options?: OnnxSessionOptions): OnnxSession {
-	const addon = require(addonPath) as OnnxAddon;
+	let addon: OnnxAddon;
 
-	const session = addon.createSession(modelPath, {
-		executionProviders: options?.executionProviders ? [...options.executionProviders] : ["cuda", "cpu"],
-	});
+	try {
+		addon = require(addonPath) as OnnxAddon;
+	} catch (error) {
+		throw new Error(`Failed to load ONNX Runtime addon from "${addonPath}": ${error instanceof Error ? error.message : String(error)}`);
+	}
+
+	let session: OnnxAddonSession;
+
+	try {
+		session = addon.createSession(modelPath, {
+			executionProviders: options?.executionProviders ? [...options.executionProviders] : ["cuda", "cpu"],
+		});
+	} catch (error) {
+		throw new Error(`Failed to create ONNX session for model "${modelPath}": ${error instanceof Error ? error.message : String(error)}`);
+	}
 
 	return {
 		run(inputs) {

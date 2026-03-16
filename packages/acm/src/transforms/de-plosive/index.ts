@@ -61,10 +61,12 @@ export class DePlosiveModule extends TransformModule<DePlosiveProperties> {
 
 			if (isPlosive) {
 				const fadeLength = Math.min(channel.length, Math.round(this.sampleRate * 0.005));
+				let removalLpState = lpVal;
 
 				for (let index = 0; index < channel.length; index++) {
 					const sample = channel[index] ?? 0;
-					const filtered = sample - (lpVal * cutoffCoeff + sample * (1 - cutoffCoeff)) * 0.8;
+					removalLpState = removalLpState * cutoffCoeff + sample * (1 - cutoffCoeff);
+					const filtered = sample - removalLpState * 0.8;
 
 					let fade = 1;
 

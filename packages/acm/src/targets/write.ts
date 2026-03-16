@@ -1,8 +1,9 @@
 import { open, type FileHandle } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { z } from "zod";
 import type { AudioChunk, StreamContext } from "../module";
 import { TargetModule, type TargetModuleProperties } from "../target";
+import { waitForDrain } from "../utils/ffmpeg";
 
 export type WavBitDepth = "16" | "24" | "32" | "32f";
 
@@ -25,7 +26,11 @@ export interface WriteProperties extends TargetModuleProperties {
 	readonly encoding?: EncodingOptions;
 }
 
-const WAV_HEADER_SIZE = 44;
+// Header is always 80 bytes: RIFF/RF64 (12) + JUNK/ds64 (36) + fmt (24) + data header (8)
+// For standard WAV, the ds64 slot is a JUNK chunk. For RF64, it's the actual ds64 chunk.
+// This avoids needing to shift data when the file exceeds 4GB.
+const WAV_HEADER_SIZE = 80;
+const UINT32_MAX = 0xFFFFFFFF;
 
 export class WriteModule extends TargetModule<WriteProperties> {
 	static override readonly moduleName = "Write";
@@ -37,6 +42,7 @@ export class WriteModule extends TargetModule<WriteProperties> {
 	readonly latency = 0;
 
 	private fileHandle?: FileHandle;
+	private ffmpegProcess?: ChildProcess;
 	private ffmpegStdin?: NodeJS.WritableStream;
 	private ffmpegDone?: Promise<void>;
 	private sampleRate = 44100;
@@ -52,6 +58,11 @@ export class WriteModule extends TargetModule<WriteProperties> {
 		this.headerWritten = false;
 
 		const encoding = this.properties.encoding;
+
+		if (encoding && encoding.format !== "wav" && !this.properties.ffmpegPath) {
+			throw new Error(`Encoding to ${encoding.format} requires ffmpegPath`);
+		}
+
 		this.useEncoding = encoding !== undefined && encoding.format !== "wav" && !!this.properties.ffmpegPath;
 
 		if (this.useEncoding && encoding) {
@@ -64,6 +75,7 @@ export class WriteModule extends TargetModule<WriteProperties> {
 				stdio: ["pipe", "ignore", "pipe"],
 			});
 
+			this.ffmpegProcess = proc;
 			this.ffmpegStdin = proc.stdin;
 
 			this.ffmpegStdin.on("error", () => {
@@ -115,14 +127,26 @@ export class WriteModule extends TargetModule<WriteProperties> {
 			if (this.ffmpegDone) {
 				await this.ffmpegDone;
 			}
+			this.ffmpegProcess = undefined;
 			this.ffmpegStdin = undefined;
 			this.ffmpegDone = undefined;
 		} else if (this.fileHandle) {
-			const header = buildWavHeader(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth);
+			const header = this.bytesWritten > UINT32_MAX
+				? buildRf64Header(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth)
+				: buildWavHeader(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth);
 			await this.fileHandle.write(header, 0, WAV_HEADER_SIZE, 0);
 			await this.fileHandle.close();
 			this.fileHandle = undefined;
 		}
+	}
+
+	protected override _teardown(): void {
+		if (this.ffmpegProcess) {
+			this.ffmpegProcess.kill();
+			this.ffmpegProcess = undefined;
+		}
+		this.ffmpegStdin = undefined;
+		this.ffmpegDone = undefined;
 	}
 
 	private convertChunk(chunk: AudioChunk): Buffer {
@@ -169,14 +193,13 @@ export class WriteModule extends TargetModule<WriteProperties> {
 
 	private writeToStdin(data: Buffer): Promise<void> {
 		const stdin = this.ffmpegStdin;
-		if (!stdin) return Promise.resolve();
+		const proc = this.ffmpegProcess;
+		if (!stdin || !proc) return Promise.resolve();
 
 		const canWrite = stdin.write(data);
 
 		if (!canWrite) {
-			return new Promise<void>((resolve) => {
-				stdin.once("drain", resolve);
-			});
+			return waitForDrain(proc, stdin);
 		}
 
 		return Promise.resolve();
@@ -228,29 +251,75 @@ function writeSample(buffer: Buffer, offset: number, sample: number, bitDepth: W
 	}
 }
 
-function buildWavHeader(dataSize: number, sampleRate: number, channels: number, bitDepth: WavBitDepth): Buffer {
-	const header = Buffer.alloc(WAV_HEADER_SIZE);
+function writeFmtAndDataChunks(header: Buffer, offset: number, sampleRate: number, channels: number, bitDepth: WavBitDepth, dataSize: number): void {
 	const bytesPerSample = getBytesPerSample(bitDepth);
 	const blockAlign = channels * bytesPerSample;
 	const byteRate = sampleRate * blockAlign;
 	const bitsPerSample = bytesPerSample * 8;
 	const audioFormat = bitDepth === "32f" ? 3 : 1;
 
+	header.write("fmt ", offset);
+	header.writeUInt32LE(16, offset + 4);
+	header.writeUInt16LE(audioFormat, offset + 8);
+	header.writeUInt16LE(channels, offset + 10);
+	header.writeUInt32LE(sampleRate, offset + 12);
+	header.writeUInt32LE(byteRate, offset + 16);
+	header.writeUInt16LE(blockAlign, offset + 20);
+	header.writeUInt16LE(bitsPerSample, offset + 22);
+	header.write("data", offset + 24);
+	header.writeUInt32LE(dataSize, offset + 28);
+}
+
+function buildWavHeader(dataSize: number, sampleRate: number, channels: number, bitDepth: WavBitDepth): Buffer {
+	const header = Buffer.alloc(WAV_HEADER_SIZE);
+
+	// RIFF header — file size includes everything after the 8-byte RIFF header
 	header.write("RIFF", 0);
-	header.writeUInt32LE(dataSize + 36, 4);
+	header.writeUInt32LE(WAV_HEADER_SIZE - 8 + dataSize, 4);
 	header.write("WAVE", 8);
-	header.write("fmt ", 12);
-	header.writeUInt32LE(16, 16);
-	header.writeUInt16LE(audioFormat, 20);
-	header.writeUInt16LE(channels, 22);
-	header.writeUInt32LE(sampleRate, 24);
-	header.writeUInt32LE(byteRate, 28);
-	header.writeUInt16LE(blockAlign, 32);
-	header.writeUInt16LE(bitsPerSample, 34);
-	header.write("data", 36);
-	header.writeUInt32LE(dataSize, 40);
+
+	// JUNK chunk — placeholder for ds64 slot (28 bytes of content)
+	header.write("JUNK", 12);
+	header.writeUInt32LE(28, 16);
+	// bytes 20-47 are zero (JUNK content)
+
+	// fmt + data at offset 48
+	writeFmtAndDataChunks(header, 48, sampleRate, channels, bitDepth, dataSize);
 
 	return header;
+}
+
+function buildRf64Header(dataSize: number, sampleRate: number, channels: number, bitDepth: WavBitDepth): Buffer {
+	const header = Buffer.alloc(WAV_HEADER_SIZE);
+	const bytesPerSample = getBytesPerSample(bitDepth);
+	const blockAlign = channels * bytesPerSample;
+	const sampleCount = Math.floor(dataSize / blockAlign);
+
+	// RF64 header — RIFF size set to 0xFFFFFFFF
+	header.write("RF64", 0);
+	header.writeUInt32LE(UINT32_MAX, 4);
+	header.write("WAVE", 8);
+
+	// ds64 chunk — 64-bit sizes
+	header.write("ds64", 12);
+	header.writeUInt32LE(28, 16);
+	// RIFF size (64-bit LE)
+	writeBigUInt64LE(header, 20, WAV_HEADER_SIZE - 8 + dataSize);
+	// data size (64-bit LE)
+	writeBigUInt64LE(header, 28, dataSize);
+	// sample count (64-bit LE)
+	writeBigUInt64LE(header, 36, sampleCount);
+	// table length
+	header.writeUInt32LE(0, 44);
+
+	// fmt + data at offset 48 — data size field set to 0xFFFFFFFF for RF64
+	writeFmtAndDataChunks(header, 48, sampleRate, channels, bitDepth, UINT32_MAX);
+
+	return header;
+}
+
+function writeBigUInt64LE(buffer: Buffer, offset: number, value: number): void {
+	buffer.writeBigUInt64LE(BigInt(Math.floor(value)), offset);
 }
 
 export function write(path: string, options?: { bitDepth?: WavBitDepth; ffmpegPath?: string; encoding?: EncodingOptions }): WriteModule {

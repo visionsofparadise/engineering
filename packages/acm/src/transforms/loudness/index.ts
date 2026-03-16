@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { StreamContext } from "../../module";
+import { interleave } from "../../utils/interleave";
 import { FfmpegModule, type FfmpegProperties } from "../ffmpeg";
 
 export const schema = z.object({
@@ -141,14 +142,7 @@ async function measureLoudness(
 
 async function writeToStdin(stdin: NodeJS.WritableStream, buffer: ChunkBuffer, context: StreamContext): Promise<void> {
 	for await (const chunk of buffer.iterate(44100)) {
-		const interleaved = new Float32Array(chunk.duration * context.channels);
-
-		for (let frame = 0; frame < chunk.duration; frame++) {
-			for (let ch = 0; ch < context.channels; ch++) {
-				interleaved[frame * context.channels + ch] = chunk.samples[ch]?.[frame] ?? 0;
-			}
-		}
-
+		const interleaved = interleave(chunk.samples, chunk.duration, context.channels);
 		const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
 
 		const canWrite = stdin.write(buf);

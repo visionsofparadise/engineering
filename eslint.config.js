@@ -220,6 +220,7 @@ export default tseslint.config(
       "@typescript-eslint/no-namespace": "off",
       "@typescript-eslint/consistent-indexed-object-style": "off",
       "@typescript-eslint/no-unsafe-function-type": "off",
+      "@typescript-eslint/prefer-for-of": "off",
       "react-hooks/exhaustive-deps": "off",
     },
   },

@@ -1,7 +1,9 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
+import { bandPassCoefficients, biquadFilter } from "../../utils/biquad";
+import { smoothEnvelope } from "../../utils/envelope";
 
 export const schema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
@@ -21,7 +23,7 @@ export class BreathControlModule extends TransformModule<BreathControlProperties
 	}
 
 	override readonly type = ["async-module", "transform", "breath-control"] as const;
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private controlSampleRate = 44100;
@@ -50,18 +52,18 @@ export class BreathControlModule extends TransformModule<BreathControlProperties
 		const widebandEnv = new Float32Array(frames);
 		const breathBandEnv = new Float32Array(frames);
 
-		const lpCoeff = Math.exp((-2 * Math.PI * 1000) / sampleRate);
-		const hpCoeff = Math.exp((-2 * Math.PI * 6000) / sampleRate);
-		let lpState = 0;
-
 		for (let index = 0; index < frames; index++) {
 			const sample = channel[index] ?? 0;
 			widebandEnv[index] = sample * sample;
+		}
 
-			lpState = lpState * lpCoeff + sample * (1 - lpCoeff);
-			const hp = sample - lpState;
-			const bp = hp * (1 - hpCoeff);
-			breathBandEnv[index] = bp * bp;
+		const centerFreq = Math.sqrt(1000 * 6000);
+		const quality = centerFreq / (6000 - 1000);
+		const { fb, fa } = bandPassCoefficients(sampleRate, centerFreq, quality);
+		const breathBandSignal = biquadFilter(channel, fb, fa);
+
+		for (let index = 0; index < frames; index++) {
+			breathBandEnv[index] = (breathBandSignal[index] ?? 0) * (breathBandSignal[index] ?? 0);
 		}
 
 		const smoothSource = new Float32Array(frames);
@@ -163,38 +165,6 @@ export class BreathControlModule extends TransformModule<BreathControlProperties
 interface Region {
 	start: number;
 	end: number;
-}
-
-function smoothEnvelope(envelope: Float32Array, windowSize: number, source: Float32Array): void {
-	const halfWin = Math.floor(windowSize / 2);
-	const len = envelope.length;
-	source.set(envelope);
-
-	let sum = 0;
-	let count = 0;
-
-	for (let index = 0; index < Math.min(halfWin, len); index++) {
-		sum += source[index] ?? 0;
-		count++;
-	}
-
-	for (let index = 0; index < len; index++) {
-		const addIdx = index + halfWin;
-
-		if (addIdx < len) {
-			sum += source[addIdx] ?? 0;
-			count++;
-		}
-
-		const removeIdx = index - halfWin - 1;
-
-		if (removeIdx >= 0) {
-			sum -= source[removeIdx] ?? 0;
-			count--;
-		}
-
-		envelope[index] = sum / Math.max(count, 1);
-	}
 }
 
 function findRegions(mask: Uint8Array, minDuration: number, length: number): Array<Region> {

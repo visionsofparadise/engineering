@@ -1,8 +1,7 @@
 import { z } from "zod";
-import { readFile } from "node:fs/promises";
-import { WaveFile } from "wavefile";
 import type { AudioChunk, StreamContext } from "../../module";
 import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { readWavSamples } from "../../utils/read-to-buffer";
 
 export const schema = z.object({
 	insertPath: z.string().default("").meta({ input: "file", mode: "open", accept: ".wav" }).describe("Insert File Path"),
@@ -27,28 +26,21 @@ export class SpliceModule extends TransformModule<SpliceProperties> {
 
 	private insertSamples: Array<Float32Array> = [];
 	private insertLength = 0;
-	private currentFrame = 0;
 
 	override async setup(context: StreamContext): Promise<void> {
 		await super.setup(context);
-		this.currentFrame = 0;
 
-		const data = await readFile(this.properties.insertPath);
-		const wav = new WaveFile(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-		wav.toBitDepth("32f");
+		const { samples, sampleRate, channels: fileChannels } = await readWavSamples(this.properties.insertPath);
 
-		const fmt = wav.fmt as { sampleRate: number; numChannels: number };
-		const rawSamples = wav.getSamples(false, Float64Array) as unknown;
-
-		if (fmt.sampleRate !== context.sampleRate) {
-			throw new Error(`Splice: insert file sample rate ${fmt.sampleRate} does not match stream sample rate ${context.sampleRate}`);
+		if (sampleRate !== context.sampleRate) {
+			throw new Error(`Splice: insert file sample rate ${sampleRate} does not match stream sample rate ${context.sampleRate}`);
 		}
 
 		const targetChannels = this.properties.channels;
 		const expectedChannels = targetChannels ? targetChannels.length : context.channels;
 
-		if (fmt.numChannels !== expectedChannels) {
-			throw new Error(`Splice: insert file channels ${fmt.numChannels} does not match expected channels ${expectedChannels}`);
+		if (fileChannels !== expectedChannels) {
+			throw new Error(`Splice: insert file channels ${fileChannels} does not match expected channels ${expectedChannels}`);
 		}
 
 		if (targetChannels) {
@@ -59,21 +51,14 @@ export class SpliceModule extends TransformModule<SpliceProperties> {
 			}
 		}
 
-		if (fmt.numChannels === 1) {
-			this.insertSamples = [new Float32Array(rawSamples as Float64Array)];
-		} else {
-			this.insertSamples = (rawSamples as Array<Float64Array>).map((channel) => new Float32Array(channel));
-		}
-
-		this.insertLength = this.insertSamples[0]?.length ?? 0;
+		this.insertSamples = samples;
+		this.insertLength = samples[0]?.length ?? 0;
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
-		const chunkStart = this.currentFrame;
+		const chunkStart = chunk.offset;
 		const chunkEnd = chunkStart + chunk.duration;
 		const insertEnd = this.properties.insertAt + this.insertLength;
-
-		this.currentFrame = chunkEnd;
 
 		if (chunkEnd <= this.properties.insertAt || chunkStart >= insertEnd) {
 			return chunk;

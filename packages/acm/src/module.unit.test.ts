@@ -99,7 +99,7 @@ function createChunk(value: number, offset: number, duration: number): AudioChun
 }
 
 const testMeta: StreamMeta = { sampleRate: 44100, channels: 1 };
-const testContext: StreamContext = { ...testMeta, executionProviders: ["gpu", "cpu-native", "cpu"] };
+const testContext: StreamContext = { ...testMeta, executionProviders: ["gpu", "cpu-native", "cpu"], memoryLimit: 256 * 1024 * 1024 };
 
 describe("AudioChainModule", () => {
 	it("type discrimination with is()", () => {
@@ -123,12 +123,12 @@ describe("AudioChainModule", () => {
 		expect(TargetModule.is(source)).toBe(false);
 	});
 
-	it("to() adds targets", () => {
+	it("to() sets next", () => {
 		const source = new MockSource([], testMeta);
 		const target = new MockTarget();
 
 		source.to(target);
-		expect(source.targets).toContain(target);
+		expect(source.next).toBe(target);
 	});
 
 	it("setup() recurses to targets", async () => {

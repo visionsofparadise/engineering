@@ -65,6 +65,12 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 	private workspace?: FftWorkspace;
 	private addon: ReturnType<typeof getFftAddon> = null;
 	private bandMappings?: ReadonlyArray<BandMapping>;
+	private magnitudes: Float32Array = new Float32Array(0);
+
+	private writeBuffer?: Buffer;
+	private writeBufferOffset = 0;
+	private writeBufferFileOffset = HEADER_SIZE;
+	private readonly WRITE_BATCH_FRAMES = 1000;
 
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
@@ -85,6 +91,8 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 		const numBands = this.properties.numBands ?? 512;
 		const minFreq = this.properties.minFrequency ?? 20;
 		const maxFreq = this.properties.maxFrequency ?? context.sampleRate / 2;
+
+		this.magnitudes = new Float32Array(this.linearBins);
 
 		if (scale === "linear") {
 			this.bandMappings = undefined;
@@ -133,6 +141,12 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 
 		if (batchFrames === 0) return;
 
+		const frameByteSize = this.outputBins * this.channels * 4;
+		const batchBytes = this.WRITE_BATCH_FRAMES * frameByteSize;
+		this.writeBuffer = Buffer.alloc(batchBytes);
+		this.writeBufferOffset = 0;
+		this.writeBufferFileOffset = this.fileOffset;
+
 		const chunk = await buffer.read(0, totalSamples);
 
 		for (let ch = 0; ch < this.channels; ch++) {
@@ -153,7 +167,7 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 				const { re: batchRe, im: batchIm } = addon.batchFft(batchInput, fftSize, batchFrames);
 
 				for (let fi = 0; fi < batchFrames; fi++) {
-					this.writeFrame(ch, batchRe, batchIm, fi * halfSize, halfSize, magScale);
+					await this.writeFrame(ch, batchRe, batchIm, fi * halfSize, halfSize, magScale);
 				}
 			} else {
 				const windowed = new Float32Array(fftSize);
@@ -167,17 +181,27 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 
 					const { re, im } = fft(windowed, this.workspace);
 
-					this.writeFrame(ch, re, im, 0, halfSize, magScale);
+					await this.writeFrame(ch, re, im, 0, halfSize, magScale);
 				}
 			}
 		}
+
+		await this.flushWriteBuffer();
 	}
 
-	private writeFrame(ch: number, re: Float32Array, im: Float32Array, reOffset: number, halfSize: number, magScale: number): void {
-		const frameData = Buffer.alloc(this.outputBins * this.channels * 4);
+	private async writeFrame(ch: number, re: Float32Array, im: Float32Array, reOffset: number, halfSize: number, magScale: number): Promise<void> {
+		const frameByteSize = this.outputBins * this.channels * 4;
+
+		if (this.writeBuffer && this.writeBufferOffset + frameByteSize > this.writeBuffer.length) {
+			await this.flushWriteBuffer();
+		}
+
+		const buf = this.writeBuffer;
+		if (!buf) return;
+		const offset = this.writeBufferOffset;
 
 		if (this.bandMappings) {
-			const magnitudes = new Float32Array(halfSize);
+			const magnitudes = this.magnitudes;
 
 			for (let bin = 0; bin < halfSize; bin++) {
 				const real = re[reOffset + bin]!;
@@ -203,7 +227,7 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 					weightSum += weight;
 				}
 
-				frameData.writeFloatLE(weightSum > 0 ? sum / weightSum : 0, (ch * this.outputBins + band) * 4);
+				buf.writeFloatLE(weightSum > 0 ? sum / weightSum : 0, offset + (ch * this.outputBins + band) * 4);
 			}
 		} else {
 			for (let bin = 0; bin < this.outputBins; bin++) {
@@ -211,18 +235,28 @@ export class SpectrogramModule extends TransformModule<SpectrogramProperties> {
 				const imag = im[reOffset + bin]!;
 				const magnitude = Math.sqrt(real * real + imag * imag) * magScale;
 
-				frameData.writeFloatLE(magnitude, (ch * this.outputBins + bin) * 4);
+				buf.writeFloatLE(magnitude, offset + (ch * this.outputBins + bin) * 4);
 			}
 		}
 
-		void this.fileHandle!.write(frameData, 0, frameData.length, this.fileOffset);
-
-		this.fileOffset += frameData.length;
+		this.writeBufferOffset += frameByteSize;
+		this.fileOffset += frameByteSize;
 		this.numFrames++;
+	}
+
+	private async flushWriteBuffer(): Promise<void> {
+		if (!this.fileHandle || !this.writeBuffer || this.writeBufferOffset === 0) return;
+
+		await this.fileHandle.write(this.writeBuffer, 0, this.writeBufferOffset, this.writeBufferFileOffset);
+		this.writeBufferFileOffset += this.writeBufferOffset;
+		this.writeBufferOffset = 0;
 	}
 
 	protected override async _teardown(): Promise<void> {
 		if (!this.fileHandle) return;
+
+		await this.flushWriteBuffer();
+		this.writeBuffer = undefined;
 
 		const header = Buffer.alloc(4);
 		header.writeUInt32LE(this.numFrames, 0);

@@ -157,20 +157,22 @@ export function istft(result: StftResult, hopSize: number, outputLength: number,
 	return output;
 }
 
-const hanningWindowCache = new Map<number, Float32Array>();
+const hanningWindowCache = new Map<string, Float32Array>();
 
-export function hanningWindow(size: number): Float32Array {
-	const cached = hanningWindowCache.get(size);
+export function hanningWindow(size: number, periodic = true): Float32Array {
+	const key = `${size}:${periodic ? "p" : "s"}`;
+	const cached = hanningWindowCache.get(key);
 
 	if (cached) return cached;
 
 	const window = new Float32Array(size);
+	const denominator = periodic ? size : size - 1;
 
 	for (let index = 0; index < size; index++) {
-		window[index] = 0.5 * (1 - Math.cos((2 * Math.PI * index) / (size - 1)));
+		window[index] = 0.5 * (1 - Math.cos((2 * Math.PI * index) / denominator));
 	}
 
-	hanningWindowCache.set(size, window);
+	hanningWindowCache.set(key, window);
 
 	return window;
 }

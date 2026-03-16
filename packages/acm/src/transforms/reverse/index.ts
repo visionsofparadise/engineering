@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChunk, StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({});
 
@@ -14,7 +14,7 @@ export class ReverseModule extends TransformModule {
 	}
 
 	override readonly type = ["async-module", "transform", "reverse"] as const;
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private spareBuffer?: ChunkBuffer;
@@ -23,7 +23,7 @@ export class ReverseModule extends TransformModule {
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
 		this.spareChunkSize = context.sampleRate;
-		this.spareBuffer = new ChunkBuffer(Infinity, context.channels, this.properties.storageThreshold);
+		this.spareBuffer = new ChunkBuffer(Infinity, context.channels, context.memoryLimit);
 	}
 
 	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {

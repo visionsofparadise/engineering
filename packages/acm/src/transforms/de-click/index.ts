@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { AudioChainModuleInput, StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
 import { lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
+import { smoothEnvelope } from "../../utils/envelope";
 
 export const schema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
@@ -27,7 +28,7 @@ export class DeClickModule<P extends DeClickProperties = DeClickProperties> exte
 	}
 
 	override readonly type = ["async-module", "transform", "de-click"];
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private processSampleRate = 44100;
@@ -129,7 +130,7 @@ function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: 
 		envelope[index] = (highPassed[index] ?? 0) * (highPassed[index] ?? 0);
 	}
 
-	smoothEnvelopeInPlace(envelope, envSmooth);
+	smoothEnvelope(envelope, envSmooth);
 
 	for (let index = 0; index < signal.length; index++) {
 		envelope[index] = Math.sqrt(envelope[index] ?? 0);
@@ -247,34 +248,3 @@ function approximateMedian(values: Float32Array): number {
 	return max;
 }
 
-function smoothEnvelopeInPlace(envelope: Float32Array, windowSize: number): void {
-	const halfWin = Math.floor(windowSize / 2);
-	const len = envelope.length;
-	const source = Float32Array.from(envelope);
-
-	let sum = 0;
-	let count = 0;
-
-	for (let index = 0; index < Math.min(halfWin, len); index++) {
-		sum += source[index] ?? 0;
-		count++;
-	}
-
-	for (let index = 0; index < len; index++) {
-		const addIdx = index + halfWin;
-
-		if (addIdx < len) {
-			sum += source[addIdx] ?? 0;
-			count++;
-		}
-
-		const removeIdx = index - halfWin - 1;
-
-		if (removeIdx >= 0) {
-			sum -= source[removeIdx] ?? 0;
-			count--;
-		}
-
-		envelope[index] = sum / Math.max(count, 1);
-	}
-}

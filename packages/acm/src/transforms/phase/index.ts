@@ -4,13 +4,10 @@ import { TransformModule, type TransformModuleProperties } from "../../transform
 
 export const schema = z.object({
 	invert: z.boolean().default(true).describe("Invert"),
-	angle: z.number().min(-180).max(180).multipleOf(1).default(0).describe("Angle"),
+	angle: z.number().min(-180).max(180).multipleOf(1).optional().describe("Angle"),
 });
 
-export interface PhaseProperties extends TransformModuleProperties {
-	readonly invert: boolean;
-	readonly angle?: number;
-}
+export interface PhaseProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 export class PhaseModule extends TransformModule<PhaseProperties> {
 	static override readonly moduleName = "Phase";

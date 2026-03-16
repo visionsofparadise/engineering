@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { deinterleaveBuffer, interleave } from "./interleave";
 
 /**
  * Resample audio channels by spawning ffmpeg directly.
@@ -56,40 +57,14 @@ export function resampleDirect(
 			}
 
 			const outputBuffer = Buffer.concat(outputChunks);
-			const totalSamples = outputBuffer.length / 4;
-			const outFrames = Math.floor(totalSamples / numChannels);
-			const result: Array<Float32Array> = [];
-
-			for (let ch = 0; ch < numChannels; ch++) {
-				result.push(new Float32Array(outFrames));
-			}
-
-			const view = new Float32Array(outputBuffer.buffer, outputBuffer.byteOffset, totalSamples);
-
-			for (let frame = 0; frame < outFrames; frame++) {
-				for (let ch = 0; ch < numChannels; ch++) {
-					const arr = result[ch];
-					const sample = view[frame * numChannels + ch];
-					if (arr && sample !== undefined) arr[frame] = sample;
-				}
-			}
-
-			resolve(result);
+			resolve(deinterleaveBuffer(outputBuffer, numChannels));
 		});
 
 		stdin.on("error", () => {
 			// Ignore EPIPE — expected when ffmpeg closes stdin early
 		});
 
-		// Interleave and write
-		const interleaved = new Float32Array(frames * numChannels);
-
-		for (let frame = 0; frame < frames; frame++) {
-			for (let ch = 0; ch < numChannels; ch++) {
-				interleaved[frame * numChannels + ch] = channels[ch]?.[frame] ?? 0;
-			}
-		}
-
+		const interleaved = interleave(channels, frames, numChannels);
 		const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
 		stdin.write(buf, () => stdin.end());
 	});

@@ -29,15 +29,15 @@ export abstract class SourceModule<P extends SourceModuleProperties = SourceModu
 
 	async render(options?: RenderOptions): Promise<void> {
 		const defaultProviders: ReadonlyArray<ExecutionProvider> = ["gpu", "cpu-native", "cpu"];
+		const memoryLimit = options?.memoryLimit ?? 256 * 1024 * 1024;
 		const meta = await this._init();
-		const context: StreamContext = { ...meta, executionProviders: options?.executionProviders ?? defaultProviders };
+		const context: StreamContext = { ...meta, executionProviders: options?.executionProviders ?? defaultProviders, memoryLimit };
 
 		await this.setup(context);
 
-		const stages = Math.max(1, this.collectPipeline(this).length);
+		const stages = Math.max(1, collectPipeline(this).length);
 		const chunkSize = options?.chunkSize ?? 128 * 1024;
 		const bytesPerChunk = context.channels * chunkSize * 4;
-		const memoryLimit = options?.memoryLimit ?? 256 * 1024 * 1024;
 		const computedHighWaterMark = Math.max(1, Math.floor(memoryLimit / (stages * bytesPerChunk)));
 		const highWaterMark = options?.highWaterMark ?? computedHighWaterMark;
 
@@ -124,7 +124,7 @@ export abstract class SourceModule<P extends SourceModuleProperties = SourceModu
 			return Promise.reject(new Error("Source readable not created"));
 		}
 
-		const targets = this.collectPipeline(source);
+		const targets = collectPipeline(source);
 
 		for (const unit of targets) {
 			if (isTransformAsyncModule(unit)) {
@@ -141,33 +141,34 @@ export abstract class SourceModule<P extends SourceModuleProperties = SourceModu
 	}
 
 	collectTimings(): Array<{ name: string; timing: TransformTiming }> {
-		const pipeline = this.collectPipeline(this);
-		const result: Array<{ name: string; timing: TransformTiming }> = [];
+		return collectTimings(collectPipeline(this));
+	}
+}
 
-		for (const module of pipeline) {
-			if (isTransformAsyncModule(module)) {
-				const timing = module.timing;
+export function collectPipeline(unit: AudioChainModule): Array<AudioChainModule> {
+	const result: Array<AudioChainModule> = [];
+	let current: AudioChainModule = unit;
+	while (current.next) {
+		result.push(current.next);
+		current = current.next;
+	}
+	return result;
+}
 
-				if (timing) {
-					result.push({ name: module.type[2] ?? module.type[1] ?? "unknown", timing });
-				}
+export function collectTimings(pipeline: Array<AudioChainModule>): Array<{ name: string; timing: TransformTiming }> {
+	const result: Array<{ name: string; timing: TransformTiming }> = [];
+
+	for (const module of pipeline) {
+		if (isTransformAsyncModule(module)) {
+			const timing = module.timing;
+
+			if (timing) {
+				result.push({ name: module.type[2] ?? module.type[1] ?? "unknown", timing });
 			}
 		}
-
-		return result;
 	}
 
-	private collectPipeline(unit: AudioChainModule): Array<AudioChainModule> {
-		const result: Array<AudioChainModule> = [];
-		let current: AudioChainModule = unit;
-		while (current.targets.length > 0) {
-			const target = current.targets[0];
-			if (!target) break;
-			result.push(target);
-			current = target;
-		}
-		return result;
-	}
+	return result;
 }
 
 function isTransformAsyncModule(value: unknown): value is TransformModule {

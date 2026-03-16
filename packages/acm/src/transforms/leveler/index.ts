@@ -56,12 +56,17 @@ export class LevelerModule extends TransformModule<LevelerProperties> {
 		rms = sampleCount > 0 ? Math.sqrt(rms / sampleCount) : 0;
 
 		const rmsDb = 20 * Math.log10(Math.max(rms, 1e-10));
-		let targetGainDb = target - rmsDb;
 
-		targetGainDb = Math.max(-maxCut, Math.min(maxGain, targetGainDb));
+		// Gate: when signal is very quiet, hold current gain to avoid amplifying noise
+		const GATE_THRESHOLD_DB = -60;
 
-		const alpha = 1 - Math.exp(-1 / (speed * (this.windowSamples / this.properties.window)));
-		this.currentGainDb += alpha * (targetGainDb - this.currentGainDb);
+		if (rmsDb > GATE_THRESHOLD_DB) {
+			let targetGainDb = target - rmsDb;
+			targetGainDb = Math.max(-maxCut, Math.min(maxGain, targetGainDb));
+
+			const alpha = 1 - Math.exp(-1 / (speed * (this.windowSamples / this.properties.window)));
+			this.currentGainDb += alpha * (targetGainDb - this.currentGainDb);
+		}
 
 		const gainLinear = Math.pow(10, this.currentGainDb / 20);
 

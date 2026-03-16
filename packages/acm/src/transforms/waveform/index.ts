@@ -36,6 +36,11 @@ export class WaveformModule extends TransformModule<WaveformProperties> {
 	private currentMin: Float32Array = new Float32Array(0);
 	private currentMax: Float32Array = new Float32Array(0);
 
+	private writeBuffer?: Buffer;
+	private writeBufferOffset = 0;
+	private writeBufferFileOffset = HEADER_SIZE;
+	private readonly WRITE_BATCH_POINTS = 1000;
+
 	protected override _setup(context: StreamContext): void {
 		super._setup(context);
 
@@ -46,6 +51,11 @@ export class WaveformModule extends TransformModule<WaveformProperties> {
 		this.samplesInCurrentWindow = 0;
 		this.currentMin = new Float32Array(this.channels).fill(1);
 		this.currentMax = new Float32Array(this.channels).fill(-1);
+
+		const pointByteSize = this.channels * 8;
+		this.writeBuffer = Buffer.alloc(this.WRITE_BATCH_POINTS * pointByteSize);
+		this.writeBufferOffset = 0;
+		this.writeBufferFileOffset = HEADER_SIZE;
 	}
 
 	override async setup(context: StreamContext): Promise<void> {
@@ -96,21 +106,36 @@ export class WaveformModule extends TransformModule<WaveformProperties> {
 	private flushPoint(): void {
 		if (!this.fileHandle) return;
 
-		const pointData = Buffer.alloc(this.channels * 8);
+		const pointByteSize = this.channels * 8;
 
-		for (let ch = 0; ch < this.channels; ch++) {
-			pointData.writeFloatLE(this.currentMin[ch] ?? 0, ch * 8);
-			pointData.writeFloatLE(this.currentMax[ch] ?? 0, ch * 8 + 4);
+		if (this.writeBuffer && this.writeBufferOffset + pointByteSize > this.writeBuffer.length) {
+			this.flushWriteBufferSync();
 		}
 
-		void this.fileHandle.write(pointData, 0, pointData.length, this.fileOffset);
+		const buf = this.writeBuffer;
+		if (!buf) return;
+		const offset = this.writeBufferOffset;
 
-		this.fileOffset += pointData.length;
+		for (let ch = 0; ch < this.channels; ch++) {
+			buf.writeFloatLE(this.currentMin[ch] ?? 0, offset + ch * 8);
+			buf.writeFloatLE(this.currentMax[ch] ?? 0, offset + ch * 8 + 4);
+		}
+
+		this.writeBufferOffset += pointByteSize;
+		this.fileOffset += pointByteSize;
 		this.totalPoints++;
 
 		this.samplesInCurrentWindow = 0;
 		this.currentMin.fill(1);
 		this.currentMax.fill(-1);
+	}
+
+	private flushWriteBufferSync(): void {
+		if (!this.fileHandle || !this.writeBuffer || this.writeBufferOffset === 0) return;
+
+		void this.fileHandle.write(this.writeBuffer, 0, this.writeBufferOffset, this.writeBufferFileOffset);
+		this.writeBufferFileOffset += this.writeBufferOffset;
+		this.writeBufferOffset = 0;
 	}
 
 	protected override async _teardown(): Promise<void> {
@@ -119,6 +144,13 @@ export class WaveformModule extends TransformModule<WaveformProperties> {
 		if (this.samplesInCurrentWindow > 0) {
 			this.flushPoint();
 		}
+
+		// Await final batch write
+		if (this.writeBuffer && this.writeBufferOffset > 0) {
+			await this.fileHandle.write(this.writeBuffer, 0, this.writeBufferOffset, this.writeBufferFileOffset);
+			this.writeBufferOffset = 0;
+		}
+		this.writeBuffer = undefined;
 
 		const header = Buffer.alloc(4);
 		header.writeUInt32LE(this.totalPoints, 0);

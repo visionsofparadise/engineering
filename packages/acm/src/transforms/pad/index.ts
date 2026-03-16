@@ -1,17 +1,14 @@
 import { z } from "zod";
 import type { ChunkBuffer } from "../../chunk-buffer";
 import type { StreamContext } from "../../module";
-import { TransformModule, type TransformModuleProperties } from "../../transform";
+import { TransformModule, WHOLE_FILE, type TransformModuleProperties } from "../../transform";
 
 export const schema = z.object({
 	before: z.number().min(0).multipleOf(0.001).default(0).describe("Before"),
 	after: z.number().min(0).multipleOf(0.001).default(0).describe("After"),
 });
 
-export interface PadProperties extends TransformModuleProperties {
-	readonly before?: number;
-	readonly after?: number;
-}
+export interface PadProperties extends z.infer<typeof schema>, TransformModuleProperties {}
 
 export class PadModule extends TransformModule<PadProperties> {
 	static override readonly moduleName = "Pad";
@@ -22,7 +19,7 @@ export class PadModule extends TransformModule<PadProperties> {
 	}
 
 	override readonly type = ["async-module", "transform", "pad"] as const;
-	override readonly bufferSize = Infinity;
+	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = Infinity;
 
 	private padSampleRate = 44100;
@@ -38,7 +35,7 @@ export class PadModule extends TransformModule<PadProperties> {
 		const { before, after } = this.properties;
 		const channels = this.padChannels;
 
-		if (before !== undefined && before > 0) {
+		if (before > 0) {
 			const silenceFrames = Math.round(before * this.padSampleRate);
 			const frames = buffer.frames;
 			const allAudio = await buffer.read(0, frames);
@@ -56,7 +53,7 @@ export class PadModule extends TransformModule<PadProperties> {
 			await buffer.append(padded);
 		}
 
-		if (after !== undefined && after > 0) {
+		if (after > 0) {
 			const silenceFrames = Math.round(after * this.padSampleRate);
 			const silence: Array<Float32Array> = [];
 
@@ -74,9 +71,6 @@ export class PadModule extends TransformModule<PadProperties> {
 }
 
 export function pad(options: { before?: number; after?: number; id?: string }): PadModule {
-	return new PadModule({
-		before: options.before,
-		after: options.after,
-		id: options.id,
-	});
+	const parsed = schema.parse(options);
+	return new PadModule({ ...parsed, id: options.id });
 }
