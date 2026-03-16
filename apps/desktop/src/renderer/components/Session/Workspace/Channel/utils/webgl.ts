@@ -71,7 +71,12 @@ export class SpectrogramRenderer {
 	private magnitudeTexture: WebGLTexture;
 	private colormapTexture: WebGLTexture;
 	private vao: WebGLVertexArrayObject;
+	private positionBuffer: WebGLBuffer;
 	private canvas: OffscreenCanvas;
+	private uMagnitude: WebGLUniformLocation;
+	private uColormap: WebGLUniformLocation;
+	private uDbMin: WebGLUniformLocation;
+	private uDbMax: WebGLUniformLocation;
 
 	constructor() {
 		this.canvas = new OffscreenCanvas(1, 1);
@@ -82,8 +87,8 @@ export class SpectrogramRenderer {
 
 		this.program = createProgram(gl);
 
-		const positionBuffer = gl.createBuffer();
-		gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+		this.positionBuffer = gl.createBuffer()!;
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
 
 		this.vao = gl.createVertexArray();
@@ -96,6 +101,11 @@ export class SpectrogramRenderer {
 		this.magnitudeTexture = gl.createTexture();
 
 		this.colormapTexture = gl.createTexture();
+
+		this.uMagnitude = gl.getUniformLocation(this.program, "uMagnitude")!;
+		this.uColormap = gl.getUniformLocation(this.program, "uColormap")!;
+		this.uDbMin = gl.getUniformLocation(this.program, "uDbMin")!;
+		this.uDbMax = gl.getUniformLocation(this.program, "uDbMax")!;
 	}
 
 	uploadColormap(data: Uint8Array): void {
@@ -121,8 +131,10 @@ export class SpectrogramRenderer {
 	): void {
 		const { gl } = this;
 
-		this.canvas.width = targetWidth;
-		this.canvas.height = targetHeight;
+		if (this.canvas.width !== targetWidth || this.canvas.height !== targetHeight) {
+			this.canvas.width = targetWidth;
+			this.canvas.height = targetHeight;
+		}
 		gl.viewport(0, 0, targetWidth, targetHeight);
 
 		gl.activeTexture(gl.TEXTURE0);
@@ -134,10 +146,10 @@ export class SpectrogramRenderer {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 		gl.useProgram(this.program);
-		gl.uniform1i(gl.getUniformLocation(this.program, "uMagnitude"), 0);
-		gl.uniform1i(gl.getUniformLocation(this.program, "uColormap"), 1);
-		gl.uniform1f(gl.getUniformLocation(this.program, "uDbMin"), dbRange[0]);
-		gl.uniform1f(gl.getUniformLocation(this.program, "uDbMax"), dbRange[1]);
+		gl.uniform1i(this.uMagnitude, 0);
+		gl.uniform1i(this.uColormap, 1);
+		gl.uniform1f(this.uDbMin, dbRange[0]);
+		gl.uniform1f(this.uDbMax, dbRange[1]);
 
 		gl.activeTexture(gl.TEXTURE1);
 		gl.bindTexture(gl.TEXTURE_2D, this.colormapTexture);
@@ -155,6 +167,8 @@ export class SpectrogramRenderer {
 		const { gl } = this;
 		gl.deleteTexture(this.magnitudeTexture);
 		gl.deleteTexture(this.colormapTexture);
+		gl.deleteBuffer(this.positionBuffer);
+		gl.deleteVertexArray(this.vao);
 		gl.deleteProgram(this.program);
 	}
 }

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SpectrogramHeader } from "./useSpectrogramHeader";
 import type { WaveformHeader } from "./useWaveformHeader";
 import { timeToPoint } from "./useWaveformHeader";
+import { useSpectralOverview } from "./useSpectralOverview";
+import { useSpectralDetail } from "./useSpectralDetail";
 
 export interface SpectralSlice {
 	readonly data: Float32Array;
@@ -19,16 +21,18 @@ export interface ChannelSpectralData {
 
 export type SpectralData = ReadonlyArray<ChannelSpectralData>;
 
-function emptyChannel(): ChannelSpectralData {
+// --- Shared helpers (used by useSpectralOverview and useSpectralDetail) ---
+
+export function emptyChannel(): ChannelSpectralData {
 	return { spectrogramOverview: null, spectrogramDetail: null, waveformOverview: null, waveformDetail: null };
 }
 
-function isViewportCovered(detail: SpectralSlice | null, visibleStart: number, visibleEnd: number): boolean {
+export function isViewportCovered(detail: SpectralSlice | null, visibleStart: number, visibleEnd: number): boolean {
 	if (!detail) return false;
 	return detail.startIndex <= visibleStart && detail.endIndex >= visibleEnd;
 }
 
-function expandRange(start: number, end: number, max: number): { start: number; end: number } {
+export function expandRange(start: number, end: number, max: number): { start: number; end: number } {
 	const range = end - start;
 	const padding = Math.floor(range * 0.25);
 	return {
@@ -37,7 +41,7 @@ function expandRange(start: number, end: number, max: number): { start: number; 
 	};
 }
 
-function computeVisibleFrameRange(
+export function computeVisibleFrameRange(
 	scrollX: number,
 	viewportWidth: number,
 	pixelsPerSecond: number,
@@ -52,7 +56,7 @@ function computeVisibleFrameRange(
 	return { startFrame, endFrame };
 }
 
-function computeVisiblePointRange(
+export function computeVisiblePointRange(
 	scrollX: number,
 	viewportWidth: number,
 	pixelsPerSecond: number,
@@ -67,7 +71,7 @@ function computeVisiblePointRange(
 	return { startPoint, endPoint };
 }
 
-async function loadSpectrogramSlice(
+export async function loadSpectrogramSlice(
 	path: string,
 	channel: number,
 	header: SpectrogramHeader,
@@ -85,7 +89,7 @@ async function loadSpectrogramSlice(
 	};
 }
 
-async function loadWaveformSlice(
+export async function loadWaveformSlice(
 	path: string,
 	channel: number,
 	header: WaveformHeader,
@@ -103,6 +107,19 @@ async function loadWaveformSlice(
 	};
 }
 
+// --- Debounce utility ---
+
+function useDebounce<T>(value: T, delayMs: number): T {
+	const [debounced, setDebounced] = useState(value);
+	useEffect(() => {
+		const timer = setTimeout(() => setDebounced(value), delayMs);
+		return () => clearTimeout(timer);
+	}, [value, delayMs]);
+	return debounced;
+}
+
+// --- Coordinator hook ---
+
 const EMPTY: SpectralData = [];
 
 export function useSpectralData(
@@ -113,106 +130,34 @@ export function useSpectralData(
 	pixelsPerSecond: number,
 	viewportWidth: number,
 ): SpectralData {
-	const [data, setData] = useState<SpectralData>(EMPTY);
-	const generationRef = useRef(0);
+	const debouncedViewportWidth = useDebounce(viewportWidth, 150);
+
+	const overviewData = useSpectralOverview(snapshotPath, spectrogramHeader, waveformHeader, debouncedViewportWidth);
+
+	const detailData = useSpectralDetail(snapshotPath, spectrogramHeader, waveformHeader, scrollX, pixelsPerSecond, viewportWidth, overviewData);
 
 	const channels = spectrogramHeader?.channels ?? waveformHeader?.channels ?? 0;
 
-	useEffect(() => {
-		if (!spectrogramHeader || !waveformHeader || channels === 0 || viewportWidth <= 0) return;
+	return useMemo(() => {
+		if (channels === 0) return EMPTY;
 
-		const generation = ++generationRef.current;
+		// If neither hook has loaded yet, return empty
+		if (overviewData.length === 0 && detailData.length === 0) return EMPTY;
 
-		const load = async () => {
-			const specPath = `${snapshotPath}/spectrogram.bin`;
-			const wavePath = `${snapshotPath}/waveform.bin`;
-			const overviewDensity = 4;
-			const specStride = Math.max(1, Math.floor(spectrogramHeader.numFrames / (viewportWidth * overviewDensity)));
-			const waveStride = Math.max(1, Math.floor(waveformHeader.totalPoints / (viewportWidth * overviewDensity)));
-
-			const result: Array<ChannelSpectralData> = [];
-
-			for (let ch = 0; ch < channels; ch++) {
-				if (generationRef.current !== generation) return;
-
-				const spectrogramOverview = await loadSpectrogramSlice(specPath, ch, spectrogramHeader, 0, spectrogramHeader.numFrames, specStride);
-				if (generationRef.current !== generation) return;
-
-				const waveformOverview = await loadWaveformSlice(wavePath, ch, waveformHeader, 0, waveformHeader.totalPoints, waveStride);
-				if (generationRef.current !== generation) return;
-
-				result.push({ spectrogramOverview, spectrogramDetail: null, waveformOverview, waveformDetail: null });
-			}
-
-			if (generationRef.current === generation) {
-				setData(result);
-			}
-		};
-
-		void load();
-	}, [snapshotPath, spectrogramHeader, waveformHeader, channels, viewportWidth]);
-
-	useEffect(() => {
-		if (!spectrogramHeader || !waveformHeader || channels === 0 || viewportWidth <= 0) return;
-		if (data.length !== channels) return;
-
-		const specRange = computeVisibleFrameRange(scrollX, viewportWidth, pixelsPerSecond, spectrogramHeader);
-		const waveRange = computeVisiblePointRange(scrollX, viewportWidth, pixelsPerSecond, waveformHeader);
-
-		let needsSpecDetail = false;
-		let needsWaveDetail = false;
+		const result: Array<ChannelSpectralData> = [];
 
 		for (let ch = 0; ch < channels; ch++) {
-			const channel = data[ch];
-			if (!channel) continue;
-			if (!isViewportCovered(channel.spectrogramDetail, specRange.startFrame, specRange.endFrame)) needsSpecDetail = true;
-			if (!isViewportCovered(channel.waveformDetail, waveRange.startPoint, waveRange.endPoint)) needsWaveDetail = true;
+			const overview = overviewData[ch];
+			const detail = detailData[ch];
+
+			result.push({
+				spectrogramOverview: overview?.spectrogramOverview ?? null,
+				spectrogramDetail: detail?.spectrogramDetail ?? null,
+				waveformOverview: overview?.waveformOverview ?? null,
+				waveformDetail: detail?.waveformDetail ?? null,
+			});
 		}
 
-		if (!needsSpecDetail && !needsWaveDetail) return;
-
-		const generation = ++generationRef.current;
-
-		const load = async () => {
-			const specPath = `${snapshotPath}/spectrogram.bin`;
-			const wavePath = `${snapshotPath}/waveform.bin`;
-			const specExpanded = expandRange(specRange.startFrame, specRange.endFrame, spectrogramHeader.numFrames);
-			const waveExpanded = expandRange(waveRange.startPoint, waveRange.endPoint, waveformHeader.totalPoints);
-
-			const updated: Array<ChannelSpectralData> = [];
-
-			for (let ch = 0; ch < channels; ch++) {
-				if (generationRef.current !== generation) return;
-
-				const existing = data[ch] ?? emptyChannel();
-				let spectrogramDetail = existing.spectrogramDetail;
-				let waveformDetail = existing.waveformDetail;
-
-				if (needsSpecDetail) {
-					spectrogramDetail = await loadSpectrogramSlice(specPath, ch, spectrogramHeader, specExpanded.start, specExpanded.end, 1);
-					if (generationRef.current !== generation) return;
-				}
-
-				if (needsWaveDetail) {
-					waveformDetail = await loadWaveformSlice(wavePath, ch, waveformHeader, waveExpanded.start, waveExpanded.end, 1);
-					if (generationRef.current !== generation) return;
-				}
-
-				updated.push({
-					spectrogramOverview: existing.spectrogramOverview,
-					spectrogramDetail,
-					waveformOverview: existing.waveformOverview,
-					waveformDetail,
-				});
-			}
-
-			if (generationRef.current === generation) {
-				setData(updated);
-			}
-		};
-
-		void load();
-	}, [snapshotPath, spectrogramHeader, waveformHeader, channels, data, scrollX, pixelsPerSecond, viewportWidth]);
-
-	return data;
+		return result;
+	}, [channels, overviewData, detailData]);
 }

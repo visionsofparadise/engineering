@@ -72,21 +72,26 @@ export function useExport(context: SessionContext) {
 
 		setState({ exporting: true, progress: 0 });
 
-		const encoding = settings.format === "wav" ? undefined : {
-			format: settings.format,
-			bitrate: settings.bitrate,
-			vbr: settings.vbr,
-		};
+		try {
+			const encoding = settings.format === "wav" ? undefined : {
+				format: settings.format,
+				bitrate: settings.bitrate,
+				vbr: settings.vbr,
+			};
 
-		const jobId = await context.main.audioApply({
-			sourcePath,
-			targetPath,
-			transforms: [],
-			bitDepth: settings.bitDepth,
-			encoding,
-		});
+			const jobId = await context.main.audioApply({
+				sourcePath,
+				targetPath,
+				transforms: [],
+				bitDepth: settings.bitDepth,
+				encoding,
+			});
 
-		setActiveJobId(jobId);
+			setActiveJobId(jobId);
+		} catch (error) {
+			console.error("Export failed:", error);
+			setState({ exporting: false, progress: 0 });
+		}
 	}, [activeSnapshotPath, context.main, defaultName]);
 
 	return { exporting: state.exporting, progress: state.progress, startExport };

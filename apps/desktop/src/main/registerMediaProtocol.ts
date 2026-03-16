@@ -1,5 +1,5 @@
 import { protocol } from "electron";
-import { readFile, stat } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import { extname } from "node:path";
 
 const MIME_TYPES: Record<string, string> = {
@@ -69,19 +69,24 @@ export function registerMediaProtocol(): void {
 
 			const { start, end } = range;
 			const chunkSize = end - start + 1;
-			const buffer = Buffer.alloc(chunkSize);
-			const fullBuffer = await readFile(filePath);
-			fullBuffer.copy(buffer, 0, start, end + 1);
+			const handle = await open(filePath, "r");
+			try {
+				const buffer = Buffer.alloc(chunkSize);
+				const { bytesRead } = await handle.read(buffer, 0, chunkSize, start);
+				const data = buffer.subarray(0, bytesRead);
 
-			return new Response(buffer, {
-				status: 206,
-				headers: {
-					"Content-Type": mimeType,
-					"Content-Length": String(chunkSize),
-					"Content-Range": `bytes ${start}-${end}/${fileSize}`,
-					"Accept-Ranges": "bytes",
-				},
-			});
+				return new Response(data, {
+					status: 206,
+					headers: {
+						"Content-Type": mimeType,
+						"Content-Length": String(chunkSize),
+						"Content-Range": `bytes ${start}-${end}/${fileSize}`,
+						"Accept-Ranges": "bytes",
+					},
+				});
+			} finally {
+				await handle.close();
+			}
 		}
 
 		const buffer = await readFile(filePath);

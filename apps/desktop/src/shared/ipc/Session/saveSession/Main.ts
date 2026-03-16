@@ -20,6 +20,7 @@ export class SaveSessionMainIpc extends AsyncMainIpc<SaveSessionIpcParameters, S
 
 		const done = new Promise<void>((resolve, reject) => {
 			output.on("close", resolve);
+			output.on("error", reject);
 			archive.on("error", reject);
 		});
 

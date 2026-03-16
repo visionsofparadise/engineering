@@ -15,7 +15,10 @@ export class ProxyStore {
 	mutate<T extends { _key: symbol }>(snapshot: Snapshot<T>, callback: (proxy: Mutable<T>) => void): void {
 		const proxy = this._map.get(snapshot._key);
 
-		if (!proxy) return;
+		if (!proxy) {
+			if (import.meta.env.DEV) console.warn("ProxyStore.mutate: proxy not found for key", snapshot._key);
+			return;
+		}
 
 		callback(proxy as Mutable<T>);
 	}

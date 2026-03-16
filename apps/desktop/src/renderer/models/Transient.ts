@@ -37,21 +37,20 @@ export class Transient<V> {
 
 	protected _listeners = new StateRef<Set<Transient.Listener<V>>>(new Set());
 
+	private readonly _committedAccessor: { value: V };
+	private readonly _transientAccessor: { value: V | undefined };
+
 	constructor(value: V, options?: Transient.Options<V>) {
 		this._committed = value;
 		this.default = options?.default;
 		this.minimum = options?.minimum;
 		this.maximum = options?.maximum;
-	}
 
-	get value(): V {
-		return this._transient.current ?? this._committed;
-	}
-
-	get committed(): { value: V } {
+		// Cache accessor objects
 		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const _this = this;
-		return {
+
+		this._committedAccessor = {
 			get value() {
 				return _this._committed;
 			},
@@ -62,12 +61,8 @@ export class Transient<V> {
 				_this.notify();
 			},
 		};
-	}
 
-	get transient(): { value: V | undefined } {
-		// eslint-disable-next-line @typescript-eslint/no-this-alias
-		const _this = this;
-		return ref({
+		this._transientAccessor = ref({
 			set value(value: V | undefined) {
 				if (value !== undefined) {
 					_this._transient.set(_this.applyClamp(value));
@@ -79,6 +74,18 @@ export class Transient<V> {
 				_this.notify();
 			},
 		});
+	}
+
+	get value(): V {
+		return this._transient.current ?? this._committed;
+	}
+
+	get committed(): { value: V } {
+		return this._committedAccessor;
+	}
+
+	get transient(): { value: V | undefined } {
+		return this._transientAccessor;
 	}
 
 	watch(listener: Transient.Listener<V>): () => void {

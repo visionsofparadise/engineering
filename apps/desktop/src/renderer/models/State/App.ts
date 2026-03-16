@@ -1,75 +1,106 @@
-import type { ChainModuleReference } from "audio-chain-module";
 import type { Snapshot } from "valtio/vanilla";
+import { z } from "zod";
 import type { State } from ".";
-import type { WindowState } from "../../../shared/utilities/emitToRenderer";
 import type { MainWithEvents } from "../Main";
 import { useCreateState } from "../ProxyStore/hooks/useCreateState";
 import type { ProxyStore } from "../ProxyStore/ProxyStore";
 
-export type Theme = "light" | "dark" | "system";
-export type SpectralTheme = "lava" | "viridis";
+// ---------------------------------------------------------------------------
+// Schemas
+// ---------------------------------------------------------------------------
 
-export interface BatchTarget {
-	readonly outputDir: string;
-	readonly template: string;
-	readonly format: "wav" | "flac" | "mp3" | "aac";
-	readonly bitDepth?: "16" | "24" | "32" | "32f";
-	readonly bitrate?: string;
-	readonly vbr?: number;
-}
+const ChainModuleReferenceSchema = z.object({
+	package: z.string().min(1),
+	module: z.string().min(1),
+	label: z.string().optional(),
+	options: z.record(z.string(), z.unknown()).optional(),
+	bypass: z.boolean().optional(),
+});
 
-export interface BatchFile {
-	readonly path: string;
-	readonly jobId?: string;
-}
+const BatchTargetSchema = z.object({
+	outputDir: z.string(),
+	template: z.string(),
+	format: z.enum(["wav", "flac", "mp3", "aac"]),
+	bitDepth: z.enum(["16", "24", "32", "32f"]).optional(),
+	bitrate: z.string().optional(),
+	vbr: z.number().optional(),
+});
 
-export interface BatchConfig {
-	readonly transforms: ReadonlyArray<ChainModuleReference>;
-	readonly target: BatchTarget;
-	readonly concurrency: number;
-	readonly files: ReadonlyArray<BatchFile>;
-}
+const BatchFileSchema = z.object({
+	path: z.string(),
+	jobId: z.string().optional(),
+});
 
-export interface TabEntry {
-	readonly id: string;
-	readonly label: string;
-	readonly filePath: string;
-	readonly workingDir: string;
-	readonly activeSnapshotFolder: string | undefined;
-}
+const BatchConfigSchema = z.object({
+	transforms: z.array(ChainModuleReferenceSchema).readonly(),
+	target: BatchTargetSchema,
+	concurrency: z.number(),
+	files: z.array(BatchFileSchema).readonly(),
+});
 
-export interface ModulePackageConfig {
-	readonly url: string;
-	readonly directory: string;
-}
+const TabEntrySchema = z.object({
+	id: z.string(),
+	label: z.string(),
+	filePath: z.string(),
+	workingDir: z.string(),
+	activeSnapshotFolder: z.string().optional(),
+});
 
-export interface LoadedModuleInfo {
-	readonly moduleName: string;
-	readonly moduleDescription: string;
-	readonly schema: unknown;
-}
+const ModulePackageConfigSchema = z.object({
+	url: z.string(),
+	directory: z.string(),
+});
 
-export interface ModulePackageState extends ModulePackageConfig {
-	readonly status: "pending" | "cloning" | "building" | "loading" | "ready" | "skipped" | "error";
-	readonly error?: string;
-	readonly version?: string;
-	readonly name?: string;
-	readonly description?: string;
-	readonly modules: ReadonlyArray<LoadedModuleInfo>;
-}
+const LoadedModuleInfoSchema = z.object({
+	moduleName: z.string(),
+	moduleDescription: z.string(),
+	schema: z.unknown(),
+});
 
-export interface AppState extends State {
-	readonly activeTabId: string | undefined;
-	readonly batchActive: boolean;
-	readonly tabs: ReadonlyArray<TabEntry>;
-	readonly theme: Theme;
-	readonly spectralTheme: SpectralTheme;
-	readonly windowState?: WindowState;
-	readonly batch: BatchConfig;
-	readonly binaries: Record<string, string>;
-	readonly packageUrls: ReadonlyArray<ModulePackageConfig>;
-	readonly packages: ReadonlyArray<ModulePackageState>;
-}
+const ModulePackageStateSchema = ModulePackageConfigSchema.extend({
+	status: z.enum(["pending", "cloning", "building", "loading", "ready", "skipped", "error"]),
+	error: z.string().optional(),
+	version: z.string().optional(),
+	name: z.string().optional(),
+	description: z.string().optional(),
+	modules: z.array(LoadedModuleInfoSchema).readonly(),
+});
+
+const WindowStateSchema = z.object({
+	x: z.number(),
+	y: z.number(),
+	width: z.number(),
+	height: z.number(),
+	maximized: z.boolean(),
+});
+
+export const AppStateSchema = z.object({
+	activeTabId: z.string().optional(),
+	batchActive: z.boolean(),
+	tabs: z.array(TabEntrySchema).readonly(),
+	theme: z.enum(["light", "dark", "system"]),
+	spectralTheme: z.enum(["lava", "viridis"]),
+	windowState: WindowStateSchema.optional(),
+	batch: BatchConfigSchema,
+	binaries: z.record(z.string(), z.string()),
+	packageUrls: z.array(ModulePackageConfigSchema).readonly(),
+	packages: z.array(ModulePackageStateSchema).readonly(),
+});
+
+// ---------------------------------------------------------------------------
+// Types (inferred from schemas)
+// ---------------------------------------------------------------------------
+
+export type Theme = z.infer<typeof AppStateSchema>["theme"];
+export type SpectralTheme = z.infer<typeof AppStateSchema>["spectralTheme"];
+export type BatchTarget = z.infer<typeof BatchTargetSchema>;
+export type BatchFile = z.infer<typeof BatchFileSchema>;
+export type BatchConfig = z.infer<typeof BatchConfigSchema>;
+export type TabEntry = z.infer<typeof TabEntrySchema>;
+export type ModulePackageConfig = z.infer<typeof ModulePackageConfigSchema>;
+export type LoadedModuleInfo = z.infer<typeof LoadedModuleInfoSchema>;
+export type ModulePackageState = z.infer<typeof ModulePackageStateSchema>;
+export type AppState = z.infer<typeof AppStateSchema> & State;
 
 async function deriveTabsFromSessions(main: MainWithEvents, userDataPath: string): Promise<ReadonlyArray<TabEntry>> {
 	const sessionsDir = `${userDataPath}/sessions`;
@@ -166,15 +197,29 @@ async function resolveBundledBinaries(
 	return binaries;
 }
 
+/** Schema for the subset of AppState that is persisted to state.json. */
+const SavedStateSchema = AppStateSchema.pick({
+	theme: true,
+	spectralTheme: true,
+	activeTabId: true,
+	windowState: true,
+	batch: true,
+	binaries: true,
+	packageUrls: true,
+}).partial();
+
 export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState, "_key">> {
 	const userDataPath = await main.getUserDataPath();
 	const resourcesPath = await main.getResourcesPath();
 	const path = `${userDataPath}/state.json`;
 
-	let saved: Partial<AppState> = {};
+	let saved: z.infer<typeof SavedStateSchema> = {};
 	try {
 		const content = await main.readFile(path);
-		saved = JSON.parse(content) as AppState;
+		const result = SavedStateSchema.safeParse(JSON.parse(content));
+		if (result.success) {
+			saved = result.data;
+		}
 	} catch {
 		// no saved state
 	}

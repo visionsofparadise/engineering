@@ -85,7 +85,7 @@ export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 			const rect = event.currentTarget.getBoundingClientRect();
 
 			sessionStore.mutate(workspace, (proxy) => {
-				proxy.cursorX.committed.value = event.clientX - rect.left;
+				proxy.cursorX.transient.value = event.clientX - rect.left;
 			});
 		},
 		[workspace, sessionStore],

@@ -60,6 +60,7 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = ({ channelInd
 
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const rendererRef = useRef<SpectrogramRenderer | null>(null);
+	const lastThemeRef = useRef<SpectralTheme | null>(null);
 
 	const viewportWidth = workspace.viewportWidth.value;
 	const viewportHeight = workspace.viewportHeight.value;
@@ -77,6 +78,7 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = ({ channelInd
 
 	useEffect(() => {
 		rendererRef.current = new SpectrogramRenderer();
+		lastThemeRef.current = null;
 		return () => {
 			rendererRef.current?.dispose();
 			rendererRef.current = null;
@@ -95,7 +97,10 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = ({ channelInd
 		if (!canvasContext) return;
 		canvasContext.clearRect(0, 0, width, height);
 
-		renderer.uploadColormap(COLORMAP_TEXTURES[spectralTheme]);
+		if (lastThemeRef.current !== spectralTheme) {
+			renderer.uploadColormap(COLORMAP_TEXTURES[spectralTheme]);
+			lastThemeRef.current = spectralTheme;
+		}
 
 		if (overview) {
 			renderSlice(renderer, overview, numBins, canvas, width, height, scrollX, pixelsPerSecond, hopSize, sampleRate);

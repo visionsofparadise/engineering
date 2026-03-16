@@ -36,15 +36,18 @@ export const ChainSlots: React.FC<ChainSlotsProps> = ({ context, chain, setChain
 
 			const from = result.source.index;
 			const to = result.destination.index;
-			const item = chain.transforms[from];
-			if (!item) return;
 
-			const without = [...chain.transforms.slice(0, from), ...chain.transforms.slice(from + 1)];
-			const reordered = [...without.slice(0, to), item, ...without.slice(to)];
+			setChain((current) => {
+				const item = current.transforms[from];
+				if (!item) return current;
 
-			setChain(() => ({ ...chain, transforms: reordered }));
+				const without = [...current.transforms.slice(0, from), ...current.transforms.slice(from + 1)];
+				const reordered = [...without.slice(0, to), item, ...without.slice(to)];
+
+				return { ...current, transforms: reordered };
+			});
 		},
-		[chain, setChain],
+		[setChain],
 	);
 
 	return (
