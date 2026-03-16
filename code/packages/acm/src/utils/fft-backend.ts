@@ -16,6 +16,7 @@ const require = createRequire(import.meta.url);
 
 function tryLoadVkfft(vkfftPath?: string): VkFftAddon | null {
 	if (!vkfftPath) return null;
+
 	try {
 		return require(vkfftPath) as VkFftAddon;
 	} catch {
@@ -25,6 +26,7 @@ function tryLoadVkfft(vkfftPath?: string): VkFftAddon | null {
 
 function tryLoadFftw(fftwPath?: string): FftAddon | null {
 	if (!fftwPath) return null;
+
 	try {
 		return require(fftwPath) as FftAddon;
 	} catch {
@@ -36,19 +38,24 @@ export function detectFftBackend(executionProviders: ReadonlyArray<ExecutionProv
 	for (const provider of executionProviders) {
 		if (provider === "gpu") {
 			const vkfft = tryLoadVkfft(options?.vkfftPath);
+
 			if (vkfft) {
 				const device = vkfft.detectDevice();
+
 				if (device) {
 					return "vkfft";
 				}
 			}
 		}
+
 		if (provider === "cpu-native") {
 			const fftw = tryLoadFftw(options?.fftwPath);
+
 			if (fftw) {
 				return "fftw";
 			}
 		}
+
 		if (provider === "cpu") {
 			return "js";
 		}
@@ -60,5 +67,6 @@ export function detectFftBackend(executionProviders: ReadonlyArray<ExecutionProv
 export function getFftAddon(backend: FftBackend, options?: { vkfftPath?: string; fftwPath?: string }): FftAddon | null {
 	if (backend === "vkfft") return tryLoadVkfft(options?.vkfftPath);
 	if (backend === "fftw") return tryLoadFftw(options?.fftwPath);
+
 	return null;
 }

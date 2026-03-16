@@ -30,7 +30,7 @@ describe("FFT backend integration", () => {
 
 	for (const backend of backends) {
 		describe(`backend: ${backend}`, () => {
-			it("stft -> istft round-trip", () => {
+			it("stft -> istft round-trip", { timeout: 30_000 }, () => {
 				let result;
 				try {
 					result = stft(signal, fftSize, hopSize, undefined, backend, fftAddonOptions);

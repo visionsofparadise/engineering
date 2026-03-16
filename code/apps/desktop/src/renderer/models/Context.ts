@@ -2,6 +2,9 @@ import type { IdentifiedChain } from "../hooks/useChain";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Snapshot } from "valtio/vanilla";
 import type { Logger } from "../../shared/models/Logger/Logger";
+import type { SpectralData } from "../components/Session/Workspace/hooks/useSpectralData";
+import type { SpectrogramHeader } from "../components/Session/Workspace/hooks/useSpectrogramHeader";
+import type { WaveformHeader } from "../components/Session/Workspace/hooks/useWaveformHeader";
 import type { MainWithEvents } from "./Main";
 import type { PlaybackEngine } from "./PlaybackEngine";
 import type { ProxyStore } from "./ProxyStore/ProxyStore";
@@ -31,4 +34,11 @@ export interface SessionContext extends AppContext {
 	readonly selection: Snapshot<SelectionState>;
 	readonly playback: Snapshot<PlaybackState>;
 	readonly playbackEngine: PlaybackEngine;
+}
+
+export interface WorkspaceContext extends SessionContext {
+	readonly spectrogramHeader: SpectrogramHeader;
+	readonly waveformHeader: WaveformHeader;
+	readonly spectralData: SpectralData;
+	readonly channelCount: number;
 }

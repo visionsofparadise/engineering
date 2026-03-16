@@ -20,11 +20,11 @@ export function buildChain(input: ApplyInput, registry: ModuleRegistry): AudioCh
 	const transforms: Array<AudioChainModule> = input.transforms.filter((ref) => !ref.bypass).map((ref) => resolveModule(ref, registry));
 
 	if (input.waveform) {
-		transforms.push(new WaveformTransformModule({ outputPath: input.waveform.path, resolution: 1000 }));
+		transforms.push(new WaveformTransformModule({ outputPath: input.waveform.path, resolution: 500 }));
 	}
 
 	if (input.spectrogram) {
-		transforms.push(new SpectrogramModule({ outputPath: input.spectrogram.path, fftSize: 1024, hopSize: 1024, frequencyScale: (input.spectrogram.frequencyScale ?? "log") as FrequencyScale }));
+		transforms.push(new SpectrogramModule({ outputPath: input.spectrogram.path, fftSize: 4096, hopSize: 4096, frequencyScale: (input.spectrogram.frequencyScale ?? "log") as FrequencyScale }));
 	}
 
 	const encoding: EncodingOptions | undefined = input.encoding?.format === "wav" ? undefined : input.encoding;

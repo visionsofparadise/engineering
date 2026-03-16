@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import type { FftBackend } from "./fft-backend";
 import { getFftAddon } from "./fft-backend";
 
@@ -233,10 +234,10 @@ export function bitReverse(re: Float32Array, im: Float32Array, size: number): vo
 
 	for (let index = 0; index < size - 1; index++) {
 		if (index < rev) {
-			const tempRe = re[index] ?? 0;
-			const tempIm = im[index] ?? 0;
-			re[index] = re[rev] ?? 0;
-			im[index] = im[rev] ?? 0;
+			const tempRe = re[index]!;
+			const tempIm = im[index]!;
+			re[index] = re[rev]!;
+			im[index] = im[rev]!;
 			re[rev] = tempRe;
 			im[rev] = tempIm;
 		}
@@ -295,18 +296,23 @@ export function butterflyStages(re: Float32Array, im: Float32Array, size: number
 
 		for (let group = 0; group < size; group += step) {
 			for (let pair = 0; pair < halfStep; pair++) {
-				const twiddleRe = twRe[twOffset + pair] ?? 0;
-				const twiddleIm = twIm[twOffset + pair] ?? 0;
+				const wr = twRe[twOffset + pair]!;
+				const wi = twIm[twOffset + pair]!;
 				const evenIdx = group + pair;
 				const oddIdx = group + pair + halfStep;
 
-				const tRe = (re[oddIdx] ?? 0) * twiddleRe - (im[oddIdx] ?? 0) * twiddleIm;
-				const tIm = (re[oddIdx] ?? 0) * twiddleIm + (im[oddIdx] ?? 0) * twiddleRe;
+				const oddRe = re[oddIdx]!;
+				const oddIm = im[oddIdx]!;
+				const evenRe = re[evenIdx]!;
+				const evenIm = im[evenIdx]!;
 
-				re[oddIdx] = (re[evenIdx] ?? 0) - tRe;
-				im[oddIdx] = (im[evenIdx] ?? 0) - tIm;
-				re[evenIdx] = (re[evenIdx] ?? 0) + tRe;
-				im[evenIdx] = (im[evenIdx] ?? 0) + tIm;
+				const tRe = oddRe * wr - oddIm * wi;
+				const tIm = oddRe * wi + oddIm * wr;
+
+				re[oddIdx] = evenRe - tRe;
+				im[oddIdx] = evenIm - tIm;
+				re[evenIdx] = evenRe + tRe;
+				im[evenIdx] = evenIm + tIm;
 			}
 		}
 

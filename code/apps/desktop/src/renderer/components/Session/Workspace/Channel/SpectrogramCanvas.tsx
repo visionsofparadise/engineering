@@ -1,65 +1,115 @@
 import { useEffect, useRef } from "react";
+import type { WorkspaceContext } from "../../../../models/Context";
+import type { SpectralTheme } from "../../../../models/State/App";
+import { msToPixels } from "../../../../utils/time";
+import type { SpectralSlice } from "../hooks/useSpectralData";
+import { lavaColor } from "./utils/lava";
 import { viridisColor } from "./utils/viridis";
+import { SpectrogramRenderer, generateColormapTexture } from "./utils/webgl";
 
 interface SpectrogramCanvasProps {
-	readonly data: Float32Array;
-	readonly numFrames: number;
-	readonly numBins: number;
-	readonly width: number;
-	readonly height: number;
-	readonly dbRange: readonly [number, number];
+	readonly channelIndex: number;
+	readonly context: WorkspaceContext;
 }
 
-export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = ({ data, numFrames, numBins, width, height, dbRange }) => {
+const COLORMAP_TEXTURES: Record<SpectralTheme, Uint8Array> = {
+	lava: generateColormapTexture(lavaColor),
+	viridis: generateColormapTexture(viridisColor),
+};
+
+const DB_RANGE: readonly [number, number] = [-120, 0];
+
+function renderSlice(
+	renderer: SpectrogramRenderer,
+	slice: SpectralSlice,
+	numBins: number,
+	canvas: HTMLCanvasElement,
+	canvasWidth: number,
+	canvasHeight: number,
+	scrollX: number,
+	pixelsPerSecond: number,
+	hopSize: number,
+	sampleRate: number,
+): void {
+	const sliceStartMs = ((slice.startIndex * hopSize) / sampleRate) * 1000;
+	const sliceEndMs = ((slice.endIndex * hopSize) / sampleRate) * 1000;
+	const sliceStartPx = msToPixels(sliceStartMs, pixelsPerSecond) - scrollX;
+	const sliceEndPx = msToPixels(sliceEndMs, pixelsPerSecond) - scrollX;
+
+	const drawX = Math.max(0, Math.floor(sliceStartPx));
+	const drawEnd = Math.min(canvasWidth, Math.ceil(sliceEndPx));
+	const drawW = drawEnd - drawX;
+
+	if (drawW <= 0) return;
+
+	const sliceWidthPx = sliceEndPx - sliceStartPx;
+	const srcStartFrac = (drawX - sliceStartPx) / sliceWidthPx;
+	const srcEndFrac = (drawEnd - sliceStartPx) / sliceWidthPx;
+	const srcStartFrame = Math.floor(srcStartFrac * slice.width);
+	const srcEndFrame = Math.min(slice.width, Math.ceil(srcEndFrac * slice.width));
+	const srcFrameCount = srcEndFrame - srcStartFrame;
+
+	if (srcFrameCount <= 0) return;
+
+	const srcData = slice.data.subarray(srcStartFrame * numBins, srcEndFrame * numBins);
+	renderer.render(srcData, srcFrameCount, numBins, DB_RANGE, canvas, drawX, drawW, canvasHeight);
+}
+
+export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = ({ channelIndex, context }) => {
+	const { app, workspace, spectrogramHeader, channelCount, spectralData } = context;
+
 	const canvasRef = useRef<HTMLCanvasElement>(null);
+	const rendererRef = useRef<SpectrogramRenderer | null>(null);
+
+	const viewportWidth = workspace.viewportWidth.value;
+	const viewportHeight = workspace.viewportHeight.value;
+	const height = viewportHeight > 0 ? viewportHeight / channelCount : 0;
+	const width = viewportWidth;
+	const scrollX = workspace.scrollX.value;
+	const pixelsPerSecond = workspace.pixelsPerSecond.value;
+	const numBins = spectrogramHeader.numBins;
+	const hopSize = spectrogramHeader.hopSize;
+	const sampleRate = spectrogramHeader.sampleRate;
+	const spectralTheme = app.spectralTheme;
+	const channelData = spectralData[channelIndex];
+	const overview = channelData?.spectrogramOverview ?? null;
+	const detail = channelData?.spectrogramDetail ?? null;
+
+	useEffect(() => {
+		rendererRef.current = new SpectrogramRenderer();
+		return () => {
+			rendererRef.current?.dispose();
+			rendererRef.current = null;
+		};
+	}, []);
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
-		if (!canvas) return;
-
-		const canvasContext = canvas.getContext("2d");
-		if (!canvasContext) return;
+		const renderer = rendererRef.current;
+		if (!canvas || !renderer || width <= 0 || height <= 0) return;
 
 		canvas.width = width;
 		canvas.height = height;
 
-		if (numFrames === 0 || numBins === 0) {
-			canvasContext.clearRect(0, 0, width, height);
-			return;
+		const canvasContext = canvas.getContext("2d");
+		if (!canvasContext) return;
+		canvasContext.clearRect(0, 0, width, height);
+
+		renderer.uploadColormap(COLORMAP_TEXTURES[spectralTheme]);
+
+		if (overview) {
+			renderSlice(renderer, overview, numBins, canvas, width, height, scrollX, pixelsPerSecond, hopSize, sampleRate);
 		}
 
-		const imageData = canvasContext.createImageData(width, height);
-		const pixels = imageData.data;
-		const dbMin = dbRange[0];
-		const dbMax = dbRange[1];
-		const dbSpan = dbMax - dbMin;
-
-		for (let py = 0; py < height; py++) {
-			const band = Math.floor(((height - 1 - py) / (height - 1)) * (numBins - 1));
-
-			for (let px = 0; px < width; px++) {
-				const frame = Math.floor((px / width) * numFrames);
-				const magnitude = data[frame * numBins + band] ?? 0;
-
-				const db = magnitude > 0 ? 20 * Math.log10(magnitude) : dbMin;
-				const normalized = Math.max(0, Math.min(1, (db - dbMin) / dbSpan));
-
-				const [red, green, blue] = viridisColor(normalized);
-				const offset = (py * width + px) * 4;
-				pixels[offset] = red;
-				pixels[offset + 1] = green;
-				pixels[offset + 2] = blue;
-				pixels[offset + 3] = 255;
-			}
+		if (detail) {
+			renderSlice(renderer, detail, numBins, canvas, width, height, scrollX, pixelsPerSecond, hopSize, sampleRate);
 		}
-
-		canvasContext.putImageData(imageData, 0, 0);
-	}, [data, numFrames, numBins, width, height, dbRange]);
+	}, [overview, detail, numBins, width, height, spectralTheme, scrollX, pixelsPerSecond, hopSize, sampleRate]);
 
 	return (
 		<canvas
 			ref={canvasRef}
-			className="block"
+			className="absolute inset-0 block"
 			style={{ width, height }}
 		/>
 	);

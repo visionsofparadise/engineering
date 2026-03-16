@@ -1,18 +1,19 @@
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import type { SessionContext, WorkspaceContext } from "../../../models/Context";
 import { resnapshot } from "../../../models/ProxyStore/resnapshot";
-import { useCallback, useEffect, useRef } from "react";
-import type { SessionContext } from "../../../models/Context";
-import { clampPixelsPerSecond, getMinPixelsPerSecond } from "../../../utils/time";
-import { AmplitudeAxis, AMPLITUDE_AXIS_WIDTH } from "./Channel/AmplitudeAxis";
-import { CursorIndicator } from "./Channel/CursorIndicator";
-import { Playhead } from "./Channel/Playhead";
-import { FrequencyAxis, FREQUENCY_AXIS_WIDTH } from "./Channel/FrequencyAxis";
-import { ChannelLane } from "./Channel/Lane";
-import { SelectionOverlay } from "./Channel/SelectionOverlay";
+import { clampPixelsPerSecond, getMinPixelsPerSecond, msToPixels } from "../../../utils/time";
 import { useActiveSnapshotPath } from "../hooks/useActiveSnapshotPath";
+import { AMPLITUDE_AXIS_WIDTH, AmplitudeAxis } from "./Channel/AmplitudeAxis";
+import { CursorIndicator } from "./Channel/CursorIndicator";
+import { FREQUENCY_AXIS_WIDTH, FrequencyAxis } from "./Channel/FrequencyAxis";
+import { ChannelLane } from "./Channel/Lane";
+import { Playhead } from "./Channel/Playhead";
+import { SelectionOverlay } from "./Channel/SelectionOverlay";
+import { useWorkspaceResize } from "./hooks/useResize";
 import { useSelectionInteraction } from "./hooks/useSelectionInteraction";
+import { useSpectralData } from "./hooks/useSpectralData";
 import { useSpectrogramHeader } from "./hooks/useSpectrogramHeader";
 import { useWaveformHeader } from "./hooks/useWaveformHeader";
-import { useWorkspaceResize } from "./hooks/useResize";
 import { useWorkspaceWheel } from "./hooks/useWheel";
 import { Ruler } from "./Ruler";
 
@@ -22,7 +23,6 @@ interface WorkspaceProps {
 
 export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 	const { workspace, sessionStore } = context;
-	const lanesRef = useRef<HTMLDivElement>(null);
 
 	const activeSnapshotPath = useActiveSnapshotPath(context);
 	const waveformHeader = useWaveformHeader(activeSnapshotPath);
@@ -30,18 +30,52 @@ export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 	const durationMs = waveformHeader ? (waveformHeader.totalPoints / waveformHeader.resolution) * 1000 : 0;
 	const channelCount = waveformHeader?.channels ?? 0;
 
-	useWorkspaceResize(lanesRef, context);
+	const lanesRef = useWorkspaceResize(context);
+
+	const spectralData = useSpectralData(
+		activeSnapshotPath,
+		spectrogramHeader,
+		waveformHeader,
+		workspace.scrollX.value,
+		workspace.pixelsPerSecond.value,
+		workspace.viewportWidth.value,
+	);
+
+	const initialZoomApplied = useRef(false);
 
 	useEffect(() => {
+		if (initialZoomApplied.current) return;
+
 		const viewportWidth = workspace.viewportWidth.value;
 
 		if (viewportWidth > 0 && durationMs > 0) {
+			initialZoomApplied.current = true;
 			sessionStore.mutate(workspace, (proxy) => {
 				proxy.pixelsPerSecond.committed.value = clampPixelsPerSecond(getMinPixelsPerSecond(viewportWidth, durationMs), viewportWidth, durationMs);
 				proxy.scrollX.committed.value = 0;
 			});
 		}
-	}, [durationMs, workspace, sessionStore]);
+	}, [durationMs, workspace, sessionStore, workspace.viewportWidth.value]);
+
+	useEffect(() => {
+		if (!initialZoomApplied.current) return;
+
+		const viewportWidth = workspace.viewportWidth.value;
+		if (viewportWidth <= 0 || durationMs <= 0) return;
+
+		const currentPps = workspace.pixelsPerSecond.value;
+		const clampedPps = clampPixelsPerSecond(currentPps, viewportWidth, durationMs);
+		const maxScrollX = Math.max(0, msToPixels(durationMs, clampedPps) - viewportWidth);
+		const currentScrollX = workspace.scrollX.value;
+		const clampedScrollX = Math.min(currentScrollX, maxScrollX);
+
+		if (clampedPps !== currentPps || clampedScrollX !== currentScrollX) {
+			sessionStore.mutate(workspace, (proxy) => {
+				proxy.pixelsPerSecond.committed.value = clampedPps;
+				proxy.scrollX.committed.value = clampedScrollX;
+			});
+		}
+	}, [workspace.viewportWidth.value, durationMs, workspace, sessionStore]);
 
 	const handleWheel = useWorkspaceWheel(durationMs, context);
 	const selectionHandlers = useSelectionInteraction(context);
@@ -49,6 +83,7 @@ export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 	const handleMouseMove = useCallback(
 		(event: React.MouseEvent) => {
 			const rect = event.currentTarget.getBoundingClientRect();
+
 			sessionStore.mutate(workspace, (proxy) => {
 				proxy.cursorX.committed.value = event.clientX - rect.left;
 			});
@@ -62,7 +97,19 @@ export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 		});
 	}, [workspace, sessionStore]);
 
-	if (channelCount === 0) {
+	const workspaceContext = useMemo((): WorkspaceContext | undefined => {
+		if (!spectrogramHeader || !waveformHeader || channelCount === 0) return undefined;
+
+		return {
+			...context,
+			spectrogramHeader,
+			waveformHeader,
+			spectralData,
+			channelCount,
+		};
+	}, [context, spectrogramHeader, waveformHeader, spectralData, channelCount]);
+
+	if (!workspaceContext) {
 		return (
 			<div className="flex h-full items-center justify-center bg-background">
 				<p className="text-sm text-muted-foreground">Loading...</p>
@@ -93,6 +140,7 @@ export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 							height={laneHeight}
 							minFrequency={spectrogramHeader?.minFrequency ?? 20}
 							maxFrequency={spectrogramHeader?.maxFrequency ?? 20000}
+							frequencyScale={spectrogramHeader?.frequencyScale ?? "log"}
 						/>
 					))}
 				</div>
@@ -112,8 +160,7 @@ export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 							<ChannelLane
 								key={channelIndex}
 								channelIndex={channelIndex}
-								laneHeight={laneHeight}
-								context={context}
+								context={workspaceContext}
 							/>
 						))}
 					</div>

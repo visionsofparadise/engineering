@@ -60,7 +60,7 @@ export async function appendBenchmarkLog(logDir: string, result: BenchmarkResult
 	const logPath = resolve(logDir, "benchmarks.log");
 	const timestamp = new Date().toISOString();
 
-	const line = `${timestamp} | ${result.totalMs.toFixed(1).padStart(10)}ms | ${Math.round(result.samplesPerSecond).toString().padStart(14)} samples/sec | ${result.realTimeMultiplier.toFixed(2).padStart(8)}x RT | Node ${process.version} ${process.platform}\n`;
+	const line = `${timestamp} | ${result.name.padEnd(30)} | ${result.totalMs.toFixed(1).padStart(10)}ms | ${Math.round(result.samplesPerSecond).toString().padStart(14)} samples/sec | ${result.realTimeMultiplier.toFixed(2).padStart(8)}x RT | Node ${process.version} ${process.platform}\n`;
 
 	await appendFile(logPath, line);
 }

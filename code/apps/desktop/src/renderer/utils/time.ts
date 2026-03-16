@@ -1,5 +1,5 @@
-const MIN_PIXELS_PER_SECOND = 10;
-const MAX_PIXELS_PER_SECOND = 8192;
+const MIN_PIXELS_PER_SECOND = 0.01;
+const MAX_PIXELS_PER_SECOND = 262144;
 
 export function msToPixels(ms: number, pixelsPerSecond: number): number {
 	return (ms * pixelsPerSecond) / 1000;

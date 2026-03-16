@@ -331,3 +331,47 @@
 	border: 1px solid var(--border);
 	box-shadow: var(--shadow-raised);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   REACT FLOW THEME OVERRIDES
+   Override React Flow's --xy-* CSS variable system to bind to
+   our design tokens. This ensures the canvas, nodes, edges,
+   handles, and controls all follow our theme in both light and
+   dark mode without needing React Flow's colorMode prop.
+   ═══════════════════════════════════════════════════════════════ */
+
+.graph-editor-canvas .react-flow {
+	/* Use non-default vars — these override React Flow's .dark defaults */
+
+	/* Canvas */
+	--xy-background-color: var(--background);
+	--xy-background-pattern-color: color-mix(in srgb, var(--border) 25%, transparent);
+
+	/* Nodes */
+	--xy-node-background-color: transparent;
+	--xy-node-border: none;
+	--xy-node-color: var(--foreground);
+	--xy-node-boxshadow-hover: none;
+	--xy-node-boxshadow-selected: none;
+	--xy-node-border-radius: 0;
+
+	/* Edges */
+	--xy-edge-stroke: var(--border);
+	--xy-edge-stroke-selected: var(--primary);
+
+	/* Handles */
+	--xy-handle-background-color: var(--surface-control);
+	--xy-handle-border-color: var(--border);
+
+	/* Selection */
+	--xy-selection-background-color: hsla(28, 45%, 42%, 0.08);
+	--xy-selection-border: 1px dotted var(--primary);
+
+	/* Controls */
+	--xy-controls-button-background-color: var(--surface-control);
+	--xy-controls-button-background-color-hover: var(--surface-control-hover);
+	--xy-controls-button-color: var(--muted-foreground);
+	--xy-controls-button-color-hover: var(--foreground);
+	--xy-controls-button-border-color: var(--border);
+	--xy-controls-box-shadow: none;
+}

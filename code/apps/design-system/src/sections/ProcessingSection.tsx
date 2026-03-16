@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { cn } from "../utils/cn";
 import { Processing } from "./Processing";
+import { GraphEditor } from "./GraphEditor";
 import { Progress } from "./Progress";
 
 const SUBSECTIONS = [
 	{ id: "chain", label: "Chain", component: Processing },
+	{ id: "graph", label: "Graph", component: GraphEditor },
 	{ id: "progress", label: "Progress", component: Progress },
 ] as const;
 

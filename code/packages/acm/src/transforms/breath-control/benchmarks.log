@@ -12,3 +12,5 @@
 2026-03-12T19:33:26.502Z |      589.8ms |        2283673 samples/sec |    51.78x RT | Node v22.20.0 win32
 2026-03-12T20:00:02.283Z |      723.9ms |        1860422 samples/sec |    42.19x RT | Node v22.20.0 win32
 2026-03-12T20:41:20.295Z |      794.9ms |        3388525 samples/sec |    76.84x RT | Node v22.20.0 win32
+2026-03-15T04:31:48.069Z |      466.1ms |        5779686 samples/sec |   131.06x RT | Node v22.20.0 win32
+2026-03-15T04:36:10.428Z |      614.5ms |        4383790 samples/sec |    99.41x RT | Node v22.20.0 win32

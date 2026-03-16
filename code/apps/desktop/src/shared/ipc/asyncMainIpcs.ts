@@ -9,6 +9,8 @@ import { ReadDirectoryMainIpc } from "./FileSystem/readDirectory/Main";
 import { ReadFileMainIpc } from "./FileSystem/readFile/Main";
 import { ReadFileBufferMainIpc } from "./FileSystem/readFileBuffer/Main";
 import { ReadFileChunkMainIpc } from "./FileSystem/readFileChunk/Main";
+import { ReadSpectrogramRangeMainIpc } from "./FileSystem/readSpectrogramRange/Main";
+import { ReadWaveformRangeMainIpc } from "./FileSystem/readWaveformRange/Main";
 import { StatMainIpc } from "./FileSystem/stat/Main";
 import { WriteFileMainIpc } from "./FileSystem/writeFile/Main";
 import { GitCloneMainIpc } from "./Git/clone/Main";
@@ -36,6 +38,8 @@ export const ASYNC_MAIN_IPCS = [
 	ReadFileMainIpc,
 	ReadFileBufferMainIpc,
 	ReadFileChunkMainIpc,
+	ReadSpectrogramRangeMainIpc,
+	ReadWaveformRangeMainIpc,
 	StatMainIpc,
 	UnloadPackageModulesMainIpc,
 	WriteFileMainIpc,

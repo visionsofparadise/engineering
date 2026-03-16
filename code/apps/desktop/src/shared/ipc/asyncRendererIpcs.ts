@@ -10,6 +10,8 @@ import { ReadDirectoryRendererIpc } from "./FileSystem/readDirectory/Renderer";
 import { ReadFileRendererIpc } from "./FileSystem/readFile/Renderer";
 import { ReadFileBufferRendererIpc } from "./FileSystem/readFileBuffer/Renderer";
 import { ReadFileChunkRendererIpc } from "./FileSystem/readFileChunk/Renderer";
+import { ReadSpectrogramRangeRendererIpc } from "./FileSystem/readSpectrogramRange/Renderer";
+import { ReadWaveformRangeRendererIpc } from "./FileSystem/readWaveformRange/Renderer";
 import { StatRendererIpc } from "./FileSystem/stat/Renderer";
 import { WriteFileRendererIpc } from "./FileSystem/writeFile/Renderer";
 import { GitCloneRendererIpc } from "./Git/clone/Renderer";
@@ -37,6 +39,8 @@ export const ASYNC_RENDERER_IPCS = [
 	ReadFileRendererIpc,
 	ReadFileBufferRendererIpc,
 	ReadFileChunkRendererIpc,
+	ReadSpectrogramRangeRendererIpc,
+	ReadWaveformRangeRendererIpc,
 	StatRendererIpc,
 	UnloadPackageModulesRendererIpc,
 	WriteFileRendererIpc,
