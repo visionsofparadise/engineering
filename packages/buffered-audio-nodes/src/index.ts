@@ -1,22 +1,23 @@
 /* eslint-disable barrel-files/avoid-barrel-files */
 // Types
-export type { AudioChunk, ExecutionProvider, FileInputMeta, ModuleSchema, RenderOptions, StreamContext, StreamMeta } from "./node";
+export type { AudioChunk, ExecutionProvider, FileInputMeta, ModuleSchema, RenderOptions, StreamContext } from "./node";
 
 // Base classes
-export { ChunkBuffer, type BufferStorage } from "./buffer";
+export { ChunkBuffer, FileChunkBuffer, MemoryChunkBuffer, type BufferStorage } from "./buffer";
 export { BufferedAudioNode, type BufferedAudioNodeInput, type BufferedAudioNodeProperties } from "./node";
-export { BufferedSourceStream, SourceNode, type RenderTiming, type SourceNodeProperties, type SourceStreamEventMap } from "./sources";
-export { BufferedTargetStream, TargetNode, type TargetNodeProperties, type TargetStreamEventMap } from "./targets";
-export { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties, type TransformStreamEventMap } from "./transforms";
+export { BufferedStream, type StreamEventMap } from "./stream";
+export { BufferedSourceStream, SourceNode, type RenderTiming, type SourceMetadata, type SourceNodeProperties } from "./sources";
+export { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "./targets";
+export { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "./transforms";
 
 // Graph format (BAG)
-export { validateGraphDefinition, type GraphDefinition, type GraphEdge, type GraphNode } from "./graph-format";
+export { graphDefinitionToNodes, renderGraph, validateGraphDefinition, type GraphDefinition, type GraphEdge, type GraphNode, type NodeRegistry } from "./graph-format";
 
 // Graph executor
-export { graphDefinitionToNodes, renderGraph, setupPipeline, type NodeRegistry } from "./executor";
+export { setupPipeline } from "./executor";
 
 // Sources
-export { read, ReadNode, ReadStream, type ReadProperties } from "./sources/read";
+export { read, ReadNode, ReadWavStream, ReadFfmpegStream, type ReadProperties } from "./sources/read";
 
 // Targets
 export { loudnessStats, LoudnessStatsNode, LoudnessStatsStream, type LoudnessStats } from "./targets/loudness-stats";

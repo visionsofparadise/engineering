@@ -7,6 +7,7 @@ const execFileAsync = promisify(execFile);
 export async function resolveBinary(name: string, providedPath?: string): Promise<string> {
 	if (providedPath) {
 		await access(providedPath, constants.X_OK);
+
 		return providedPath;
 	}
 
@@ -15,12 +16,14 @@ export async function resolveBinary(name: string, providedPath?: string): Promis
 
 	if (envPath) {
 		await access(envPath, constants.X_OK);
+
 		return envPath;
 	}
 
 	try {
 		const { stdout } = await execFileAsync(process.platform === "win32" ? "where" : "which", [name]);
 		const resolved = stdout.trim().split("\n")[0]?.trim();
+
 		if (resolved) return resolved;
 	} catch {
 		// not found in PATH

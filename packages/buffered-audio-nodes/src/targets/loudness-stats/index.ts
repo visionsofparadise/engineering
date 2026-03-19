@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 import { WHOLE_FILE } from "../../transforms";
 import { biquadFilter, preFilterCoefficients, rlbFilterCoefficients } from "../../utils/biquad";
 
@@ -37,16 +37,21 @@ export class LoudnessStatsStream extends BufferedTargetStream {
 		}
 	}
 
+	// eslint-disable-next-line @typescript-eslint/require-await
 	override async _write(chunk: AudioChunk): Promise<void> {
 		this.ensureInit(chunk);
 		for (let ch = 0; ch < this.channels; ch++) {
 			const samples = chunk.samples[ch];
+
 			if (!samples) continue;
 
-			this.channelBuffers[ch]!.push(new Float32Array(samples));
+			const channelBuffer = this.channelBuffers[ch];
+
+			if (channelBuffer) channelBuffer.push(new Float32Array(samples));
 
 			for (const sample of samples) {
 				const abs = Math.abs(sample);
+
 				if (abs > this.truePeakValue) {
 					this.truePeakValue = abs;
 				}
@@ -56,6 +61,7 @@ export class LoudnessStatsStream extends BufferedTargetStream {
 		this.totalFrames += chunk.samples[0]?.length ?? 0;
 	}
 
+	// eslint-disable-next-line @typescript-eslint/require-await
 	override async _close(): Promise<void> {
 		const channels = this.channels;
 		const frames = this.totalFrames;
@@ -91,17 +97,20 @@ export class LoudnessStatsNode extends TargetNode {
 		return TargetNode.is(value) && value.type[2] === "loudness-stats";
 	}
 
-	override readonly type = ["async-module", "target", "loudness-stats"] as const;
-	override readonly bufferSize = Infinity;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "target", "loudness-stats"] as const;
+
+	constructor(properties?: TargetNodeProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
 
 	get stats(): LoudnessStats | undefined {
 		const last = this.streams[this.streams.length - 1];
+
 		return last instanceof LoudnessStatsStream ? last.stats : undefined;
 	}
 
-	override createStream(context: StreamContext): LoudnessStatsStream {
-		return new LoudnessStatsStream(this.properties, context);
+	override createStream(): LoudnessStatsStream {
+		return new LoudnessStatsStream(this.properties);
 	}
 
 	override clone(overrides?: Partial<TargetNodeProperties>): LoudnessStatsNode {
@@ -112,10 +121,12 @@ export class LoudnessStatsNode extends TargetNode {
 function flattenBuffers(chunks: Array<Float32Array>, totalFrames: number): Float32Array {
 	const result = new Float32Array(totalFrames);
 	let offset = 0;
+
 	for (const chunk of chunks) {
 		result.set(chunk, offset);
 		offset += chunk.length;
 	}
+
 	return result;
 }
 
@@ -123,9 +134,13 @@ function applyKWeighting(channelBuffers: Array<Array<Float32Array>>, channels: n
 	const result: Array<Float32Array> = [];
 
 	for (let ch = 0; ch < channels; ch++) {
-		const channelData = flattenBuffers(channelBuffers[ch]!, frames);
+		const buffers = channelBuffers[ch];
+
+		if (!buffers) continue;
+		const channelData = flattenBuffers(buffers, frames);
 		const filtered = applyPreFilter(channelData, sampleRate);
 		const rlbFiltered = applyRlbFilter(filtered, sampleRate);
+
 		result.push(rlbFiltered);
 	}
 
@@ -134,11 +149,13 @@ function applyKWeighting(channelBuffers: Array<Array<Float32Array>>, channels: n
 
 function applyPreFilter(samples: Float32Array, sampleRate: number): Float32Array {
 	const { fb, fa } = preFilterCoefficients(sampleRate);
+
 	return biquadFilter(samples, fb, fa);
 }
 
 function applyRlbFilter(samples: Float32Array, sampleRate: number): Float32Array {
 	const { fb, fa } = rlbFilterCoefficients(sampleRate);
+
 	return biquadFilter(samples, fb, fa);
 }
 
@@ -157,6 +174,7 @@ function computeBlockLoudness(kWeighted: Array<Float32Array>, channels: number, 
 
 			for (let index = start; index < start + blockSize; index++) {
 				const sample = channel[index] ?? 0;
+
 				sum += sample * sample;
 			}
 
@@ -164,6 +182,7 @@ function computeBlockLoudness(kWeighted: Array<Float32Array>, channels: number, 
 		}
 
 		const loudness = -0.691 + 10 * Math.log10(Math.max(sumMeanSquare, 1e-10));
+
 		results.push(loudness);
 	}
 

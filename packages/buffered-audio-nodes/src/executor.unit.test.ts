@@ -1,38 +1,37 @@
 import { describe, expect, it } from "vitest";
 import type { ChunkBuffer } from "./buffer";
-import { detectCycle } from "./executor";
 import { validateGraphDefinition } from "./graph-format";
-import type { AudioChunk, StreamContext, StreamMeta } from "./node";
+import type { AudioChunk } from "./node";
+import type { SourceMetadata } from "./sources";
 import { BufferedSourceStream, SourceNode } from "./sources";
 import { BufferedTargetStream, TargetNode } from "./targets";
 import { BufferedTransformStream, TransformNode } from "./transforms";
 
 class MockSourceStream extends BufferedSourceStream {
-	override async _init(): Promise<StreamMeta> {
-		return this.properties.meta as StreamMeta;
+	override async getMetadata(): Promise<SourceMetadata> {
+		return this.properties.meta as SourceMetadata;
 	}
 
-	override async _read(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void> {
+	override async _read(): Promise<AudioChunk | undefined> {
 		const chunks = this.properties.chunks as Array<AudioChunk>;
 		const index = this.properties.chunkIndex as number;
 		const chunk = chunks[index];
 		if (chunk) {
 			(this.properties as Record<string, unknown>).chunkIndex = index + 1;
-			controller.enqueue(chunk);
-		} else {
-			controller.close();
+			return chunk;
 		}
+		return undefined;
 	}
 
 	override async _flush(): Promise<void> {}
 }
 
 class MockSource extends SourceNode {
-	readonly type = ["async-module", "source", "mock"] as const;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	readonly type = ["buffered-audio-node", "source", "mock"] as const;
+	get bufferSize(): number { return 0; }
+	get latency(): number { return 0; }
 
-	constructor(chunks: Array<AudioChunk> = [], meta: StreamMeta = { sampleRate: 44100, channels: 1 }) {
+	constructor(chunks: Array<AudioChunk> = [], meta: SourceMetadata = { sampleRate: 44100, channels: 1 }) {
 		super({ chunks, meta, chunkIndex: 0 } as never);
 	}
 
@@ -55,17 +54,19 @@ class MockTransformStream extends BufferedTransformStream {
 }
 
 class MockTransform extends TransformNode {
-	readonly type = ["async-module", "transform", "mock"] as const;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	readonly type = ["buffered-audio-node", "transform", "mock"] as const;
+	get bufferSize(): number { return 0; }
+	get latency(): number { return 0; }
+
+	private _lastStream?: MockTransformStream;
 
 	get processedChunks(): Array<AudioChunk> {
-		const last = this.streams[this.streams.length - 1];
-		return last instanceof MockTransformStream ? last.processedChunks : [];
+		return this._lastStream?.processedChunks ?? [];
 	}
 
-	override createStream(context: StreamContext): MockTransformStream {
-		return new MockTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): MockTransformStream {
+		this._lastStream = new MockTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
+		return this._lastStream;
 	}
 
 	clone(): MockTransform {
@@ -87,17 +88,19 @@ class MockTargetStream extends BufferedTargetStream {
 }
 
 class MockTarget extends TargetNode {
-	readonly type = ["async-module", "target", "mock"] as const;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	readonly type = ["buffered-audio-node", "target", "mock"] as const;
+	get bufferSize(): number { return 0; }
+	get latency(): number { return 0; }
+
+	private _lastStream?: MockTargetStream;
 
 	get lastCreatedStream(): MockTargetStream | undefined {
-		const last = this.streams[this.streams.length - 1];
-		return last instanceof MockTargetStream ? last : undefined;
+		return this._lastStream;
 	}
 
-	override createStream(context: StreamContext): MockTargetStream {
-		return new MockTargetStream(this.properties as unknown as Record<string, unknown>, context);
+	override createStream(): MockTargetStream {
+		this._lastStream = new MockTargetStream(this.properties as unknown as Record<string, unknown>);
+		return this._lastStream;
 	}
 
 	clone(): MockTarget {
@@ -158,14 +161,16 @@ describe("Graph executor", () => {
 		expect(target2.lastCreatedStream?.receivedChunks).toHaveLength(1);
 	});
 
-	it("cycle detection throws", () => {
-		const source = new MockSource();
+	it("cycle detection throws", async () => {
+		const source = new MockSource([], { sampleRate: 44100, channels: 1 });
 		const transform = new MockTransform();
+		const target = new MockTarget();
 
 		source.to(transform);
-		transform.children.push(source);
+		transform.to(target);
+		transform.children.push(target);
 
-		expect(() => detectCycle(source)).toThrow("Cycle detected");
+		await expect(source.render()).rejects.toThrow("Cycle detected");
 	});
 
 	it("validates graph definition schema", () => {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 
 export const schema = z.object({
 	invert: z.boolean().default(true).describe("Invert"),
@@ -55,6 +55,7 @@ export class PhaseStream extends BufferedTransformStream<PhaseProperties> {
 			for (let index = 0; index < channel.length; index++) {
 				const input = channel[index] ?? 0;
 				const allpassOut = coefficient * input + state;
+
 				state = input - coefficient * allpassOut;
 				output[index] = allpassOut;
 			}
@@ -76,13 +77,10 @@ export class PhaseNode extends TransformNode<PhaseProperties> {
 		return TransformNode.is(value) && value.type[2] === "phase";
 	}
 
-	override readonly type = ["async-module", "transform", "phase"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "phase"] as const;
 
-	override readonly bufferSize = 0;
-	override readonly latency = 0;
-
-	override createStream(context: StreamContext): PhaseStream {
-		return new PhaseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): PhaseStream {
+		return new PhaseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<PhaseProperties>): PhaseNode {

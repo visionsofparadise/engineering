@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
 
 export const schema = z.object({
 	threshold: z.number().min(0).max(1).multipleOf(0.001).default(0.001).describe("Threshold"),
@@ -31,6 +30,7 @@ export class TrimStream extends BufferedTransformStream<TrimProperties> {
 
 		if (firstAbove >= frames) {
 			await buffer.truncate(0);
+
 			return;
 		}
 
@@ -76,12 +76,14 @@ export class TrimNode extends TransformNode<TrimProperties> {
 		return TransformNode.is(value) && value.type[2] === "trim";
 	}
 
-	override readonly type = ["async-module", "transform", "trim"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "trim"] as const;
 
-	override createStream(context: StreamContext): TrimStream {
-		return new TrimStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: TrimProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): TrimStream {
+		return new TrimStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<TrimProperties>): TrimNode {
@@ -115,5 +117,6 @@ function findLastAbove(samples: Array<Float32Array>, frames: number, threshold: 
 
 export function trim(options?: { threshold?: number; margin?: number; start?: boolean; end?: boolean; id?: string }): TrimNode {
 	const parsed = schema.parse(options ?? {});
+
 	return new TrimNode({ ...parsed, id: options?.id });
 }

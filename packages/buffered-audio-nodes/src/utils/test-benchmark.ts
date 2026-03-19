@@ -16,7 +16,7 @@ export interface BenchmarkResult {
 }
 
 export async function runBenchmark(name: string, transform: TransformNode, inputPath: string, renderOptions?: RenderOptions): Promise<BenchmarkResult> {
-	const tempPath = resolve(tmpdir(), `acm-bench-${randomBytes(8).toString("hex")}.wav`);
+	const tempPath = resolve(tmpdir(), `ban-bench-${randomBytes(8).toString("hex")}.wav`);
 
 	try {
 		const source = read(inputPath);

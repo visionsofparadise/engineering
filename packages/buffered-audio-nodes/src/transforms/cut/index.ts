@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 
 const cutRegionSchema = z.object({
 	start: z.number().min(0).describe("Start (seconds)"),
@@ -17,10 +17,10 @@ export interface CutProperties extends z.infer<typeof schema>, TransformNodeProp
 
 export class CutStream extends BufferedTransformStream<CutProperties> {
 	private sortedRegions: Array<CutRegion>;
-	private cumulativeRemovedFrames = 0; // FIX: This is a memory leak waiting to happen. should just be removedFrames. cumulative tracking is a benchmark concern and should be external
+	private removedFrames = 0;
 
-	constructor(properties: CutProperties, context: StreamContext) {
-		super(properties, context);
+	constructor(properties: CutProperties) {
+		super(properties);
 
 		this.sortedRegions = [...this.properties.regions].sort((left, right) => left.start - right.start);
 	}
@@ -57,8 +57,9 @@ export class CutStream extends BufferedTransformStream<CutProperties> {
 		const totalKept = keepRanges.reduce((sum, range) => sum + (range.end - range.start), 0);
 
 		const removedFrames = chunkFrames - totalKept;
-		const adjustedOffset = chunk.offset - this.cumulativeRemovedFrames;
-		this.cumulativeRemovedFrames += removedFrames;
+		const adjustedOffset = chunk.offset - this.removedFrames;
+
+		this.removedFrames += removedFrames;
 
 		if (totalKept === chunkFrames) {
 			return { samples: chunk.samples, offset: adjustedOffset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
@@ -98,14 +99,10 @@ export class CutNode extends TransformNode<CutProperties> {
 		return TransformNode.is(value) && value.type[2] === "cut";
 	}
 
-	override readonly type = ["async-module", "transform", "cut"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "cut"] as const;
 
-	// FIX: Shouldn't bufferSize and latency just be getters for the properties value? Otherwise we have 2 sources of truth. We should just manage it through this.properties
-	override readonly bufferSize = 0;
-	override readonly latency = 0;
-
-	override createStream(context: StreamContext): CutStream {
-		return new CutStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): CutStream {
+		return new CutStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<CutProperties>): CutNode {

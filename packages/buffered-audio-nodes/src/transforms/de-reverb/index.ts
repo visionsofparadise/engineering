@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
@@ -41,14 +41,16 @@ export interface DeReverbProperties extends z.infer<typeof schema>, TransformNod
  *   IEEE TASLP, 18(7), 1717-1731. https://doi.org/10.1109/TASL.2010.2052251
  */
 export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> {
-	private fftBackend: FftBackend;
+	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
-	constructor(properties: DeReverbProperties, context: StreamContext) {
-		super(properties, context);
-		const fft = initFftBackend(context.executionProviders, properties);
+	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		const fft = initFftBackend(context.executionProviders, this.properties);
+
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
+
+		return super.setup(input, context);
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -95,6 +97,7 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 
 			if (channel.length < fftSize) {
 				const padded = new Float32Array(fftSize);
+
 				padded.set(channel);
 				channel = padded;
 			}
@@ -107,6 +110,7 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 			for (let frame = 0; frame < numFrames; frame++) {
 				const re = stftResult.real[frame];
 				const im = stftResult.imag[frame];
+
 				if (!re || !im) continue;
 
 				for (let bin = 0; bin < numBins; bin++) {
@@ -184,6 +188,7 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 
 						if (newPow > origPow) {
 							const scale = Math.sqrt(origPow / newPow);
+
 							realT[pos] = newR * scale;
 							imagT[pos] = newI * scale;
 						} else {
@@ -198,6 +203,7 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 			for (let frame = 0; frame < numFrames; frame++) {
 				const re = stftResult.real[frame];
 				const im = stftResult.imag[frame];
+
 				if (!re || !im) continue;
 
 				for (let bin = 0; bin < numBins; bin++) {
@@ -221,12 +227,14 @@ export class DeReverbNode extends TransformNode<DeReverbProperties> {
 		return TransformNode.is(value) && value.type[2] === "de-reverb";
 	}
 
-	override readonly type = ["async-module", "transform", "de-reverb"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "de-reverb"] as const;
 
-	override createStream(context: StreamContext): DeReverbStream {
-		return new DeReverbStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: DeReverbProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): DeReverbStream {
+		return new DeReverbStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<DeReverbProperties>): DeReverbNode {
@@ -349,6 +357,7 @@ function solveLinearSystem(
 			for (let sc = col; sc < size; sc++) {
 				const tmpR = ar[col * size + sc] ?? 0;
 				const tmpI = ai[col * size + sc] ?? 0;
+
 				ar[col * size + sc] = ar[maxRow * size + sc] ?? 0;
 				ai[col * size + sc] = ai[maxRow * size + sc] ?? 0;
 				ar[maxRow * size + sc] = tmpR;
@@ -357,6 +366,7 @@ function solveLinearSystem(
 
 			const tmpBr = br[col] ?? 0;
 			const tmpBi = bi[col] ?? 0;
+
 			br[col] = br[maxRow] ?? 0;
 			bi[col] = bi[maxRow] ?? 0;
 			br[maxRow] = tmpBr;

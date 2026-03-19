@@ -14,12 +14,12 @@ const testVoice = join(import.meta.dirname, "./utils/test-voice.wav");
 
 class PassthroughTransform extends TransformNode {
 	static override readonly moduleName = "Passthrough";
-	override readonly type = ["async-module", "transform", "passthrough"] as const;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	override readonly type = ["buffered-audio-node", "transform", "passthrough"] as const;
+	get bufferSize(): number { return 0; }
+	get latency(): number { return 0; }
 
-	override createStream(context: StreamContext): BufferedTransformStream {
-		return new BufferedTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): BufferedTransformStream {
+		return new BufferedTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	clone(overrides?: Partial<BufferedAudioNodeProperties>): PassthroughTransform {
@@ -35,12 +35,12 @@ class ErrorStream extends BufferedTransformStream {
 
 class ErrorTransform extends TransformNode {
 	static override readonly moduleName = "Error";
-	override readonly type = ["async-module", "transform", "error"] as const;
-	readonly bufferSize = WHOLE_FILE;
-	readonly latency = 0;
+	override readonly type = ["buffered-audio-node", "transform", "error"] as const;
+	get bufferSize(): number { return WHOLE_FILE; }
+	get latency(): number { return 0; }
 
-	override createStream(context: StreamContext): ErrorStream {
-		return new ErrorStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): ErrorStream {
+		return new ErrorStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	clone(overrides?: Partial<BufferedAudioNodeProperties>): ErrorTransform {
@@ -51,8 +51,8 @@ class ErrorTransform extends TransformNode {
 class ScaleStream extends BufferedTransformStream {
 	private readonly factor: number;
 
-	constructor(factor: number, properties: Record<string, unknown>, context: StreamContext) {
-		super({ ...properties, bufferSize: 0, overlap: 0 }, context);
+	constructor(factor: number, properties: Record<string, unknown>) {
+		super({ ...properties, bufferSize: 0, overlap: 0 });
 		this.factor = factor;
 	}
 
@@ -69,21 +69,21 @@ class ScaleStream extends BufferedTransformStream {
 }
 
 class CompositeStream extends BufferedTransformStream {
-	override setup(input: ReadableStream<AudioChunk>): ReadableStream<AudioChunk> {
-		const first = new ScaleStream(2, {}, this.context);
-		const second = new ScaleStream(0.5, {}, this.context);
+	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		const first = new ScaleStream(2, {});
+		const second = new ScaleStream(0.5, {});
 		return input.pipeThrough(first.createTransformStream()).pipeThrough(second.createTransformStream());
 	}
 }
 
 class CompositeTransform extends TransformNode {
 	static override readonly moduleName = "Composite";
-	override readonly type = ["async-module", "transform", "composite"] as const;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	override readonly type = ["buffered-audio-node", "transform", "composite"] as const;
+	get bufferSize(): number { return 0; }
+	get latency(): number { return 0; }
 
-	override createStream(context: StreamContext): CompositeStream {
-		return new CompositeStream({ ...this.properties, bufferSize: 0, overlap: 0 }, context);
+	override createStream(): CompositeStream {
+		return new CompositeStream({ ...this.properties, bufferSize: 0, overlap: 0 });
 	}
 
 	clone(overrides?: Partial<BufferedAudioNodeProperties>): CompositeTransform {
@@ -93,7 +93,7 @@ class CompositeTransform extends TransformNode {
 
 describe("TransformNode lifecycle", () => {
 	it("renders the same pipeline twice with correct output both times", async () => {
-		const tempOut = join(tmpdir(), `acm-multi-render-${randomBytes(8).toString("hex")}.wav`);
+		const tempOut = join(tmpdir(), `ban-multi-render-${randomBytes(8).toString("hex")}.wav`);
 		const original = await readWavSamples(testVoice);
 
 		try {
@@ -129,7 +129,7 @@ describe("TransformNode lifecycle", () => {
 	}, 240_000);
 
 	it("propagates errors from _process without hanging", async () => {
-		const tempOut = join(tmpdir(), `acm-error-${randomBytes(8).toString("hex")}.wav`);
+		const tempOut = join(tmpdir(), `ban-error-${randomBytes(8).toString("hex")}.wav`);
 
 		try {
 			const source = read(testVoice);
@@ -148,7 +148,7 @@ describe("TransformNode lifecycle", () => {
 
 describe("Composite stream via setup()", () => {
 	it("chains internal transforms and produces correct output", async () => {
-		const tempOut = join(tmpdir(), `acm-composite-${randomBytes(8).toString("hex")}.wav`);
+		const tempOut = join(tmpdir(), `ban-composite-${randomBytes(8).toString("hex")}.wav`);
 		const original = await readWavSamples(testVoice);
 
 		try {

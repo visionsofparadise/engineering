@@ -17,7 +17,7 @@ export class DeCrackleNode extends DeClickNode<DeCrackleProperties> {
 		return DeClickNode.is(value) && value.type[3] === "de-crackle";
 	}
 
-	override readonly type = ["async-module", "transform", "de-click", "de-crackle"];
+	override readonly type = ["buffered-audio-node", "transform", "de-click", "de-crackle"];
 
 	constructor(properties: BufferedAudioNodeInput<DeCrackleProperties>) {
 		super({ ...properties, ...schema.encode(properties) });
@@ -30,5 +30,6 @@ export class DeCrackleNode extends DeClickNode<DeCrackleProperties> {
 
 export function deCrackle(options?: { sensitivity?: number; id?: string }): DeCrackleNode {
 	const parsed = schema.parse(options ?? {});
+
 	return new DeCrackleNode({ ...parsed, id: options?.id });
 }

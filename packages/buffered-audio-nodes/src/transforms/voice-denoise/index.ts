@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, ExecutionProvider, StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
@@ -48,23 +48,30 @@ const LSTM_UNITS = 128;
 export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProperties> {
 	private session1?: OnnxSession;
 	private session2?: OnnxSession;
-	private fftBackend: FftBackend;
+	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
+	private executionProviders: ReadonlyArray<ExecutionProvider> = [];
 
-	constructor(properties: VoiceDenoiseProperties, context: StreamContext) {
-		super(properties, context);
+	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		this.executionProviders = context.executionProviders;
+
 		const cpuProviders = context.executionProviders.filter((ep) => ep !== "gpu");
-		const fft = initFftBackend(cpuProviders.length > 0 ? cpuProviders : ["cpu"], properties);
+		const fft = initFftBackend(cpuProviders.length > 0 ? cpuProviders : ["cpu"], this.properties);
+
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
+
+		return super.setup(input, context);
 	}
 
 	private ensureSessions(): { session1: OnnxSession; session2: OnnxSession } {
 		if (this.session1 && this.session2) return { session1: this.session1, session2: this.session2 };
 		const props = this.properties;
-		const onnxProviders = filterOnnxProviders(this.context.executionProviders);
+		const onnxProviders = filterOnnxProviders(this.executionProviders);
+
 		this.session1 = createOnnxSession(props.onnxAddonPath, props.modelPath1, { executionProviders: onnxProviders });
 		this.session2 = createOnnxSession(props.onnxAddonPath, props.modelPath2, { executionProviders: onnxProviders });
+
 		return { session1: this.session1, session2: this.session2 };
 	}
 
@@ -83,6 +90,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 
 			if ((this.sampleRate ?? 44100) !== DTLN_SAMPLE_RATE) {
 				const resampled = await resampleDirect(props.ffmpegPath, [channel], this.sampleRate ?? 44100, DTLN_SAMPLE_RATE);
+
 				input16k = resampled[0] ?? channel;
 			}
 
@@ -92,10 +100,12 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 
 			if ((this.sampleRate ?? 44100) !== DTLN_SAMPLE_RATE) {
 				const resampled = await resampleDirect(props.ffmpegPath, [denoised16k], DTLN_SAMPLE_RATE, this.sampleRate ?? 44100);
+
 				output = resampled[0] ?? denoised16k;
 			}
 
 			const finalOutput = new Float32Array(frames);
+
 			finalOutput.set(output.subarray(0, Math.min(output.length, frames)));
 
 			const allChannels: Array<Float32Array> = [];
@@ -115,6 +125,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 
 		if (originalLength < BLOCK_LEN) {
 			const padded = new Float32Array(BLOCK_LEN);
+
 			padded.set(signal);
 			signal = padded;
 		}
@@ -150,6 +161,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 			for (let bin = 0; bin < FFT_BINS; bin++) {
 				const re = realFrame[bin] ?? 0;
 				const im = imagFrame[bin] ?? 0;
+
 				magnitude[bin] = Math.log(Math.sqrt(re * re + im * im) + 1e-7);
 			}
 
@@ -159,12 +171,14 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 			});
 
 			const mask = result1.activation_2;
+
 			states1 = result1.tf_op_layer_stack_2 ? new Float32Array(result1.tf_op_layer_stack_2.data) : states1;
 
 			if (!mask) continue;
 
 			for (let bin = 0; bin < FFT_BINS; bin++) {
 				const maskVal = mask.data[bin] ?? 0;
+
 				maskedReal[bin] = (realFrame[bin] ?? 0) * maskVal;
 				maskedImag[bin] = (imagFrame[bin] ?? 0) * maskVal;
 			}
@@ -177,6 +191,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 			});
 
 			const denoisedFrame = result2.conv1d_3;
+
 			states2 = result2.tf_op_layer_stack_5 ? new Float32Array(result2.tf_op_layer_stack_5.data) : states2;
 
 			if (!denoisedFrame) continue;
@@ -202,13 +217,14 @@ export class VoiceDenoiseNode extends TransformNode<VoiceDenoiseProperties> {
 		return TransformNode.is(value) && value.type[2] === "voice-denoise";
 	}
 
-	override readonly type = ["async-module", "transform", "voice-denoise"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "voice-denoise"] as const;
 
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	constructor(properties: VoiceDenoiseProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
 
-	override createStream(context: StreamContext): VoiceDenoiseStream {
-		return new VoiceDenoiseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): VoiceDenoiseStream {
+		return new VoiceDenoiseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<VoiceDenoiseProperties>): VoiceDenoiseNode {

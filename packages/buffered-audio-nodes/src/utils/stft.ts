@@ -24,8 +24,10 @@ export function stft(signal: Float32Array, fftSize: number, hopSize: number, out
 	if (addon && numFrames > 0) {
 		// Native path: window all frames, batch FFT in a single call
 		const batchInput = new Float32Array(fftSize * numFrames);
+
 		for (let frame = 0; frame < numFrames; frame++) {
 			const offset = frame * hopSize;
+
 			for (let index = 0; index < fftSize; index++) {
 				batchInput[frame * fftSize + index] = (signal[offset + index] ?? 0) * (window[index] ?? 0);
 			}
@@ -35,9 +37,11 @@ export function stft(signal: Float32Array, fftSize: number, hopSize: number, out
 
 		const real = output?.real ?? [];
 		const imag = output?.imag ?? [];
+
 		for (let frame = 0; frame < numFrames; frame++) {
 			const reSlice = batchRe.subarray(frame * halfSize, (frame + 1) * halfSize);
 			const imSlice = batchIm.subarray(frame * halfSize, (frame + 1) * halfSize);
+
 			if (output) {
 				output.real[frame]?.set(reSlice);
 				output.imag[frame]?.set(imSlice);
@@ -46,6 +50,7 @@ export function stft(signal: Float32Array, fftSize: number, hopSize: number, out
 				imag.push(Float32Array.from(imSlice));
 			}
 		}
+
 		return { real, imag, frames: numFrames, fftSize };
 	}
 
@@ -93,6 +98,7 @@ export function istft(result: StftResult, hopSize: number, outputLength: number,
 		for (let frame = 0; frame < frames; frame++) {
 			const re = real[frame];
 			const im = imag[frame];
+
 			if (!re || !im) continue;
 			batchRe.set(re, frame * halfSize);
 			batchIm.set(im, frame * halfSize);
@@ -102,8 +108,10 @@ export function istft(result: StftResult, hopSize: number, outputLength: number,
 
 		for (let frame = 0; frame < frames; frame++) {
 			const offset = frame * hopSize;
+
 			for (let index = 0; index < fftSize; index++) {
 				const pos = offset + index;
+
 				if (pos < outputLength) {
 					output[pos] = (output[pos] ?? 0) + (timeDomainBatch[frame * fftSize + index] ?? 0) * (window[index] ?? 0);
 					windowSum[pos] = (windowSum[pos] ?? 0) + (window[index] ?? 0) * (window[index] ?? 0);
@@ -238,6 +246,7 @@ export function bitReverse(re: Float32Array, im: Float32Array, size: number): vo
 		if (index < rev) {
 			const tempRe = re[index]!;
 			const tempIm = im[index]!;
+
 			re[index] = re[rev]!;
 			im[index] = im[rev]!;
 			re[rev] = tempRe;

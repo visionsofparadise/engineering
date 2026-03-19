@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { renderGraph, type NodeRegistry } from "./executor";
+import { renderGraph, type NodeRegistry } from "./graph-format";
 import { validateGraphDefinition } from "./graph-format";
 import type { BufferedAudioNode } from "./node";
 import { SourceNode } from "./sources";

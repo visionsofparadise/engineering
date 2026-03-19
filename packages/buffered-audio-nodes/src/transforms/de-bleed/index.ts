@@ -2,7 +2,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { replaceChannel } from "../../utils/replace-channel";
 
@@ -22,8 +21,10 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 		const { buffer: refBuffer } = await readToBuffer(this.properties.referencePath);
 		const chunk = await refBuffer.read(0, refBuffer.frames);
 		const channel = chunk.samples[0];
+
 		this.referenceSignal = channel ? Float32Array.from(channel) : new Float32Array(0);
 		await refBuffer.close();
+
 		return this.referenceSignal;
 	}
 
@@ -49,11 +50,14 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 
 			for (let index = 0; index < frames; index++) {
 				const newRef = index >= 0 && index < reference.length ? reference[index]! : 0;
+
 				refPower += newRef * newRef;
 
 				const droppedIndex = index - filterLength;
+
 				if (droppedIndex >= 0 && droppedIndex < reference.length) {
 					const oldRef = reference[droppedIndex]!;
+
 					refPower -= oldRef * oldRef;
 				}
 
@@ -70,6 +74,7 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 				}
 
 				const error = channel[index]! - predicted;
+
 				output[index] = error;
 
 				const mu = refPower > 1e-10 ? stepSize / (refPower + 1e-10) : 0;
@@ -96,12 +101,14 @@ export class DeBleedNode extends TransformNode<DeBleedProperties> {
 		return TransformNode.is(value) && value.type[2] === "de-bleed";
 	}
 
-	override readonly type = ["async-module", "transform", "de-bleed"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "de-bleed"] as const;
 
-	override createStream(context: StreamContext): DeBleedStream {
-		return new DeBleedStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: DeBleedProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): DeBleedStream {
+		return new DeBleedStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<DeBleedProperties>): DeBleedNode {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { BufferedAudioNodeInput, StreamContext } from "../../node";
+import type { BufferedAudioNodeInput } from "../../node";
 import { lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
 import { smoothEnvelope } from "../../utils/envelope";
 
@@ -50,6 +50,7 @@ export class DeClickStream extends BufferedTransformStream<DeClickProperties> {
 			if (!channel) continue;
 
 			const filtered = Float32Array.from(channel);
+
 			zeroPhaseBiquadFilter(filtered, lpfCoeffs);
 
 			for (let index = 0; index < frames; index++) {
@@ -81,16 +82,14 @@ export class DeClickNode<P extends DeClickProperties = DeClickProperties> extend
 		return TransformNode.is(value) && value.type[2] === "de-click";
 	}
 
-	override readonly type = ["async-module", "transform", "de-click"];
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "de-click"];
 
 	constructor(properties: BufferedAudioNodeInput<P>) {
-		super({ ...properties, ...schema.encode(properties) });
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties, ...schema.encode(properties) });
 	}
 
-	override createStream(context: StreamContext): DeClickStream {
-		return new DeClickStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): DeClickStream {
+		return new DeClickStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<DeClickProperties>): DeClickNode {
@@ -100,6 +99,7 @@ export class DeClickNode<P extends DeClickProperties = DeClickProperties> extend
 
 export function deClick(options?: { sensitivity?: number; maxClickDuration?: number; id?: string }): DeClickNode {
 	const parsed = schema.parse(options ?? {});
+
 	return new DeClickNode({ ...parsed, id: options?.id });
 }
 
@@ -117,6 +117,7 @@ function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: 
 
 	for (let index = 0; index < signal.length; index++) {
 		const sample = signal[index] ?? 0;
+
 		highPassed[index] = alpha * (prevHP + sample - prevSample);
 		prevSample = sample;
 		prevHP = highPassed[index] ?? 0;
@@ -189,6 +190,7 @@ function buildBlendEnvelope(mask: Uint8Array, length: number, fadeSamples: numbe
 
 			if (pos >= 0 && (envelope[pos] ?? 0) < 1) {
 				const fadeIn = (fade + 1) / (fadeSamples + 1);
+
 				envelope[pos] = Math.max(envelope[pos] ?? 0, fadeIn);
 			}
 		}
@@ -198,6 +200,7 @@ function buildBlendEnvelope(mask: Uint8Array, length: number, fadeSamples: numbe
 
 			if (pos < length && (envelope[pos] ?? 0) < 1) {
 				const fadeOut = 1 - (fade + 1) / (fadeSamples + 1);
+
 				envelope[pos] = Math.max(envelope[pos] ?? 0, fadeOut);
 			}
 		}
@@ -218,6 +221,7 @@ function approximateMedian(values: Float32Array): number {
 
 	for (let si = 1; si < len; si++) {
 		const sample = values[si] ?? 0;
+
 		if (sample < min) min = sample;
 		if (sample > max) max = sample;
 	}
@@ -230,6 +234,7 @@ function approximateMedian(values: Float32Array): number {
 
 	for (let si = 0; si < len; si++) {
 		const bin = Math.floor(((values[si] ?? 0) - min) * scale);
+
 		bins[bin] = (bins[bin] ?? 0) + 1;
 	}
 

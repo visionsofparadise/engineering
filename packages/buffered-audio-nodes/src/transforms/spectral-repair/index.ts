@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
@@ -39,15 +39,16 @@ export interface SpectralRepairProperties extends z.infer<typeof schema>, Transf
  *   Time-frequency Domain." arXiv:2409.06392. https://arxiv.org/abs/2409.06392
  */
 export class SpectralRepairStream extends BufferedTransformStream<SpectralRepairProperties> {
-	private fftBackend: FftBackend;
+	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
-	constructor(properties: SpectralRepairProperties, context: StreamContext) {
-		super(properties, context);
+	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		const fft = initFftBackend(context.executionProviders, this.properties);
 
-		const fft = initFftBackend(context.executionProviders, properties);
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
+
+		return super.setup(input, context);
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -74,6 +75,7 @@ export class SpectralRepairStream extends BufferedTransformStream<SpectralRepair
 
 			if (channel.length < fftSize) {
 				const padded = new Float32Array(fftSize);
+
 				padded.set(channel);
 				channel = padded;
 			}
@@ -106,13 +108,14 @@ export class SpectralRepairNode extends TransformNode<SpectralRepairProperties> 
 		return TransformNode.is(value) && value.type[2] === "spectral-repair";
 	}
 
-	override readonly type = ["async-module", "transform", "spectral-repair"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "spectral-repair"] as const;
 
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	constructor(properties: SpectralRepairProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
 
-	override createStream(context: StreamContext): SpectralRepairStream {
-		return new SpectralRepairStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): SpectralRepairStream {
+		return new SpectralRepairStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<SpectralRepairProperties>): SpectralRepairNode {
@@ -185,6 +188,7 @@ function interpolateTfRegion(real: Array<Float32Array>, imag: Array<Float32Array
 
 				if (count > 0) {
 					const bufferIndex = (frame - clampedStart) * regionBins + (bin - clampedStartBin);
+
 					writeReal[bufferIndex] = realSum / count;
 					writeImag[bufferIndex] = imagSum / count;
 				}
@@ -200,6 +204,7 @@ function interpolateTfRegion(real: Array<Float32Array>, imag: Array<Float32Array
 
 			for (let bin = clampedStartBin; bin < clampedEndBin; bin++) {
 				const bufferIndex = (frame - clampedStart) * regionBins + (bin - clampedStartBin);
+
 				realFrame[bin] = writeReal[bufferIndex] ?? 0;
 				imagFrame[bin] = writeImag[bufferIndex] ?? 0;
 			}

@@ -1,6 +1,7 @@
 import { z } from "zod";
-import type { OptionalProperties } from "./utils/RequiredProperties";
+import type { BufferedStream } from "./stream";
 
+// FIX: put this in a schema.ts file
 export interface FileInputMeta {
 	readonly input: "file" | "folder";
 	readonly mode?: "open" | "save";
@@ -18,17 +19,13 @@ export interface AudioChunk {
 
 export type ExecutionProvider = "gpu" | "cpu-native" | "cpu";
 
-// FIX: Rename this to SourceMetadata, and move to Source file
-export interface StreamMeta {
-	readonly sampleRate: number;
-	readonly channels: number;
-	readonly durationFrames?: number;
-}
-
 export interface StreamContext {
 	readonly executionProviders: ReadonlyArray<ExecutionProvider>;
 	readonly memoryLimit: number;
 	readonly durationFrames?: number;
+	readonly highWaterMark: number;
+	readonly signal?: AbortSignal;
+	readonly visited: Set<BufferedAudioNode>;
 }
 
 export interface RenderOptions {
@@ -39,15 +36,17 @@ export interface RenderOptions {
 	readonly executionProviders?: ReadonlyArray<ExecutionProvider>;
 }
 
-// FIX: We need isBypassed here
 export interface BufferedAudioNodeProperties {
 	readonly id?: string;
-	readonly children: Array<BufferedAudioNode>;
+	readonly bypass?: boolean;
 	readonly previousProperties?: BufferedAudioNodeProperties;
+	readonly bufferSize?: number;
+	readonly latency?: number;
 }
 
-export type BufferedAudioNodeInput<P extends BufferedAudioNodeProperties = BufferedAudioNodeProperties> = OptionalProperties<P, "children">;
+export type BufferedAudioNodeInput<P extends BufferedAudioNodeProperties = BufferedAudioNodeProperties> = P;
 
+// FIX: put this in a schema.ts file
 export type { ZodType as ModuleSchema } from "zod";
 
 export abstract class BufferedAudioNode<P extends BufferedAudioNodeProperties = BufferedAudioNodeProperties> {
@@ -56,24 +55,25 @@ export abstract class BufferedAudioNode<P extends BufferedAudioNodeProperties = 
 	static readonly schema: z.ZodType = z.object({});
 
 	static is(value: unknown): value is BufferedAudioNode {
-		// FIX: We're still using the async-module term from the initial implementation, this is now buffered-audio-node
-		return typeof value === "object" && value !== null && "type" in value && Array.isArray(value.type) && value.type[0] === "async-module";
+		return typeof value === "object" && value !== null && "type" in value && Array.isArray(value.type) && value.type[0] === "buffered-audio-node";
 	}
 
 	abstract readonly type: ReadonlyArray<string>;
 
 	readonly properties: P;
 
-	abstract readonly bufferSize: number;
-	abstract readonly latency: number;
+	get bufferSize(): number {
+		return this.properties.bufferSize ?? 0;
+	}
+	get latency(): number {
+		return this.properties.latency ?? 0;
+	}
 
-	// FIX: We need a base stream type, we're redefining implementation across them, we don't have a generic type we can use either
-	readonly streams: Array<{ _teardown?(): Promise<void> | void }> = [];
+	readonly streams: Array<BufferedStream> = [];
 
-	constructor(properties?: BufferedAudioNodeInput<P>) {
+	constructor(properties?: P) {
 		this.properties = {
 			...properties,
-			children: properties?.children ?? [],
 		} as P;
 	}
 
@@ -81,31 +81,25 @@ export abstract class BufferedAudioNode<P extends BufferedAudioNodeProperties = 
 		return this.properties.id;
 	}
 
-	get children(): Array<BufferedAudioNode> {
-		return this.properties.children;
-	}
-
 	abstract clone(overrides?: Partial<BufferedAudioNodeProperties>): BufferedAudioNode;
 
-	to<T extends BufferedAudioNode>(child: T): T {
-		this.children.push(child);
-
-		return child;
+	getChildren(): ReadonlyArray<BufferedAudioNode> {
+		return [];
 	}
 
-	// FIX: We need to talk about the process of teardown vs clearStreams. When we do each, what our process is etc.
 	async teardown(): Promise<void> {
+		await this._teardown();
 		for (const stream of this.streams) {
-			await stream._teardown?.();
+			await stream._teardown();
 		}
 
-		await Promise.all(this.children.map((child) => child.teardown()));
+		this.streams.length = 0;
+		for (const child of this.getChildren()) {
+			await child.teardown();
+		}
 	}
 
-	clearStreams(): void {
-		this.streams.length = 0;
-		for (const child of this.children) {
-			child.clearStreams();
-		}
+	_teardown(): Promise<void> | void {
+		return;
 	}
 }

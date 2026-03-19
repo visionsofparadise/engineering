@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 import { readWavSamples } from "../../utils/read-to-buffer";
 
 export const schema = z.object({
@@ -62,14 +62,17 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 		if (targetChannels) {
 			for (let insertCh = 0; insertCh < targetChannels.length; insertCh++) {
 				const primaryCh = targetChannels[insertCh];
+
 				if (primaryCh === undefined) continue;
 				const channelSamples = samples[primaryCh];
-				const insertChannel = this.insertSamples![insertCh];
+				const insertChannel = this.insertSamples?.[insertCh];
+
 				if (!channelSamples || !insertChannel) continue;
 
 				for (let frame = overlapStart; frame < overlapEnd; frame++) {
 					const insertIndex = insertOffset + frame - overlapStart;
 					const insertSample = insertChannel[insertIndex];
+
 					if (insertSample !== undefined) {
 						channelSamples[frame] = insertSample;
 					}
@@ -78,12 +81,14 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 		} else {
 			for (let ch = 0; ch < samples.length; ch++) {
 				const channelSamples = samples[ch];
-				const insertChannel = this.insertSamples![ch];
+				const insertChannel = this.insertSamples?.[ch];
+
 				if (!channelSamples || !insertChannel) continue;
 
 				for (let frame = overlapStart; frame < overlapEnd; frame++) {
 					const insertIndex = insertOffset + frame - overlapStart;
 					const insertSample = insertChannel[insertIndex];
+
 					if (insertSample !== undefined) {
 						channelSamples[frame] = insertSample;
 					}
@@ -103,12 +108,10 @@ export class SpliceNode extends TransformNode<SpliceProperties> {
 		return TransformNode.is(value) && value.type[2] === "splice";
 	}
 
-	override readonly type = ["async-module", "transform", "splice"] as const;
-	override readonly bufferSize = 0;
-	override readonly latency = 0;
+	override readonly type = ["buffered-audio-node", "transform", "splice"] as const;
 
-	override createStream(context: StreamContext): SpliceStream {
-		return new SpliceStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): SpliceStream {
+		return new SpliceStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<SpliceProperties>): SpliceNode {

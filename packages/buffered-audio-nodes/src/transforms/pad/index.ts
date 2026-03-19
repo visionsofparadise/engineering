@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
 
 export const schema = z.object({
 	before: z.number().min(0).multipleOf(0.001).default(0).describe("Before"),
@@ -26,6 +25,7 @@ export class PadStream extends BufferedTransformStream<PadProperties> {
 			for (let ch = 0; ch < channels; ch++) {
 				const original = allAudio.samples[ch] ?? new Float32Array(0);
 				const withPad = new Float32Array(silenceFrames + original.length);
+
 				withPad.set(original, silenceFrames);
 				padded.push(withPad);
 			}
@@ -55,12 +55,14 @@ export class PadNode extends TransformNode<PadProperties> {
 		return TransformNode.is(value) && value.type[2] === "pad";
 	}
 
-	override readonly type = ["async-module", "transform", "pad"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "pad"] as const;
 
-	override createStream(context: StreamContext): PadStream {
-		return new PadStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: PadProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): PadStream {
+		return new PadStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<PadProperties>): PadNode {
@@ -70,5 +72,6 @@ export class PadNode extends TransformNode<PadProperties> {
 
 export function pad(options: { before?: number; after?: number; id?: string }): PadNode {
 	const parsed = schema.parse(options);
+
 	return new PadNode({ ...parsed, id: options.id });
 }

@@ -441,7 +441,7 @@ class NormalizeModule extends TransformModule<NormalizeProperties> {
   static override readonly moduleDescription = "Adjust peak level to a target ceiling";
   static override readonly schema = schema;
 
-  override readonly type = ["async-module", "transform", "normalize"] as const;
+  override readonly type = ["buffered-audio-node", "transform", "normalize"] as const;
 
   // Buffer all audio before processing — we need to find the peak first
   override readonly bufferSize = Infinity;

@@ -17,7 +17,7 @@ export interface ResampleProperties extends FfmpegProperties {
 export class ResampleStream extends FfmpegStream<ResampleProperties> {
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		await super._process(buffer);
-		this.sampleRate = this.properties.sampleRate;
+		buffer.setSampleRate(this.properties.sampleRate);
 	}
 
 	protected override _buildArgs(_context: StreamContext): Array<string> {
@@ -41,10 +41,10 @@ export class ResampleNode extends FfmpegNode<ResampleProperties> {
 		return FfmpegNode.is(value) && value.type[3] === "resample";
 	}
 
-	override readonly type = ["async-module", "transform", "ffmpeg", "resample"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "ffmpeg", "resample"] as const;
 
-	override createStream(context: StreamContext): ResampleStream {
-		return new ResampleStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): ResampleStream {
+		return new ResampleStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<ResampleProperties>): ResampleNode {

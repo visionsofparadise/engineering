@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 
 export const schema = z.object({
 	ceiling: z.number().min(0).max(1).multipleOf(0.01).default(1.0).describe("Ceiling"),
@@ -18,8 +18,10 @@ export class NormalizeStream extends BufferedTransformStream<NormalizeProperties
 
 		for (let ch = 0; ch < chunk.samples.length; ch++) {
 			const channel = chunk.samples[ch] ?? new Float32Array(0);
+
 			for (let si = 0; si < channel.length; si++) {
 				const absolute = Math.abs(channel[si] ?? 0);
+
 				if (Number.isFinite(absolute) && absolute > this.peak) this.peak = absolute;
 			}
 		}
@@ -27,6 +29,7 @@ export class NormalizeStream extends BufferedTransformStream<NormalizeProperties
 
 	override _process(_buffer: ChunkBuffer): void {
 		const raw = this.peak === 0 ? 1 : this.properties.ceiling / this.peak;
+
 		this.scale = Number.isFinite(raw) ? raw : 1;
 	}
 
@@ -55,12 +58,14 @@ export class NormalizeNode extends TransformNode<NormalizeProperties> {
 		return TransformNode.is(value) && value.type[2] === "normalize";
 	}
 
-	override readonly type = ["async-module", "transform", "normalize"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "normalize"] as const;
 
-	override createStream(context: StreamContext): NormalizeStream {
-		return new NormalizeStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: NormalizeProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): NormalizeStream {
+		return new NormalizeStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<NormalizeProperties>): NormalizeNode {

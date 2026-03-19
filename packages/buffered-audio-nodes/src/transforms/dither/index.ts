@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { ChunkBuffer } from "../../buffer";
+import type { AudioChunk } from "../../node";
 
 export const schema = z.object({
 	bitDepth: z
@@ -14,6 +15,10 @@ export interface DitherProperties extends z.infer<typeof schema>, TransformNodeP
 
 export class DitherStream extends BufferedTransformStream<DitherProperties> {
 	private lastError: Array<number> = [];
+
+	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {
+		await buffer.append(chunk.samples, chunk.sampleRate, this.properties.bitDepth);
+	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
 		const { bitDepth, noiseShaping } = this.properties;
@@ -61,12 +66,10 @@ export class DitherNode extends TransformNode<DitherProperties> {
 		return TransformNode.is(value) && value.type[2] === "dither";
 	}
 
-	override readonly type = ["async-module", "transform", "dither"] as const;
-	override readonly bufferSize = 0;
-	override readonly latency = 0;
+	override readonly type = ["buffered-audio-node", "transform", "dither"] as const;
 
-	override createStream(context: StreamContext): DitherStream {
-		return new DitherStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): DitherStream {
+		return new DitherStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<DitherProperties>): DitherNode {
@@ -82,5 +85,6 @@ export function dither(
 	},
 ): DitherNode {
 	const parsed = schema.parse({ bitDepth, noiseShaping: options?.noiseShaping });
+
 	return new DitherNode({ ...parsed, id: options?.id });
 }

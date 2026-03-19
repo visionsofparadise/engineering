@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 
 export const schema = z.object({
 	threshold: z.number().min(0).max(1).multipleOf(0.01).default(0.99).describe("Threshold"),
@@ -26,10 +26,12 @@ export class DeClipStream extends BufferedTransformStream<DeClipProperties> {
 		if (this.bufferSize === 0) {
 			this.bufferSize = Math.round(chunk.sampleRate * 0.05);
 		}
+
 		return super._buffer(chunk, buffer);
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
+		// FIX: This looks like this should happen in _process
 		const samples = chunk.samples.map((channel) => {
 			const output = new Float32Array(channel);
 			const clipThreshold = this.properties.threshold;
@@ -55,12 +57,10 @@ export class DeClipNode extends TransformNode<DeClipProperties> {
 		return TransformNode.is(value) && value.type[2] === "de-clip";
 	}
 
-	override readonly type = ["async-module", "transform", "de-clip"] as const;
-	readonly latency = 0;
-	readonly bufferSize = 0;
+	override readonly type = ["buffered-audio-node", "transform", "de-clip"] as const;
 
-	override createStream(context: StreamContext): DeClipStream {
-		return new DeClipStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): DeClipStream {
+		return new DeClipStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<DeClipProperties>): DeClipNode {
@@ -68,6 +68,7 @@ export class DeClipNode extends TransformNode<DeClipProperties> {
 	}
 }
 
+// FIX: Factor out these utils into their own files in a utils folder. Do the same for other nodes too
 interface ClipRegion {
 	start: number;
 	end: number;
@@ -156,6 +157,7 @@ function levinsonDurbin(autocorr: Float32Array, order: number): Float32Array {
 	if (r0 === 0) return coeffs;
 
 	const firstCoeff = (autocorr[1] ?? 0) / r0;
+
 	coeffs[0] = firstCoeff;
 	let error = r0 * (1 - firstCoeff * firstCoeff);
 
@@ -185,5 +187,6 @@ function levinsonDurbin(autocorr: Float32Array, order: number): Float32Array {
 
 export function deClip(options?: { threshold?: number; method?: "ar" | "sparse"; id?: string }): DeClipNode {
 	const parsed = schema.parse(options ?? {});
+
 	return new DeClipNode({ ...parsed, id: options?.id });
 }
