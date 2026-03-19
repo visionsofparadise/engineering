@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "audio-chain-module";
+import type { ChainDefinition } from "buffered-audio-nodes";
 
 function getChainsDirectory(userDataPath: string): string {
 	return `${userDataPath}/chains`;

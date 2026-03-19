@@ -1,0 +1,20 @@
+2026-03-09T15:10:26.162Z |     3039.9ms |              0 samples/sec |    10.05x RT | Node v22.20.0 win32
+2026-03-09T16:00:09.261Z |     6104.5ms |              0 samples/sec |     5.00x RT | Node v22.20.0 win32
+2026-03-09T17:12:32.558Z |      115.4ms |       11668180 samples/sec |   264.58x RT | Node v22.20.0 win32
+2026-03-09T17:56:26.231Z |      123.5ms |       10904616 samples/sec |   247.27x RT | Node v22.20.0 win32
+2026-03-09T17:59:42.326Z |      150.2ms |        8967850 samples/sec |   203.35x RT | Node v22.20.0 win32
+2026-03-09T18:15:58.856Z |       67.0ms |       20100651 samples/sec |   455.80x RT | Node v22.20.0 win32
+2026-03-09T18:57:01.426Z |       68.6ms |       19640072 samples/sec |   445.35x RT | Node v22.20.0 win32
+2026-03-09T19:25:55.518Z |       60.7ms |       22195495 samples/sec |   503.30x RT | Node v22.20.0 win32
+2026-03-10T04:10:46.244Z |      543.5ms |        2478040 samples/sec |    56.19x RT | Node v22.20.0 win32
+2026-03-12T18:44:07.783Z |      455.2ms |        2958475 samples/sec |    67.09x RT | Node v22.20.0 win32
+2026-03-12T19:19:56.849Z |      682.5ms |        1973366 samples/sec |    44.75x RT | Node v22.20.0 win32
+2026-03-12T19:33:33.624Z |      450.0ms |        2992989 samples/sec |    67.87x RT | Node v22.20.0 win32
+2026-03-12T20:00:15.008Z |      400.0ms |        3366842 samples/sec |    76.35x RT | Node v22.20.0 win32
+2026-03-12T20:42:15.854Z |      221.9ms |        6070794 samples/sec |   137.66x RT | Node v22.20.0 win32
+2026-03-15T04:31:51.274Z |      379.5ms |        3548725 samples/sec |    80.47x RT | Node v22.20.0 win32
+2026-03-15T04:36:12.200Z |      398.5ms |        3379817 samples/sec |    76.64x RT | Node v22.20.0 win32
+2026-03-17T03:39:04.981Z | dither                         |      137.4ms |        9803389 samples/sec |   222.30x RT | Node v22.20.0 win32
+2026-03-17T04:26:20.767Z | dither                         |     5397.1ms |         249543 samples/sec |     5.66x RT | Node v22.20.0 win32
+2026-03-17T05:07:49.807Z | dither                         |      539.5ms |        2496308 samples/sec |    56.61x RT | Node v22.20.0 win32
+2026-03-17T05:13:54.494Z | dither                         |      658.2ms |        2046172 samples/sec |    46.40x RT | Node v22.20.0 win32

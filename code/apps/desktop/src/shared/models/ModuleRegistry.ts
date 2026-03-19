@@ -1,4 +1,4 @@
-import type { AudioChainModule } from "audio-chain-module";
+import type { BufferedAudioNode } from "buffered-audio-nodes";
 import type { z } from "zod";
 
 export interface ModuleClass {
@@ -6,7 +6,7 @@ export interface ModuleClass {
 	readonly moduleDescription: string;
 	readonly schema: z.ZodType;
 
-	new (properties?: Record<string, unknown>): AudioChainModule;
+	new (properties?: Record<string, unknown>): BufferedAudioNode;
 }
 
 export type ModuleRegistry = ReadonlyMap<string, ReadonlyMap<string, ModuleClass>>;

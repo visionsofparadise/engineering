@@ -1,5 +1,5 @@
 import { resnapshot } from "../../models/ProxyStore/resnapshot";
-import type { ChainModuleReference } from "audio-chain-module";
+import type { ChainModuleReference } from "buffered-audio-nodes";
 import { useCallback, useMemo } from "react";
 import type { IdentifiedChain } from "../../hooks/useChain";
 import type { AppContext } from "../../models/Context";

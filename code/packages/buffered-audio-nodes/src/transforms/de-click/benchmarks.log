@@ -1,0 +1,22 @@
+2026-03-09T15:10:17.136Z |      906.9ms |        1485005 samples/sec |    33.67x RT | Node v22.20.0 win32
+2026-03-09T16:00:10.865Z |      883.3ms |        1524804 samples/sec |    34.58x RT | Node v22.20.0 win32
+2026-03-09T17:12:33.625Z |      787.7ms |        3419559 samples/sec |    77.54x RT | Node v22.20.0 win32
+2026-03-09T17:56:09.057Z |     1548.4ms |        1739629 samples/sec |    39.45x RT | Node v22.20.0 win32
+2026-03-09T17:59:03.442Z |     2175.7ms |        1238050 samples/sec |    28.07x RT | Node v22.20.0 win32
+2026-03-09T18:14:16.960Z |      464.6ms |        5798106 samples/sec |   131.48x RT | Node v22.20.0 win32
+2026-03-09T18:55:16.857Z |      496.9ms |        5421003 samples/sec |   122.93x RT | Node v22.20.0 win32
+2026-03-09T19:24:01.658Z |      290.9ms |        9258831 samples/sec |   209.95x RT | Node v22.20.0 win32
+2026-03-10T04:10:57.789Z |      777.2ms |        3465730 samples/sec |    78.59x RT | Node v22.20.0 win32
+2026-03-12T18:44:01.834Z |     1868.7ms |        1441454 samples/sec |    32.69x RT | Node v22.20.0 win32
+2026-03-12T19:19:52.740Z |     2834.3ms |         950385 samples/sec |    21.55x RT | Node v22.20.0 win32
+2026-03-12T19:33:55.622Z |      906.0ms |        1486620 samples/sec |    33.71x RT | Node v22.20.0 win32
+2026-03-12T20:00:25.927Z |     1452.7ms |         927091 samples/sec |    21.02x RT | Node v22.20.0 win32
+2026-03-12T20:41:57.239Z |      736.1ms |        3659260 samples/sec |    82.98x RT | Node v22.20.0 win32
+2026-03-12T21:14:35.315Z |      134.9ms |       19973647 samples/sec |   452.92x RT | Node v22.20.0 win32
+2026-03-12T21:15:22.888Z |      133.2ms |       20217044 samples/sec |   458.44x RT | Node v22.20.0 win32
+2026-03-15T04:31:55.508Z |      448.0ms |        6012358 samples/sec |   136.33x RT | Node v22.20.0 win32
+2026-03-15T04:36:22.034Z |      847.2ms |        3179524 samples/sec |    72.10x RT | Node v22.20.0 win32
+2026-03-17T03:38:57.122Z | deClick                        |      152.9ms |       17621228 samples/sec |   399.57x RT | Node v22.20.0 win32
+2026-03-17T04:26:15.276Z | deClick                        |     5302.2ms |         508022 samples/sec |    11.52x RT | Node v22.20.0 win32
+2026-03-17T05:07:46.609Z | deClick                        |     1097.9ms |        2453442 samples/sec |    55.63x RT | Node v22.20.0 win32
+2026-03-17T05:13:55.148Z | deClick                        |     1782.8ms |        1510903 samples/sec |    34.26x RT | Node v22.20.0 win32

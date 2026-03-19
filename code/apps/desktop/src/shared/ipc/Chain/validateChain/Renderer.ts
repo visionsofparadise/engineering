@@ -1,4 +1,4 @@
-import type { ChainDefinition } from "audio-chain-module";
+import type { ChainDefinition } from "buffered-audio-nodes";
 import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 
 export type ValidateChainIpcParameters = [json: unknown];

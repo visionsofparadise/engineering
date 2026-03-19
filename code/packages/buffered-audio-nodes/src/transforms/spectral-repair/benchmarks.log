@@ -1,0 +1,21 @@
+2026-03-09T15:10:19.838Z |     5695.9ms |         236454 samples/sec |     5.36x RT | Node v22.20.0 win32
+2026-03-09T15:59:47.493Z |     8812.8ms |         152825 samples/sec |     3.47x RT | Node v22.20.0 win32
+2026-03-09T17:12:52.381Z |     5545.5ms |         485732 samples/sec |    11.01x RT | Node v22.20.0 win32
+2026-03-09T17:55:45.932Z |     9188.7ms |         293148 samples/sec |     6.65x RT | Node v22.20.0 win32
+2026-03-09T17:59:09.476Z |     8251.6ms |         326436 samples/sec |     7.40x RT | Node v22.20.0 win32
+2026-03-09T18:13:40.221Z |     2371.7ms |        1135721 samples/sec |    25.75x RT | Node v22.20.0 win32
+2026-03-09T18:54:27.823Z |     2390.8ms |        1126678 samples/sec |    25.55x RT | Node v22.20.0 win32
+2026-03-09T19:23:36.289Z |     2087.2ms |        1290543 samples/sec |    29.26x RT | Node v22.20.0 win32
+2026-03-10T04:09:27.046Z |     3726.1ms |         722904 samples/sec |    16.39x RT | Node v22.20.0 win32
+2026-03-12T01:45:18.044Z |      907.6ms |        2967886 samples/sec |    67.30x RT | Node v22.20.0 win32
+2026-03-12T18:43:42.514Z |     5952.4ms |         452531 samples/sec |    10.26x RT | Node v22.20.0 win32
+2026-03-12T19:19:37.769Z |     4876.9ms |         552319 samples/sec |    12.52x RT | Node v22.20.0 win32
+2026-03-12T19:33:06.538Z |     7904.3ms |         170389 samples/sec |     3.86x RT | Node v22.20.0 win32
+2026-03-12T19:59:51.152Z |     4104.6ms |         328123 samples/sec |     7.44x RT | Node v22.20.0 win32
+2026-03-12T20:40:21.031Z |     4674.7ms |         576215 samples/sec |    13.07x RT | Node v22.20.0 win32
+2026-03-15T04:31:48.153Z |     2488.6ms |        1082381 samples/sec |    24.54x RT | Node v22.20.0 win32
+2026-03-15T04:36:07.829Z |     2868.3ms |         939110 samples/sec |    21.30x RT | Node v22.20.0 win32
+2026-03-17T03:38:56.443Z | spectralRepair                 |      785.6ms |        3428549 samples/sec |    77.74x RT | Node v22.20.0 win32
+2026-03-17T04:25:46.427Z | spectralRepair                 |    17974.8ms |         149856 samples/sec |     3.40x RT | Node v22.20.0 win32
+2026-03-17T05:07:35.594Z | spectralRepair                 |     7368.5ms |         365562 samples/sec |     8.29x RT | Node v22.20.0 win32
+2026-03-17T05:13:32.021Z | spectralRepair                 |     7425.5ms |         362755 samples/sec |     8.23x RT | Node v22.20.0 win32

@@ -1,0 +1,18 @@
+2026-03-09T15:59:52.810Z |    16341.5ms |          82417 samples/sec |     1.87x RT | Node v22.20.0 win32
+2026-03-09T17:13:03.212Z |     4572.0ms |         589155 samples/sec |    13.36x RT | Node v22.20.0 win32
+2026-03-09T17:55:50.934Z |    18079.9ms |         148985 samples/sec |     3.38x RT | Node v22.20.0 win32
+2026-03-09T17:59:14.820Z |    17032.5ms |         158147 samples/sec |     3.59x RT | Node v22.20.0 win32
+2026-03-09T18:13:18.913Z |     3306.5ms |         814649 samples/sec |    18.47x RT | Node v22.20.0 win32
+2026-03-09T18:54:17.065Z |     3498.3ms |         769985 samples/sec |    17.46x RT | Node v22.20.0 win32
+2026-03-09T19:23:26.697Z |     2639.9ms |        1020359 samples/sec |    23.14x RT | Node v22.20.0 win32
+2026-03-10T04:10:07.974Z |    42687.9ms |          63101 samples/sec |     1.43x RT | Node v22.20.0 win32
+2026-03-12T19:30:21.249Z |     2045.9ms |         658300 samples/sec |    14.93x RT | Node v22.20.0 win32
+2026-03-12T19:31:29.998Z |    13874.2ms |          97073 samples/sec |     2.20x RT | Node v22.20.0 win32
+2026-03-12T19:58:13.030Z |    12238.0ms |         110052 samples/sec |     2.50x RT | Node v22.20.0 win32
+2026-03-12T20:41:51.264Z |     7055.5ms |         381779 samples/sec |     8.66x RT | Node v22.20.0 win32
+2026-03-15T04:31:45.282Z |    13026.6ms |         206779 samples/sec |     4.69x RT | Node v22.20.0 win32
+2026-03-15T04:36:07.381Z |    11901.2ms |         226333 samples/sec |     5.13x RT | Node v22.20.0 win32
+2026-03-17T03:38:52.529Z | voice-denoise                  |     2379.2ms |        1132158 samples/sec |    25.67x RT | Node v22.20.0 win32
+2026-03-17T04:26:45.540Z | voice-denoise                  |    77823.9ms |          34612 samples/sec |     0.78x RT | Node v22.20.0 win32
+2026-03-17T05:07:41.896Z | voice-denoise                  |    21246.5ms |         126780 samples/sec |     2.87x RT | Node v22.20.0 win32
+2026-03-17T05:13:39.196Z | voice-denoise                  |    25020.4ms |         107658 samples/sec |     2.44x RT | Node v22.20.0 win32

@@ -1,6 +1,6 @@
 import { resnapshot } from "../../models/ProxyStore/resnapshot";
 import { useCallback, useMemo } from "react";
-import type { ChainModuleReference } from "audio-chain-module";
+import type { ChainModuleReference } from "buffered-audio-nodes";
 import type { IdentifiedChain } from "../../hooks/useChain";
 import type { AppContext } from "../../models/Context";
 import type { BatchFile } from "../../models/State/App";

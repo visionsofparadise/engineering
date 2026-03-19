@@ -1,0 +1,51 @@
+{
+  "name": "buffered-audio-nodes",
+  "version": "0.2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "buffered-audio-nodes": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "Matt Cavender",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/visionsofparadise/buffered-audio-nodes.git"
+  },
+  "scripts": {
+    "check": "concurrently \"eslint . --cache --format ../../agent-eslint.js\" \"tsc --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\"",
+    "check:verbose": "concurrently \"eslint .\" \"tsc --noEmit\"",
+    "lint": "eslint . --cache --format ../../agent-eslint.js",
+    "lint:verbose": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "build": "tsup",
+    "unit": "vitest run unit",
+    "benchmark": "vitest run benchmark --fileParallelism=false"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.5",
+    "concurrently": "*",
+    "tsup": "^8.0.0",
+    "typescript": "*",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "bufferfy": "^4.0.3",
+    "commander": "^14.0.3",
+    "tsx": "^4.21.0",
+    "wavefile": "^11.0.0",
+    "zod": "^4.3.6"
+  }
+}

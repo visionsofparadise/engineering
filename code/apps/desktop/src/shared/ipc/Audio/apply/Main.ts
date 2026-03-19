@@ -1,4 +1,4 @@
-import type { ModuleEventMap, SourceModule } from "audio-chain-module";
+import type { ModuleEventMap, SourceNode } from "buffered-audio-nodes";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import { APPLY_ACTION, type ApplyInput, type ApplyIpcParameters, type ApplyIpcReturn } from "./Renderer";
 import { buildChain } from "./utils/buildChain";
@@ -11,7 +11,7 @@ export class ApplyMainIpc extends AsyncMainIpc<ApplyIpcParameters, ApplyIpcRetur
 
 		const { id: jobId, signal } = jobManager.startJob();
 
-		const source = buildChain(input, moduleRegistry) as unknown as SourceModule;
+		const source = buildChain(input, moduleRegistry) as unknown as SourceNode;
 
 		source.on("progress", (progressEvent: ModuleEventMap["progress"][0]) => {
 			browserWindow.webContents.send("audio:progress", {
