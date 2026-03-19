@@ -15,6 +15,7 @@ export class TimeStretchStream extends FfmpegStream<TimeStretchProperties> {
 	protected override _buildArgs(_context: StreamContext): Array<string> {
 		const props = this.properties;
 		const filters = buildAtempoChain(props.rate);
+
 		return ["-af", filters.join(",")];
 	}
 }
@@ -27,10 +28,10 @@ export class TimeStretchNode extends FfmpegNode<TimeStretchProperties> {
 		return FfmpegNode.is(value) && value.type[3] === "time-stretch";
 	}
 
-	override readonly type = ["async-module", "transform", "ffmpeg", "time-stretch"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "ffmpeg", "time-stretch"] as const;
 
-	override createStream(context: StreamContext): TimeStretchStream {
-		return new TimeStretchStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): TimeStretchStream {
+		return new TimeStretchStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<TimeStretchProperties>): TimeStretchNode {

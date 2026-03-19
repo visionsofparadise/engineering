@@ -1,33 +1,20 @@
-import { EventEmitter } from "node:events";
-import { ChunkBuffer } from "../buffer";
+import { MemoryChunkBuffer, type ChunkBuffer } from "../buffer";
 import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "../node";
+import { BufferedStream } from "../stream";
 
 export const WHOLE_FILE = Infinity;
 
 export interface TransformNodeProperties extends BufferedAudioNodeProperties {
-	readonly bufferSize?: number;
 	readonly overlap?: number;
 	readonly streamChunkSize?: number;
 }
 
-export interface TransformStreamEventMap {
-	started: [];
-	finished: [];
-	progress: [{ framesProcessed: number; sourceTotalFrames?: number }];
-}
-
-export class BufferedTransformStream<P extends TransformNodeProperties = TransformNodeProperties> {
-	readonly properties: P;
-	readonly context: StreamContext;
+export class BufferedTransformStream<P extends TransformNodeProperties = TransformNodeProperties> extends BufferedStream<P> {
 	bufferSize: number;
 	readonly overlap: number;
-	readonly events = new EventEmitter<TransformStreamEventMap>();
 
 	processingMs = 0;
 	framesProcessed = 0;
-
-	protected sampleRate?: number;
-	protected bitDepth?: number;
 
 	private chunkBuffer?: ChunkBuffer;
 	private bufferOffset = 0;
@@ -35,18 +22,23 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 	private hasStarted = false;
 
 	private readonly streamChunkSize?: number;
-	private readonly sourceTotalFrames?: number;
-	private readonly memoryLimit?: number;
+	private sourceTotalFrames?: number;
+	private memoryLimit?: number;
 
-	constructor(properties: P, context: StreamContext) {
-		this.properties = properties;
-		this.context = context;
+	constructor(properties: P) {
+		super(properties);
 
 		this.bufferSize = properties.bufferSize ?? 0;
 		this.overlap = properties.overlap ?? 0;
 		this.streamChunkSize = properties.streamChunkSize;
-		this.sourceTotalFrames = context.durationFrames;
-		this.memoryLimit = context.memoryLimit;
+	}
+
+	protected get sampleRate(): number | undefined {
+		return this.chunkBuffer?.sampleRate;
+	}
+
+	protected get bitDepth(): number | undefined {
+		return this.chunkBuffer?.bitDepth;
 	}
 
 	private get outputChunkSize(): number {
@@ -54,7 +46,7 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 	}
 
 	_buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> | void {
-		return buffer.append(chunk.samples);
+		return buffer.append(chunk.samples, chunk.sampleRate, chunk.bitDepth);
 	}
 
 	_process(_buffer: ChunkBuffer): Promise<void> | void {
@@ -65,12 +57,11 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 		return chunk;
 	}
 
-	setup(input: ReadableStream<AudioChunk>): ReadableStream<AudioChunk> {
-		return input.pipeThrough(this.createTransformStream());
-	}
+	setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		this.sourceTotalFrames = context.durationFrames;
+		this.memoryLimit = context.memoryLimit;
 
-	_teardown(): Promise<void> | void {
-		return;
+		return input.pipeThrough(this.createTransformStream());
 	}
 
 	createTransformStream(): TransformStream<AudioChunk, AudioChunk> {
@@ -89,14 +80,11 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 
 		const chunkFrames = chunk.samples[0]?.length ?? 0;
 
-		this.sampleRate ??= chunk.sampleRate;
-		this.bitDepth ??= chunk.bitDepth;
-
 		this.inferredChunkSize ??= chunkFrames;
 
 		const channels = chunk.samples.length;
 
-		this.chunkBuffer ??= new ChunkBuffer(this.bufferSize, channels, this.memoryLimit);
+		this.chunkBuffer ??= new MemoryChunkBuffer(this.bufferSize, channels, this.memoryLimit);
 
 		const samplesIn = chunkFrames;
 		const start = performance.now();
@@ -173,8 +161,8 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 			const adjusted: AudioChunk = {
 				samples: chunk.samples,
 				offset: this.bufferOffset + chunk.offset,
-				sampleRate: this.sampleRate ?? 44100,
-				bitDepth: this.bitDepth ?? 32,
+				sampleRate: chunk.sampleRate,
+				bitDepth: chunk.bitDepth,
 			};
 
 			const result = await this._unbuffer(adjusted);
@@ -194,7 +182,7 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 
 				await this.chunkBuffer.reset();
 
-				await this.chunkBuffer.append(overlapChunk.samples);
+				await this.chunkBuffer.append(overlapChunk.samples, overlapChunk.sampleRate, overlapChunk.bitDepth);
 
 				this.bufferOffset -= this.overlap;
 			}
@@ -209,5 +197,23 @@ export abstract class TransformNode<P extends TransformNodeProperties = Transfor
 		return BufferedAudioNode.is(value) && value.type[1] === "transform";
 	}
 
-	abstract createStream(context: StreamContext): BufferedTransformStream;
+	readonly children: Array<BufferedAudioNode> = [];
+
+	override getChildren(): ReadonlyArray<BufferedAudioNode> { return this.children; }
+
+	to<T extends BufferedAudioNode>(child: T): T {
+		this.children.push(child);
+
+		return child;
+	}
+
+	abstract createStream(): BufferedTransformStream;
+
+	setup(readable: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		const stream = this.createStream();
+
+		this.streams.push(stream);
+
+		return stream.setup(readable, context);
+	}
 }

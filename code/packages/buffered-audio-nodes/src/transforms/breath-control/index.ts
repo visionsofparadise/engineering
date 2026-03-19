@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
 import { bandPassCoefficients, biquadFilter } from "../../utils/biquad";
 import { smoothEnvelope } from "../../utils/envelope";
 
@@ -35,6 +34,7 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 
 		for (let index = 0; index < frames; index++) {
 			const sample = channel[index] ?? 0;
+
 			widebandEnv[index] = sample * sample;
 		}
 
@@ -48,6 +48,7 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 		}
 
 		const smoothSource = new Float32Array(frames);
+
 		smoothEnvelope(widebandEnv, envSmooth, smoothSource);
 		smoothEnvelope(breathBandEnv, envSmooth, smoothSource);
 
@@ -64,6 +65,7 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 		for (let index = 0; index < frames; index++) {
 			const isSpeechGap = (widebandEnv[index] ?? 0) < speechThreshold;
 			const isBreathy = (breathBandEnv[index] ?? 0) > breathThreshold;
+
 			isBreath[index] = isSpeechGap && isBreathy ? 1 : 0;
 		}
 
@@ -95,6 +97,7 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 		// Step 5: Build gain envelope with smooth crossfades
 		const fadeLength = Math.round(sampleRate * 0.015);
 		const gainEnvelope = new Float32Array(frames);
+
 		gainEnvelope.fill(1);
 
 		for (const region of regions) {
@@ -108,6 +111,7 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 
 				if (pos >= 0 && pos < frames) {
 					const fadeIn = (index + 1) / (fadeLength + 1);
+
 					gainEnvelope[pos] = 1 + (gainLinear - 1) * fadeIn;
 				}
 			}
@@ -118,6 +122,7 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 
 				if (pos >= 0 && pos < frames) {
 					const fadeOut = 1 - (index + 1) / (fadeLength + 1);
+
 					gainEnvelope[pos] = 1 + (gainLinear - 1) * fadeOut;
 				}
 			}
@@ -148,12 +153,14 @@ export class BreathControlNode extends TransformNode<BreathControlProperties> {
 		return TransformNode.is(value) && value.type[2] === "breath-control";
 	}
 
-	override readonly type = ["async-module", "transform", "breath-control"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "breath-control"] as const;
 
-	override createStream(context: StreamContext): BreathControlStream {
-		return new BreathControlStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: BreathControlProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): BreathControlStream {
+		return new BreathControlStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<BreathControlProperties>): BreathControlNode {

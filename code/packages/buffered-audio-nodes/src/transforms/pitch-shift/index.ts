@@ -32,10 +32,10 @@ export class PitchShiftNode extends FfmpegNode<PitchShiftProperties> {
 		return FfmpegNode.is(value) && value.type[3] === "pitch-shift";
 	}
 
-	override readonly type = ["async-module", "transform", "ffmpeg", "pitch-shift"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "ffmpeg", "pitch-shift"] as const;
 
-	override createStream(context: StreamContext): PitchShiftStream {
-		return new PitchShiftStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): PitchShiftStream {
+		return new PitchShiftStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<PitchShiftProperties>): PitchShiftNode {

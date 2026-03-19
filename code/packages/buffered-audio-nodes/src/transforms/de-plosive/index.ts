@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 
 export const schema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
@@ -17,6 +17,7 @@ export class DePlosiveStream extends BufferedTransformStream<DePlosiveProperties
 		if (this.bufferSize === 0) {
 			this.bufferSize = Math.round(chunk.sampleRate * 0.02);
 		}
+
 		return super._buffer(chunk, buffer);
 	}
 
@@ -53,6 +54,7 @@ export class DePlosiveStream extends BufferedTransformStream<DePlosiveProperties
 
 				for (let index = 0; index < channel.length; index++) {
 					const sample = channel[index] ?? 0;
+
 					removalLpState = removalLpState * cutoffCoeff + sample * (1 - cutoffCoeff);
 					const filtered = sample - removalLpState * 0.8;
 
@@ -85,12 +87,10 @@ export class DePlosiveNode extends TransformNode<DePlosiveProperties> {
 		return TransformNode.is(value) && value.type[2] === "de-plosive";
 	}
 
-	override readonly type = ["async-module", "transform", "de-plosive"] as const;
-	override readonly latency = 0;
-	override readonly bufferSize = 0;
+	override readonly type = ["buffered-audio-node", "transform", "de-plosive"] as const;
 
-	override createStream(context: StreamContext): DePlosiveStream {
-		return new DePlosiveStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): DePlosiveStream {
+		return new DePlosiveStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<DePlosiveProperties>): DePlosiveNode {

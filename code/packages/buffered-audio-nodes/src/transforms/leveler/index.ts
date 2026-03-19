@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 
 export const schema = z.object({
 	target: z.number().min(-60).max(0).multipleOf(1).default(-20).describe("Target"),
@@ -18,8 +18,8 @@ export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
 	private currentGainDb = 0;
 	private windowSeconds: number;
 
-	constructor(properties: LevelerProperties, context: StreamContext) {
-		super(properties, context);
+	constructor(properties: LevelerProperties) {
+		super(properties);
 		this.windowSeconds = this.properties.window;
 	}
 
@@ -27,6 +27,7 @@ export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
 		if (this.bufferSize === 0) {
 			this.bufferSize = Math.round(chunk.sampleRate * this.properties.window);
 		}
+
 		return super._buffer(chunk, buffer);
 	}
 
@@ -38,6 +39,7 @@ export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
 		if (this.windowSamples === 0) {
 			this.windowSamples = Math.round(this.properties.window * chunk.sampleRate);
 		}
+
 		const { target, speed, maxGain, maxCut } = this.properties;
 
 		let rms = 0;
@@ -58,9 +60,11 @@ export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
 
 		if (rmsDb > GATE_THRESHOLD_DB) {
 			let targetGainDb = target - rmsDb;
+
 			targetGainDb = Math.max(-maxCut, Math.min(maxGain, targetGainDb));
 
 			const alpha = 1 - Math.exp(-1 / (speed * (this.windowSamples / this.windowSeconds)));
+
 			this.currentGainDb += alpha * (targetGainDb - this.currentGainDb);
 		}
 
@@ -88,12 +92,10 @@ export class LevelerNode extends TransformNode<LevelerProperties> {
 		return TransformNode.is(value) && value.type[2] === "leveler";
 	}
 
-	override readonly type = ["async-module", "transform", "leveler"] as const;
-	override readonly latency = 0;
-	override readonly bufferSize = 0;
+	override readonly type = ["buffered-audio-node", "transform", "leveler"] as const;
 
-	override createStream(context: StreamContext): LevelerStream {
-		return new LevelerStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): LevelerStream {
+		return new LevelerStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<LevelerProperties>): LevelerNode {

@@ -12,7 +12,7 @@ const testVoice = join(import.meta.dirname, "../utils/test-voice.wav");
 describe("WriteModule", () => {
 	it("round-trips a WAV file with correct duration and sample rate", async () => {
 		const original = await readWavSamples(testVoice);
-		const tempOut = join(tmpdir(), `acm-write-rt-${randomBytes(8).toString("hex")}.wav`);
+		const tempOut = join(tmpdir(), `ban-write-rt-${randomBytes(8).toString("hex")}.wav`);
 
 		try {
 			const source = read(testVoice);
@@ -42,7 +42,7 @@ describe("WriteModule", () => {
 
 	it("writes 16-bit WAV and produces readable output", async () => {
 		const original = await readWavSamples(testVoice);
-		const tempOut = join(tmpdir(), `acm-write-16-${randomBytes(8).toString("hex")}.wav`);
+		const tempOut = join(tmpdir(), `ban-write-16-${randomBytes(8).toString("hex")}.wav`);
 
 		try {
 			const source = read(testVoice);
@@ -72,7 +72,7 @@ describe("WriteModule", () => {
 
 	it("writes 32f WAV and produces readable output", async () => {
 		const original = await readWavSamples(testVoice);
-		const tempOut = join(tmpdir(), `acm-write-32f-${randomBytes(8).toString("hex")}.wav`);
+		const tempOut = join(tmpdir(), `ban-write-32f-${randomBytes(8).toString("hex")}.wav`);
 
 		try {
 			const source = read(testVoice);

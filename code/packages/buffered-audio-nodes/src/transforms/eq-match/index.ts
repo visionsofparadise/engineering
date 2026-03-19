@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { replaceChannel } from "../../utils/replace-channel";
@@ -39,15 +39,17 @@ export interface EqMatchProperties extends z.infer<typeof schema>, TransformNode
  */
 export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 	private referenceSpectrum?: Float32Array;
-	private fftBackend: FftBackend;
+	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 	private initialized = false;
 
-	constructor(properties: EqMatchProperties, context: StreamContext) {
-		super(properties, context);
-		const fft = initFftBackend(context.executionProviders, properties);
+	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		const fft = initFftBackend(context.executionProviders, this.properties);
+
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
+
+		return super.setup(input, context);
 	}
 
 	private async ensureInitialized(): Promise<void> {
@@ -58,9 +60,11 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 		const refFrames = refBuffer.frames;
 		const chunk = await refBuffer.read(0, refFrames);
 		const channel = chunk.samples[0];
+
 		if (channel) {
 			this.referenceSpectrum = computeAverageSpectrum(channel, this.sampleRate ?? 44100);
 		}
+
 		await refBuffer.close();
 	}
 
@@ -90,6 +94,7 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 
 			if (channel.length < fftSize) {
 				const padded = new Float32Array(fftSize);
+
 				padded.set(channel);
 				channel = padded;
 			}
@@ -130,12 +135,14 @@ export class EqMatchNode extends TransformNode<EqMatchProperties> {
 		return TransformNode.is(value) && value.type[2] === "eq-match";
 	}
 
-	override readonly type = ["async-module", "transform", "eq-match"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "eq-match"] as const;
 
-	override createStream(context: StreamContext): EqMatchStream {
-		return new EqMatchStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: EqMatchProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): EqMatchStream {
+		return new EqMatchStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<EqMatchProperties>): EqMatchNode {
@@ -159,6 +166,7 @@ function computeAverageSpectrum(signal: Float32Array, _sampleRate: number): Floa
 		for (let bin = 0; bin < halfSize; bin++) {
 			const rVal = re[bin] ?? 0;
 			const iVal = im[bin] ?? 0;
+
 			avgMagnitude[bin] = (avgMagnitude[bin] ?? 0) + Math.sqrt(rVal * rVal + iVal * iVal);
 		}
 	}
@@ -184,6 +192,7 @@ function averageSpectrumFromStft(result: { real: Array<Float32Array>; imag: Arra
 		for (let bin = 0; bin < halfSize; bin++) {
 			const rVal = re[bin] ?? 0;
 			const iVal = im[bin] ?? 0;
+
 			avgMagnitude[bin] = (avgMagnitude[bin] ?? 0) + Math.sqrt(rVal * rVal + iVal * iVal);
 		}
 	}
@@ -204,6 +213,7 @@ function computeCorrection(reference: Float32Array, input: Float32Array, smoothi
 	for (let bin = 0; bin < size; bin++) {
 		const refDb = 20 * Math.log10(Math.max(reference[bin] ?? 0, 1e-10));
 		const inDb = 20 * Math.log10(Math.max(input[bin] ?? 0, 1e-10));
+
 		correctionDb[bin] = refDb - inDb;
 	}
 

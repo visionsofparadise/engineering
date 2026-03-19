@@ -20,7 +20,7 @@ const configs = [
 describe("spectrogram benchmark", () => {
 	for (const config of configs) {
 		it(`benchmarks ${config.name}`, async () => {
-			const tempSpec = resolve(tmpdir(), `acm-spec-bench-${randomBytes(8).toString("hex")}.bin`);
+			const tempSpec = resolve(tmpdir(), `ban-spec-bench-${randomBytes(8).toString("hex")}.bin`);
 
 			try {
 				const source = read(testVoice);

@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
 import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 import { waitForDrain } from "../../utils/ffmpeg";
 
 export type WavBitDepth = "16" | "24" | "32" | "32f";
@@ -41,7 +41,7 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 	private headerWritten = false;
 	private initialized = false;
 
-	private async lazyInit(chunk: AudioChunk): Promise<void> {
+	private async initialize(chunk: AudioChunk): Promise<void> {
 		if (this.initialized) return;
 		this.initialized = true;
 
@@ -60,6 +60,7 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 
 		if (this.useEncoding && encoding) {
 			const ffmpegPath = this.properties.ffmpegPath;
+
 			if (!ffmpegPath) throw new Error("ffmpegPath is required for encoding");
 
 			const args = this.buildFfmpegArgs(encoding);
@@ -89,21 +90,24 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 		} else {
 			this.fileHandle = await open(this.properties.path, "w");
 			const header = buildWavHeader(0, this.sampleRate, this.channels, this.properties.bitDepth);
+
 			await this.fileHandle.write(header, 0, WAV_HEADER_SIZE, 0);
 		}
 	}
 
 	override async _write(chunk: AudioChunk): Promise<void> {
-		await this.lazyInit(chunk);
+		await this.initialize(chunk);
 
 		const bytes = this.convertChunk(chunk);
 
 		if (this.useEncoding && this.ffmpegStdin) {
 			if (!this.headerWritten) {
 				const header = buildWavHeader(0xffffffff, this.sampleRate, this.channels, this.properties.bitDepth);
+
 				await this.writeToStdin(header);
 				this.headerWritten = true;
 			}
+
 			await this.writeToStdin(bytes);
 		} else if (this.fileHandle) {
 			await this.fileHandle.write(bytes, 0, bytes.length, WAV_HEADER_SIZE + this.bytesWritten);
@@ -117,9 +121,11 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 			if (this.ffmpegStdin) {
 				this.ffmpegStdin.end();
 			}
+
 			if (this.ffmpegDone) {
 				await this.ffmpegDone;
 			}
+
 			this.ffmpegProcess = undefined;
 			this.ffmpegStdin = undefined;
 			this.ffmpegDone = undefined;
@@ -128,6 +134,7 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 				this.bytesWritten > UINT32_MAX
 					? buildRf64Header(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth)
 					: buildWavHeader(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth);
+
 			await this.fileHandle.write(header, 0, WAV_HEADER_SIZE, 0);
 			await this.fileHandle.close();
 			this.fileHandle = undefined;
@@ -145,6 +152,7 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 		for (let frame = 0; frame < frames; frame++) {
 			for (let ch = 0; ch < channels; ch++) {
 				const sample = chunk.samples[ch]?.[frame] ?? 0;
+
 				offset = writeSample(buffer, offset, sample, this.properties.bitDepth);
 			}
 		}
@@ -166,6 +174,7 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 				} else {
 					args.push("-b:a", encoding.bitrate ?? "192k");
 				}
+
 				break;
 			case "aac":
 				args.push("-codec:a", "aac", "-b:a", encoding.bitrate ?? "192k");
@@ -173,12 +182,14 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 		}
 
 		args.push("-y", this.properties.path);
+
 		return args;
 	}
 
 	private writeToStdin(data: Buffer): Promise<void> {
 		const stdin = this.ffmpegStdin;
 		const proc = this.ffmpegProcess;
+
 		if (!stdin || !proc) return Promise.resolve();
 
 		const canWrite = stdin.write(data);
@@ -195,13 +206,10 @@ export class WriteNode extends TargetNode<WriteProperties> {
 	static override readonly moduleName = "Write";
 	static override readonly moduleDescription = "Write audio to a file";
 	static override readonly schema = schema;
-	override readonly type = ["async-module", "target", "write"] as const;
+	override readonly type = ["buffered-audio-node", "target", "write"] as const;
 
-	readonly bufferSize = 0;
-	readonly latency = 0;
-
-	override createStream(context: StreamContext): WriteStream {
-		return new WriteStream(this.properties, context);
+	override createStream(): WriteStream {
+		return new WriteStream(this.properties);
 	}
 
 	clone(overrides?: Partial<WriteProperties>): WriteNode {
@@ -226,25 +234,35 @@ function writeSample(buffer: Buffer, offset: number, sample: number, bitDepth: W
 		case "16": {
 			const clamped = Math.max(-1, Math.min(1, sample));
 			const value = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+
 			buffer.writeInt16LE(Math.round(value), offset);
+
 			return offset + 2;
 		}
+
 		case "24": {
 			const clamped = Math.max(-1, Math.min(1, sample));
 			const value = Math.round(clamped < 0 ? clamped * 0x800000 : clamped * 0x7fffff);
+
 			buffer[offset] = value & 0xff;
 			buffer[offset + 1] = (value >> 8) & 0xff;
 			buffer[offset + 2] = (value >> 16) & 0xff;
+
 			return offset + 3;
 		}
+
 		case "32": {
 			const clamped = Math.max(-1, Math.min(1, sample));
 			const value = clamped < 0 ? clamped * 0x80000000 : clamped * 0x7fffffff;
+
 			buffer.writeInt32LE(Math.round(value), offset);
+
 			return offset + 4;
 		}
+
 		case "32f": {
 			buffer.writeFloatLE(sample, offset);
+
 			return offset + 4;
 		}
 	}
@@ -275,7 +293,6 @@ function buildWavHeader(dataSize: number, sampleRate: number, channels: number, 
 	header.write("RIFF", 0);
 	header.writeUInt32LE(WAV_HEADER_SIZE - 8 + dataSize, 4);
 	header.write("WAVE", 8);
-
 	header.write("JUNK", 12);
 	header.writeUInt32LE(28, 16);
 
@@ -293,7 +310,6 @@ function buildRf64Header(dataSize: number, sampleRate: number, channels: number,
 	header.write("RF64", 0);
 	header.writeUInt32LE(UINT32_MAX, 4);
 	header.write("WAVE", 8);
-
 	header.write("ds64", 12);
 	header.writeUInt32LE(28, 16);
 	writeBigUInt64LE(header, 20, WAV_HEADER_SIZE - 8 + dataSize);

@@ -52,11 +52,14 @@ export function resampleDirect(
 		proc.on("close", (code) => {
 			if (code !== 0) {
 				const stderrOutput = Buffer.concat(stderrChunks).toString();
+
 				reject(new Error(`ffmpeg exited with code ${code}: ${stderrOutput}`));
+
 				return;
 			}
 
 			const outputBuffer = Buffer.concat(outputChunks);
+
 			resolve(deinterleaveBuffer(outputBuffer, numChannels));
 		});
 
@@ -66,6 +69,7 @@ export function resampleDirect(
 
 		const interleaved = interleave(channels, frames, numChannels);
 		const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
+
 		stdin.write(buf, () => stdin.end());
 	});
 }

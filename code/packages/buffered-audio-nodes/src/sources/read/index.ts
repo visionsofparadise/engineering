@@ -1,8 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { open, stat, type FileHandle } from "node:fs/promises";
+import { extname } from "node:path";
 import { z } from "zod";
-import { BufferedSourceStream, SourceNode, type SourceNodeProperties } from "..";
-import type { AudioChunk, StreamMeta } from "../../node";
+import { BufferedSourceStream, SourceNode, type SourceMetadata, type SourceNodeProperties } from "..";
+import type { AudioChunk } from "../../node";
 import { deinterleaveBuffer } from "../../utils/interleave";
 
 export const schema = z.object({
@@ -37,56 +38,25 @@ interface ProbeResult {
 	readonly duration: number;
 }
 
-export class ReadStream extends BufferedSourceStream<ReadProperties> {
+// FIX: Factor out the chunk read sources to their own subfolders
+// FIX: You only factored out the streams here. I was thinking you would factor out ReadWavNode and ReadFfmpegNode
+export class ReadWavStream extends BufferedSourceStream<ReadProperties> {
 	private fileHandle?: FileHandle;
 	private format?: WavFormat;
 	private outputChannels = 0;
 	private bytesRead = 0;
-
-	private ffmpegProcess?: ChildProcess;
-	private stdout?: NodeJS.ReadableStream;
-	private frameOffset = 0;
-	private remainder?: Buffer;
-
-	private useTranscode = false;
 	private sourceSampleRate = 0;
 	private sourceBitDepth = 0;
 
-	override async _init(): Promise<StreamMeta> {
-		const fh = await open(this.properties.path, "r").catch(() => undefined);
+	override async getMetadata(): Promise<SourceMetadata> {
+		const fh = await open(this.properties.path, "r");
 
-		if (fh) {
-			const header = Buffer.alloc(12);
-			await fh.read(header, 0, 12, 0);
-			const magic = header.toString("ascii", 0, 4);
-			const isWav = (magic === "RIFF" || magic === "RF64") && header.toString("ascii", 8, 12) === "WAVE";
-
-			if (isWav) {
-				this.fileHandle = fh;
-
-				return this.initWav();
-			}
-
-			await fh.close();
-		}
-
-		if (!this.properties.ffmpegPath || !this.properties.ffprobePath) {
-			throw new Error(`Non-WAV file requires ffmpegPath and ffprobePath: "${this.properties.path}"`);
-		}
-
-		this.useTranscode = true;
-
-		return this.initTranscode();
-	}
-
-	private async initWav(): Promise<StreamMeta> {
-		const fh = this.fileHandle;
-
-		if (!fh) throw new Error("File handle not initialized");
+		this.fileHandle = fh;
 
 		const fileInfo = await stat(this.properties.path);
 
 		const header = Buffer.alloc(12);
+
 		await fh.read(header, 0, 12, 0);
 
 		const magic = header.toString("ascii", 0, 4);
@@ -111,6 +81,7 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 
 			if (chunkId === "ds64") {
 				const ds64Data = Buffer.alloc(Math.min(chunkSize, 28));
+
 				await fh.read(ds64Data, 0, ds64Data.length, offset + 8);
 				ds64DataSize = Number(ds64Data.readBigUInt64LE(8));
 			} else if (chunkId === "JUNK") {
@@ -118,6 +89,7 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 			} else if (chunkId === "fmt ") {
 				if (chunkSize < 16) throw new Error("WAV fmt chunk too small");
 				const fmtData = Buffer.alloc(chunkSize);
+
 				await fh.read(fmtData, 0, chunkSize, offset + 8);
 
 				const audioFormat = fmtData.readUInt16LE(0);
@@ -130,6 +102,7 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 			} else if (chunkId === "data") {
 				if (!format) throw new Error("WAV file has data chunk before fmt chunk");
 				const dataSize = isRf64 && ds64DataSize !== undefined ? ds64DataSize : chunkSize;
+
 				format = { ...format, dataOffset: offset + 8, dataSize };
 				break;
 			}
@@ -148,6 +121,7 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		this.sourceBitDepth = format.bitsPerSample;
 
 		const selectedChannels = this.properties.channels;
+
 		this.outputChannels = selectedChannels ? selectedChannels.length : format.channels;
 
 		const totalFrames = Math.floor(format.dataSize / format.blockAlign);
@@ -159,9 +133,99 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		};
 	}
 
-	private async initTranscode(): Promise<StreamMeta> {
+	override async _read(): Promise<AudioChunk | undefined> {
+		const fh = this.fileHandle;
+		const format = this.format;
+
+		if (!fh || !format) {
+			return undefined;
+		}
+
+		const remaining = format.dataSize - this.bytesRead;
+
+		if (remaining <= 0) {
+			return undefined;
+		}
+
+		const framesWanted = DEFAULT_CHUNK_SIZE;
+		const bytesWanted = Math.min(framesWanted * format.blockAlign, remaining);
+		const chunk = Buffer.alloc(bytesWanted);
+		const { bytesRead } = await fh.read(chunk, 0, bytesWanted, format.dataOffset + this.bytesRead);
+
+		if (bytesRead === 0) {
+			return undefined;
+		}
+
+		const frames = Math.floor(bytesRead / format.blockAlign);
+
+		this.bytesRead += frames * format.blockAlign;
+
+		const fileChannels = format.channels;
+		const selectedChannels = this.properties.channels;
+
+		const allChannels: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < fileChannels; ch++) {
+			allChannels.push(new Float32Array(frames));
+		}
+
+		for (let frame = 0; frame < frames; frame++) {
+			for (let ch = 0; ch < fileChannels; ch++) {
+				const byteOffset = frame * format.blockAlign + ch * (format.bitsPerSample / 8);
+				const channel = allChannels[ch];
+
+				if (channel) {
+					channel[frame] = readSample(chunk, byteOffset, format.bitsPerSample, format.audioFormat);
+				}
+			}
+		}
+
+		let samples: Array<Float32Array>;
+
+		if (selectedChannels) {
+			samples = selectedChannels.map((srcCh) => allChannels[srcCh] ?? new Float32Array(frames));
+		} else {
+			samples = allChannels;
+		}
+
+		const frameOffset = Math.floor((this.bytesRead - frames * format.blockAlign) / format.blockAlign);
+
+		return {
+			samples,
+			offset: frameOffset,
+			sampleRate: this.sourceSampleRate,
+			bitDepth: this.sourceBitDepth,
+		};
+	}
+
+	override async _flush(): Promise<void> {
+		if (this.fileHandle) {
+			await this.fileHandle.close();
+			this.fileHandle = undefined;
+		}
+	}
+
+	override _teardown(): void {
+		if (this.fileHandle) {
+			this.fileHandle.close().catch(() => undefined);
+			this.fileHandle = undefined;
+		}
+	}
+}
+
+export class ReadFfmpegStream extends BufferedSourceStream<ReadProperties> {
+	private ffmpegProcess?: ChildProcess;
+	private stdout?: NodeJS.ReadableStream;
+	private frameOffset = 0;
+	private remainder?: Buffer;
+	private outputChannels = 0;
+	private sourceSampleRate = 0;
+	private sourceBitDepth = 0;
+
+	override async getMetadata(): Promise<SourceMetadata> {
 		const probe = await this.probe(this.properties.ffprobePath, this.properties.path);
 		const selectedChannels = this.properties.channels;
+
 		this.outputChannels = selectedChannels ? selectedChannels.length : probe.channels;
 		this.sourceSampleRate = probe.sampleRate;
 		this.sourceBitDepth = 32;
@@ -171,6 +235,7 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		if (selectedChannels) {
 			const panParts = selectedChannels.map((srcCh, outCh) => `c${outCh}=c${srcCh}`);
 			const layout = this.outputChannels === 1 ? "mono" : `${this.outputChannels}c`;
+
 			args.push("-af", `pan=${layout}|${panParts.join("|")}`);
 			args.push("-ac", String(this.outputChannels));
 		} else {
@@ -197,96 +262,24 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		};
 	}
 
-	override async _read(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void> {
-		if (this.useTranscode) {
-			return this.readTranscode(controller);
-		}
-		return this.readWav(controller);
-	}
-
-	private async readWav(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void> {
-		const fh = this.fileHandle;
-		const format = this.format;
-
-		if (!fh || !format) {
-			controller.close();
-			return;
-		}
-
-		const remaining = format.dataSize - this.bytesRead;
-
-		if (remaining <= 0) {
-			controller.close();
-			return;
-		}
-
-		const framesWanted = DEFAULT_CHUNK_SIZE;
-		const bytesWanted = Math.min(framesWanted * format.blockAlign, remaining);
-		const chunk = Buffer.alloc(bytesWanted);
-		const { bytesRead } = await fh.read(chunk, 0, bytesWanted, format.dataOffset + this.bytesRead);
-
-		if (bytesRead === 0) {
-			controller.close();
-			return;
-		}
-
-		const frames = Math.floor(bytesRead / format.blockAlign);
-		this.bytesRead += frames * format.blockAlign;
-
-		const fileChannels = format.channels;
-		const selectedChannels = this.properties.channels;
-
-		const allChannels: Array<Float32Array> = [];
-		for (let ch = 0; ch < fileChannels; ch++) {
-			allChannels.push(new Float32Array(frames));
-		}
-
-		for (let frame = 0; frame < frames; frame++) {
-			for (let ch = 0; ch < fileChannels; ch++) {
-				const byteOffset = frame * format.blockAlign + ch * (format.bitsPerSample / 8);
-				const channel = allChannels[ch];
-				if (channel) {
-					channel[frame] = readSample(chunk, byteOffset, format.bitsPerSample, format.audioFormat);
-				}
-			}
-		}
-
-		let samples: Array<Float32Array>;
-
-		if (selectedChannels) {
-			samples = selectedChannels.map((srcCh) => allChannels[srcCh] ?? new Float32Array(frames));
-		} else {
-			samples = allChannels;
-		}
-
-		const frameOffset = Math.floor((this.bytesRead - frames * format.blockAlign) / format.blockAlign);
-
-		controller.enqueue({
-			samples,
-			offset: frameOffset,
-			sampleRate: this.sourceSampleRate,
-			bitDepth: this.sourceBitDepth,
-		});
-	}
-
-	private async readTranscode(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void> {
+	override async _read(): Promise<AudioChunk | undefined> {
 		const bytesPerFrame = this.outputChannels * 4;
 		const targetBytes = DEFAULT_CHUNK_SIZE * bytesPerFrame;
 
 		const data = await this.readBytes(targetBytes);
 
 		if (!data || data.length === 0) {
-			controller.close();
-			return;
+			return undefined;
 		}
 
 		const usableBytes = Math.floor(data.length / bytesPerFrame) * bytesPerFrame;
+
 		if (usableBytes === 0) {
-			controller.close();
-			return;
+			return undefined;
 		}
 
 		const leftover = data.length - usableBytes;
+
 		if (leftover > 0) {
 			this.remainder = Buffer.from(data.buffer, data.byteOffset + usableBytes, leftover);
 		}
@@ -296,40 +289,41 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		const samples = deinterleaveBuffer(sampleBuffer, this.outputChannels);
 
 		const offset = this.frameOffset;
+
 		this.frameOffset += frames;
 
-		controller.enqueue({
+		return {
 			samples,
 			offset,
 			sampleRate: this.sourceSampleRate,
 			bitDepth: this.sourceBitDepth,
-		});
+		};
 	}
 
-	override async _flush(_controller: ReadableStreamDefaultController<AudioChunk>): Promise<void> {
-		if (this.fileHandle) {
-			await this.fileHandle.close();
-			this.fileHandle = undefined;
-		}
-
+	override async _flush(): Promise<void> {
 		const proc = this.ffmpegProcess;
+
 		if (proc) {
 			proc.kill();
+
 			await new Promise<void>((resolve) => {
 				proc.on("close", () => resolve());
 				if (proc.exitCode !== null) resolve();
 			});
+
 			this.ffmpegProcess = undefined;
 		}
+
 		this.stdout = undefined;
 		this.remainder = undefined;
 	}
 
-	teardown(): void {
+	override _teardown(): void {
 		if (this.ffmpegProcess) {
 			this.ffmpegProcess.kill();
 			this.ffmpegProcess = undefined;
 		}
+
 		this.stdout = undefined;
 		this.remainder = undefined;
 	}
@@ -369,6 +363,7 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		};
 
 		const stream = json.streams?.[0];
+
 		if (!stream) {
 			throw new Error(`No audio stream found in "${filePath}"`);
 		}
@@ -383,12 +378,15 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 	private readBytes(targetBytes: number): Promise<Buffer | undefined> {
 		return new Promise((resolve) => {
 			const stdout = this.stdout;
+
 			if (!stdout) {
 				resolve(undefined);
+
 				return;
 			}
 
 			const existing = this.remainder;
+
 			this.remainder = undefined;
 
 			const read = (): void => {
@@ -396,11 +394,13 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 
 				if (raw) {
 					resolve(existing ? Buffer.concat([existing, raw]) : raw);
+
 					return;
 				}
 
 				if ((stdout as NodeJS.ReadableStream & { readableEnded?: boolean }).readableEnded) {
 					resolve(existing && existing.length > 0 ? existing : undefined);
+
 					return;
 				}
 
@@ -430,13 +430,20 @@ export class ReadNode extends SourceNode<ReadProperties> {
 	static override readonly moduleName = "Read";
 	static override readonly moduleDescription = "Read audio from a file";
 	static override readonly schema = schema;
-	override readonly type = ["async-module", "source", "read"] as const;
+	override readonly type = ["buffered-audio-node", "source", "read"] as const;
 
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	protected override createStream(): ReadWavStream | ReadFfmpegStream {
+		const ext = extname(this.properties.path).toLowerCase();
 
-	protected override createStream(): ReadStream {
-		return new ReadStream(this.properties);
+		if (ext === ".wav") {
+			return new ReadWavStream(this.properties);
+		}
+
+		if (!this.properties.ffmpegPath || !this.properties.ffprobePath) {
+			throw new Error(`Non-WAV file requires ffmpegPath and ffprobePath: "${this.properties.path}"`);
+		}
+
+		return new ReadFfmpegStream(this.properties);
 	}
 
 	clone(overrides?: Partial<ReadProperties>): ReadNode {
@@ -456,8 +463,10 @@ function readSample(data: Buffer, offset: number, bitsPerSample: number, audioFo
 		const byte1 = data[offset + 1] ?? 0;
 		const byte2 = data[offset + 2] ?? 0;
 		const raw = byte0 | (byte1 << 8) | (byte2 << 16);
+
 		return (raw > 0x7fffff ? raw - 0x1000000 : raw) / 0x800000;
 	}
+
 	if (bitsPerSample === 32) return data.readInt32LE(offset) / 0x80000000;
 	if (bitsPerSample === 8) return ((data[offset] ?? 128) - 128) / 128;
 

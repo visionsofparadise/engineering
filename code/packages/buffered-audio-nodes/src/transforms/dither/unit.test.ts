@@ -1,12 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { DitherStream } from ".";
-import type { StreamContext } from "../../node";
-
-const context: StreamContext = { executionProviders: ["cpu"], memoryLimit: 256 * 1024 * 1024 };
 
 describe("DitherStream", () => {
 	it("quantizes samples to 16-bit grid", () => {
-		const stream = new DitherStream({ bitDepth: 16, noiseShaping: false, bufferSize: 0 }, context);
+		const stream = new DitherStream({ bitDepth: 16, noiseShaping: false, bufferSize: 0 });
 		const levels = Math.pow(2, 15);
 		const input = new Float32Array([0.12345678, -0.98765432, 0, 0.5]);
 
@@ -25,7 +22,7 @@ describe("DitherStream", () => {
 	});
 
 	it("quantizes samples to 24-bit grid", () => {
-		const stream = new DitherStream({ bitDepth: 24, noiseShaping: false, bufferSize: 0 }, context);
+		const stream = new DitherStream({ bitDepth: 24, noiseShaping: false, bufferSize: 0 });
 		const levels = Math.pow(2, 23);
 		const input = new Float32Array([0.12345678, -0.98765432]);
 
@@ -44,7 +41,7 @@ describe("DitherStream", () => {
 	});
 
 	it("preserves silence", () => {
-		const stream = new DitherStream({ bitDepth: 16, noiseShaping: false, bufferSize: 0 }, context);
+		const stream = new DitherStream({ bitDepth: 16, noiseShaping: false, bufferSize: 0 });
 		const input = new Float32Array(100).fill(0);
 
 		const result = stream._unbuffer({

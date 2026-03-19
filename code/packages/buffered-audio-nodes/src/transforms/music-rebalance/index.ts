@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, ExecutionProvider, StreamContext } from "../../node";
 import { applyBandpass } from "../../utils/apply-bandpass";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
@@ -44,17 +44,27 @@ const TRANSITION_POWER = 1.0;
 
 export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalanceProperties> {
 	private session?: OnnxSession;
+	private executionProviders: ReadonlyArray<ExecutionProvider> = [];
+
+	// FIX: Should be _setup()
+	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		this.executionProviders = context.executionProviders;
+
+		return super.setup(input, context);
+	}
 
 	private ensureSession(): OnnxSession {
 		if (this.session) return this.session;
 		const props = this.properties;
-		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(this.context.executionProviders) });
+
+		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(this.executionProviders) });
+
 		return this.session;
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const props = this.properties;
-		const session = this.ensureSession();
+		const session = this.ensureSession(); // FIX: This is the type of thing you do in setup, fix elsewhere too
 
 		const originalFrames = buffer.frames;
 		const channels = buffer.channels;
@@ -65,6 +75,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 
 		if ((this.sampleRate ?? 44100) !== HTDEMUCS_SAMPLE_RATE) {
 			const resampled = await resampleDirect(props.ffmpegPath, [left, right], this.sampleRate ?? 44100, HTDEMUCS_SAMPLE_RATE);
+
 			left = resampled[0] ?? left;
 			right = resampled[1] ?? right;
 		}
@@ -87,6 +98,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 
 		for (const sample of stereo) {
 			const diff = sample - mean;
+
 			variance += diff * diff;
 		}
 
@@ -264,6 +276,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 					if (gain === 0) continue;
 
 					const arr = stemOutputs[source * 2 + srcCh];
+
 					normalizedSum += (arr ? (arr[index] ?? 0) / sw : 0) * gain;
 				}
 
@@ -280,9 +293,11 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 
 			for (let ch = 0; ch < outputChannels.length; ch++) {
 				const resampledCh = resampled[ch];
+
 				if (!resampledCh) continue;
 
 				const finalCh = new Float32Array(originalFrames);
+
 				finalCh.set(resampledCh.subarray(0, Math.min(resampledCh.length, originalFrames)));
 				outputChannels[ch] = finalCh;
 			}
@@ -300,12 +315,14 @@ export class MusicRebalanceNode extends TransformNode<MusicRebalanceProperties> 
 		return TransformNode.is(value) && value.type[2] === "music-rebalance";
 	}
 
-	override readonly type = ["async-module", "transform", "music-rebalance"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "music-rebalance"] as const;
 
-	override createStream(context: StreamContext): MusicRebalanceStream {
-		return new MusicRebalanceStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: MusicRebalanceProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): MusicRebalanceStream {
+		return new MusicRebalanceStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<MusicRebalanceProperties>): MusicRebalanceNode {
@@ -327,6 +344,7 @@ export function musicRebalance(
 		ffmpegPath: options?.ffmpegPath,
 		onnxAddonPath: options?.onnxAddonPath,
 	});
+
 	return new MusicRebalanceNode({
 		...parsed,
 		stems: {

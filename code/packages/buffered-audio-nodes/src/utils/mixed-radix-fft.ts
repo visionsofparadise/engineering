@@ -28,6 +28,7 @@ export class MixedRadixFft {
 
 		this.permutation = computePermutation(size, this.radices);
 		const { twiddleRe, twiddleIm } = computeTwiddles(this.radices);
+
 		this.twiddleRe = twiddleRe;
 		this.twiddleIm = twiddleIm;
 	}
@@ -38,6 +39,7 @@ export class MixedRadixFft {
 
 		for (let index = 0; index < nn; index++) {
 			const pp = perm[index] ?? 0;
+
 			outRe[index] = xRe[pp] ?? 0;
 			outIm[index] = xIm[pp] ?? 0;
 		}
@@ -245,6 +247,7 @@ function computePermutation(size: number, radices: Array<number>): Uint16Array {
 		for (const radix of radices) {
 			base = base / radix;
 			const digit = remainder % radix;
+
 			remainder = Math.floor(remainder / radix);
 			permuted += digit * base;
 		}
@@ -268,6 +271,7 @@ function computeTwiddles(radices: Array<number>): { twiddleRe: Float32Array; twi
 	const twiddleIm = new Float32Array(totalTwiddles);
 
 	let twOffset = 0;
+
 	groupSize = 1;
 
 	for (const radix of radices) {
@@ -277,6 +281,7 @@ function computeTwiddles(radices: Array<number>): { twiddleRe: Float32Array; twi
 		for (let kk = 1; kk < radix; kk++) {
 			for (let ni = 0; ni < subSize; ni++) {
 				const angle = (-2 * Math.PI * kk * ni) / groupSize;
+
 				twiddleRe[twOffset] = Math.cos(angle);
 				twiddleIm[twOffset] = Math.sin(angle);
 				twOffset++;

@@ -35,6 +35,7 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 		const props = this.properties;
 		const sr = this.sampleRate ?? 44100;
 		const ch = buffer.channels;
+
 		this.measuredValues = await measureLoudness(buffer, sr, ch, props);
 
 		await super._process(buffer);
@@ -77,10 +78,10 @@ export class LoudnessNode extends FfmpegNode<LoudnessProperties> {
 		return FfmpegNode.is(value) && value.type[3] === "loudness";
 	}
 
-	override readonly type = ["async-module", "transform", "ffmpeg", "loudness"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "ffmpeg", "loudness"] as const;
 
-	override createStream(context: StreamContext): LoudnessStream {
-		return new LoudnessStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): LoudnessStream {
+		return new LoudnessStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<LoudnessProperties>): LoudnessNode {
@@ -129,6 +130,7 @@ async function measureLoudness(
 
 			if (code !== 0) {
 				reject(new Error(`ffmpeg measurement pass exited with code ${code}: ${stderr}`));
+
 				return;
 			}
 
@@ -136,6 +138,7 @@ async function measureLoudness(
 
 			if (!jsonMatch) {
 				reject(new Error("Failed to parse loudnorm measurement output"));
+
 				return;
 			}
 

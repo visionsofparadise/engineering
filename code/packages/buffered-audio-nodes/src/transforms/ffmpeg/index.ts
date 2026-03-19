@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { waitForDrain } from "../../utils/ffmpeg";
 import { deinterleaveBuffer, interleave } from "../../utils/interleave";
 
@@ -17,10 +17,20 @@ export interface FfmpegProperties extends TransformNodeProperties {
 }
 
 export class FfmpegStream<P extends FfmpegProperties = FfmpegProperties> extends BufferedTransformStream<P> {
+	private streamContext?: StreamContext;
+
+	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		this.streamContext = context;
+
+		return super.setup(input, context);
+	}
+
 	protected _buildArgs(_context: StreamContext): Array<string> {
 		const props = this.properties;
 		const { args } = props;
+
 		if (!args) return [];
+
 		return typeof args === "function" ? args(_context) : args;
 	}
 
@@ -36,12 +46,16 @@ export class FfmpegStream<P extends FfmpegProperties = FfmpegProperties> extends
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const props = this.properties;
+		const context = this.streamContext;
+
+		if (!context) throw new Error("FfmpegStream._process called before setup()");
+
 		this._ffmpegChannels = buffer.channels;
 		const sr = this.sampleRate ?? 44100;
 		const channels = buffer.channels;
 		const inputArgs = ["-f", "f32le", "-ar", String(sr), "-ac", String(channels), "-i", "pipe:0"];
-		const filterArgs = this._buildArgs(this.context);
-		const outputArgs = this._buildOutputArgs(this.context);
+		const filterArgs = this._buildArgs(context);
+		const outputArgs = this._buildOutputArgs(context);
 
 		const result = await runFfmpeg(props.ffmpegPath, [...inputArgs, ...filterArgs, ...outputArgs], buffer, channels);
 
@@ -63,12 +77,14 @@ export class FfmpegNode<P extends FfmpegProperties = FfmpegProperties> extends T
 		return TransformNode.is(value) && value.type[2] === "ffmpeg";
 	}
 
-	override readonly type: ReadonlyArray<string> = ["async-module", "transform", "ffmpeg"];
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type: ReadonlyArray<string> = ["buffered-audio-node", "transform", "ffmpeg"];
 
-	override createStream(context: StreamContext): FfmpegStream<P> {
-		return new FfmpegStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: P) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): FfmpegStream<P> {
+		return new FfmpegStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<P>): FfmpegNode<P> {
@@ -92,6 +108,7 @@ function runFfmpeg(binaryPath: string, args: Array<string>, buffer: ChunkBuffer,
 
 		if (!proc.stdout || !proc.stderr || !proc.stdin) {
 			reject(new Error("Failed to create ffmpeg stdio streams"));
+
 			return;
 		}
 
@@ -117,12 +134,15 @@ function runFfmpeg(binaryPath: string, args: Array<string>, buffer: ChunkBuffer,
 		proc.on("close", (code) => {
 			if (code !== 0) {
 				const stderrOutput = Buffer.concat(stderrChunks).toString();
+
 				reject(new Error(`ffmpeg exited with code ${code}: ${stderrOutput}`));
+
 				return;
 			}
 
 			const outputBuffer = Buffer.concat(outputChunks);
 			const samples = deinterleaveBuffer(outputBuffer, channels);
+
 			resolve(samples);
 		});
 

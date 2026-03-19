@@ -72,6 +72,7 @@ export interface FftBackendConfig {
 export function initFftBackend(executionProviders: ReadonlyArray<ExecutionProvider>, properties: { vkfftAddonPath?: string; fftwAddonPath?: string }): FftBackendConfig {
 	const addonOptions = { vkfftPath: properties.vkfftAddonPath, fftwPath: properties.fftwAddonPath };
 	const backend = detectFftBackend(executionProviders, addonOptions);
+
 	return { backend, addonOptions };
 }
 

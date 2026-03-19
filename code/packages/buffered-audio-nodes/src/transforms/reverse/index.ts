@@ -1,20 +1,27 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
-import { ChunkBuffer } from "../../buffer";
+import { MemoryChunkBuffer, type ChunkBuffer } from "../../buffer";
 import type { AudioChunk, StreamContext } from "../../node";
 
 export const schema = z.object({});
 
-export class ReverseStream extends BufferedTransformStream<TransformNodeProperties> {
-	private spareBuffer?: ChunkBuffer;
+export class ReverseStream extends BufferedTransformStream {
+	private spareBuffer?: MemoryChunkBuffer;
 	private spareChunkSize = 44100;
 	private spareInitialized = false;
+	private reverseMemoryLimit?: number;
+
+	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		this.reverseMemoryLimit = context.memoryLimit;
+
+		return super.setup(input, context);
+	}
 
 	private ensureSpareBuffer(chunk: AudioChunk): void {
 		if (this.spareInitialized) return;
 		this.spareInitialized = true;
 		this.spareChunkSize = chunk.sampleRate;
-		this.spareBuffer = new ChunkBuffer(Infinity, chunk.samples.length, this.context.memoryLimit);
+		this.spareBuffer = new MemoryChunkBuffer(Infinity, chunk.samples.length, this.reverseMemoryLimit);
 	}
 
 	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {
@@ -56,12 +63,14 @@ export class ReverseNode extends TransformNode {
 		return TransformNode.is(value) && value.type[2] === "reverse";
 	}
 
-	override readonly type = ["async-module", "transform", "reverse"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "reverse"] as const;
 
-	override createStream(context: StreamContext): ReverseStream {
-		return new ReverseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties?: TransformNodeProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): ReverseStream {
+		return new ReverseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<TransformNodeProperties>): ReverseNode {

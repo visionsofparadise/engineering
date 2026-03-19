@@ -16,7 +16,7 @@ export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 		return DeClickNode.is(value) && value.type[3] === "mouth-de-click";
 	}
 
-	override readonly type = ["async-module", "transform", "de-click", "mouth-de-click"];
+	override readonly type = ["buffered-audio-node", "transform", "de-click", "mouth-de-click"];
 
 	constructor(properties: BufferedAudioNodeInput<MouthDeClickProperties>) {
 		super({ ...properties, ...mouthDeClickSchema.encode(properties) });
@@ -29,5 +29,6 @@ export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 
 export function mouthDeClick(options?: { sensitivity?: number; id?: string }): MouthDeClickNode {
 	const parsed = mouthDeClickSchema.parse(options ?? {});
+
 	return new MouthDeClickNode({ ...parsed, id: options?.id });
 }

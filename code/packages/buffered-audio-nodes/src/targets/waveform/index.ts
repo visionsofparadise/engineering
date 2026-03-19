@@ -1,7 +1,7 @@
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
 import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { AudioChunk } from "../../node";
 import { WHOLE_FILE } from "../../transforms";
 
 export const schema = z.object({
@@ -31,7 +31,8 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 
 	private initialized = false;
 
-	private async lazyInit(chunk: AudioChunk): Promise<void> {
+	// FIX: Only properties requiring the chunk should be initialized here, otherwise use _setup()
+	private async initialize(chunk: AudioChunk): Promise<void> {
 		if (this.initialized) return;
 		this.initialized = true;
 
@@ -41,6 +42,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 		this.currentMax = new Float32Array(this.channels).fill(-1);
 
 		const pointByteSize = this.channels * 8;
+
 		this.writeBuffer = Buffer.alloc(this.WRITE_BATCH_POINTS * pointByteSize);
 		this.writeBufferOffset = 0;
 		this.writeBufferFileOffset = HEADER_SIZE;
@@ -51,6 +53,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 		this.fileHandle = await open(this.properties.outputPath, "w");
 
 		const header = Buffer.alloc(HEADER_SIZE);
+
 		header.writeUInt32LE(chunk.sampleRate, 0);
 		header.writeUInt32LE(this.channels, 4);
 		header.writeUInt32LE(this.properties.resolution, 8);
@@ -59,7 +62,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 	}
 
 	override async _write(chunk: AudioChunk): Promise<void> {
-		await this.lazyInit(chunk);
+		await this.initialize(chunk);
 
 		const frames = chunk.samples[0]?.length ?? 0;
 
@@ -86,16 +89,21 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 			await this.flushPoint();
 		}
 
+		const fh = this.fileHandle;
+
+		if (!fh) return;
+
 		if (this.writeBufferOffset > 0) {
-			await this.fileHandle!.write(this.writeBuffer, 0, this.writeBufferOffset, this.writeBufferFileOffset);
+			await fh.write(this.writeBuffer, 0, this.writeBufferOffset, this.writeBufferFileOffset);
 			this.writeBufferOffset = 0;
 		}
 
 		const header = Buffer.alloc(4);
+
 		header.writeUInt32LE(this.totalPoints, 0);
 
-		await this.fileHandle!.write(header, 0, 4, 12);
-		await this.fileHandle!.close();
+		await fh.write(header, 0, 4, 12);
+		await fh.close();
 		this.fileHandle = undefined;
 	}
 
@@ -124,8 +132,8 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 	}
 
 	private async flushWriteBuffer(): Promise<void> {
-		if (this.writeBufferOffset === 0) return;
-		await this.fileHandle!.write(this.writeBuffer, 0, this.writeBufferOffset, this.writeBufferFileOffset);
+		if (this.writeBufferOffset === 0 || !this.fileHandle) return;
+		await this.fileHandle.write(this.writeBuffer, 0, this.writeBufferOffset, this.writeBufferFileOffset);
 		this.writeBufferFileOffset += this.writeBufferOffset;
 		this.writeBufferOffset = 0;
 	}
@@ -140,12 +148,14 @@ export class WaveformNode extends TargetNode<WaveformProperties> {
 		return TargetNode.is(value) && value.type[2] === "waveform";
 	}
 
-	override readonly type = ["async-module", "target", "waveform"] as const;
-	override readonly bufferSize = Infinity;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "target", "waveform"] as const;
 
-	override createStream(context: StreamContext): WaveformStream {
-		return new WaveformStream(this.properties, context);
+	constructor(properties: WaveformProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): WaveformStream {
+		return new WaveformStream(this.properties);
 	}
 
 	override clone(overrides?: Partial<WaveformProperties>): WaveformNode {

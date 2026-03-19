@@ -3,6 +3,7 @@ export function smoothEnvelope(envelope: Float32Array, windowSize: number, scrat
 	const len = envelope.length;
 
 	const source = scratch ?? Float32Array.from(envelope);
+
 	if (scratch) {
 		source.set(envelope);
 	}

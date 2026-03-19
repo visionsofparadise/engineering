@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, ExecutionProvider, StreamContext } from "../../node";
 import { applyBandpass } from "../../utils/apply-bandpass";
 import { MixedRadixFft } from "../../utils/mixed-radix-fft";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
@@ -42,16 +42,25 @@ const CHANNEL_STRIDE = DIM_F * DIM_T;
 export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsolateProperties> {
 	private session?: OnnxSession;
 	private fftInstance: MixedRadixFft;
+	private executionProviders: ReadonlyArray<ExecutionProvider> = [];
 
-	constructor(properties: DialogueIsolateProperties, context: StreamContext) {
-		super(properties, context);
+	constructor(properties: DialogueIsolateProperties) {
+		super(properties);
 		this.fftInstance = new MixedRadixFft(N_FFT);
+	}
+
+	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+		this.executionProviders = context.executionProviders;
+
+		return super.setup(input, context);
 	}
 
 	private ensureSession(): OnnxSession {
 		if (this.session) return this.session;
 		const props = this.properties;
-		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(this.context.executionProviders) });
+
+		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(this.executionProviders) });
+
 		return this.session;
 	}
 
@@ -72,6 +81,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 
 		if ((this.sampleRate ?? 44100) !== SAMPLE_RATE) {
 			const resampled = await resampleDirect(props.ffmpegPath, [left, right], this.sampleRate ?? 44100, SAMPLE_RATE);
+
 			left44k = resampled[0] ?? left;
 			right44k = resampled[1] ?? right;
 		}
@@ -149,6 +159,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 
 			for (let index = 0; index < chunkLen; index++) {
 				const wt = weight[index] ?? 1;
+
 				outputLeft[offset + index] = (outputLeft[offset + index] ?? 0) + (segOutLeft[index] ?? 0) * wt;
 				outputRight[offset + index] = (outputRight[offset + index] ?? 0) + (segOutRight[index] ?? 0) * wt;
 				sumWeight[offset + index] = (sumWeight[offset + index] ?? 0) + wt;
@@ -169,6 +180,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 
 		if ((this.sampleRate ?? 44100) !== SAMPLE_RATE) {
 			const resampled = await resampleDirect(props.ffmpegPath, [outputLeft, outputRight], SAMPLE_RATE, this.sampleRate ?? 44100);
+
 			finalLeft = resampled[0] ?? outputLeft;
 			finalRight = resampled[1] ?? outputRight;
 		}
@@ -179,6 +191,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 			const out = new Float32Array(frames);
 			const srcCh = Math.min(ch, 1);
 			const src = srcCh === 0 ? finalLeft : finalRight;
+
 			out.set(src.subarray(0, Math.min(src.length, frames)));
 			outputChannels.push(out);
 		}
@@ -198,12 +211,14 @@ export class DialogueIsolateNode extends TransformNode<DialogueIsolateProperties
 		return TransformNode.is(value) && value.type[2] === "dialogue-isolate";
 	}
 
-	override readonly type = ["async-module", "transform", "dialogue-isolate"] as const;
-	override readonly bufferSize = WHOLE_FILE;
-	override readonly latency = WHOLE_FILE;
+	override readonly type = ["buffered-audio-node", "transform", "dialogue-isolate"] as const;
 
-	override createStream(context: StreamContext): DialogueIsolateStream {
-		return new DialogueIsolateStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	constructor(properties: DialogueIsolateProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): DialogueIsolateStream {
+		return new DialogueIsolateStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<DialogueIsolateProperties>): DialogueIsolateNode {
@@ -278,6 +293,7 @@ function istft7680FromTensor(fft: MixedRadixFft, tensor: Float32Array, realOffse
 
 			if (pos < outputLength) {
 				const wt = win[index] ?? 0;
+
 				output[pos] = (output[pos] ?? 0) + (fft.outRe[index] ?? 0) * wt;
 				windowSum[pos] = (windowSum[pos] ?? 0) + wt * wt;
 			}

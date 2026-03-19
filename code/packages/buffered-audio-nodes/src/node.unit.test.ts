@@ -1,37 +1,38 @@
 import { describe, expect, it } from "vitest";
 import type { ChunkBuffer } from "./buffer";
-import type { AudioChunk, StreamContext, StreamMeta } from "./node";
+import type { AudioChunk } from "./node";
+import type { SourceMetadata } from "./sources";
 import { BufferedAudioNode } from "./node";
 import { BufferedSourceStream, SourceNode } from "./sources";
+import { BufferedStream } from "./stream";
 import { BufferedTargetStream, TargetNode } from "./targets";
 import { BufferedTransformStream, TransformNode } from "./transforms";
 
 class MockSourceStream extends BufferedSourceStream {
-	override async _init(): Promise<StreamMeta> {
-		return this.properties.meta as StreamMeta;
+	override async getMetadata(): Promise<SourceMetadata> {
+		return this.properties.meta as SourceMetadata;
 	}
 
-	override async _read(controller: ReadableStreamDefaultController<AudioChunk>): Promise<void> {
+	override async _read(): Promise<AudioChunk | undefined> {
 		const chunks = this.properties.chunks as Array<AudioChunk>;
 		const index = this.properties.chunkIndex as number;
 		const chunk = chunks[index];
 		if (chunk) {
 			(this.properties as Record<string, unknown>).chunkIndex = index + 1;
-			controller.enqueue(chunk);
-		} else {
-			controller.close();
+			return chunk;
 		}
+		return undefined;
 	}
 
 	override async _flush(): Promise<void> {}
 }
 
 class MockSource extends SourceNode {
-	readonly type = ["async-module", "source", "mock"] as const;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	readonly type = ["buffered-audio-node", "source", "mock"] as const;
+	get bufferSize(): number { return 0; }
+	get latency(): number { return 0; }
 
-	constructor(chunks: Array<AudioChunk> = [], meta: StreamMeta = { sampleRate: 44100, channels: 1 }) {
+	constructor(chunks: Array<AudioChunk> = [], meta: SourceMetadata = { sampleRate: 44100, channels: 1 }) {
 		super({ chunks, meta, chunkIndex: 0 } as never);
 	}
 
@@ -54,17 +55,19 @@ class MockTransformStream extends BufferedTransformStream {
 }
 
 class MockTransform extends TransformNode {
-	readonly type = ["async-module", "transform", "mock"] as const;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	readonly type = ["buffered-audio-node", "transform", "mock"] as const;
+	get bufferSize(): number { return 0; }
+	get latency(): number { return 0; }
+
+	private _lastStream?: MockTransformStream;
 
 	get processedChunks(): Array<AudioChunk> {
-		const last = this.streams[this.streams.length - 1];
-		return last instanceof MockTransformStream ? last.processedChunks : [];
+		return this._lastStream?.processedChunks ?? [];
 	}
 
-	override createStream(context: StreamContext): MockTransformStream {
-		return new MockTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	override createStream(): MockTransformStream {
+		this._lastStream = new MockTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
+		return this._lastStream;
 	}
 
 	clone(): MockTransform {
@@ -86,17 +89,19 @@ class MockTargetStream extends BufferedTargetStream {
 }
 
 class MockTarget extends TargetNode {
-	readonly type = ["async-module", "target", "mock"] as const;
-	readonly bufferSize = 0;
-	readonly latency = 0;
+	readonly type = ["buffered-audio-node", "target", "mock"] as const;
+	get bufferSize(): number { return 0; }
+	get latency(): number { return 0; }
+
+	private _lastStream?: MockTargetStream;
 
 	get lastCreatedStream(): MockTargetStream | undefined {
-		const last = this.streams[this.streams.length - 1];
-		return last instanceof MockTargetStream ? last : undefined;
+		return this._lastStream;
 	}
 
-	override createStream(context: StreamContext): MockTargetStream {
-		return new MockTargetStream(this.properties as unknown as Record<string, unknown>, context);
+	override createStream(): MockTargetStream {
+		this._lastStream = new MockTargetStream(this.properties as unknown as Record<string, unknown>);
+		return this._lastStream;
 	}
 
 	clone(): MockTarget {
@@ -113,11 +118,11 @@ class FailingTargetStream extends BufferedTargetStream {
 }
 
 class FailingTarget extends TargetNode {
-	readonly type = ["async-module", "target", "failing"] as const;
-	readonly bufferSize = 0;
-	readonly latency = 0;
-	override createStream(context: StreamContext): FailingTargetStream {
-		return new FailingTargetStream(this.properties as unknown as Record<string, unknown>, context);
+	readonly type = ["buffered-audio-node", "target", "failing"] as const;
+	get bufferSize(): number { return 0; }
+	get latency(): number { return 0; }
+	override createStream(): FailingTargetStream {
+		return new FailingTargetStream(this.properties as unknown as Record<string, unknown>);
 	}
 	clone(): FailingTarget {
 		return new FailingTarget();
@@ -129,7 +134,7 @@ function createChunk(value: number, offset: number, duration: number): AudioChun
 	return { samples: [samples], offset, sampleRate: 44100, bitDepth: 32 };
 }
 
-const testMeta: StreamMeta = { sampleRate: 44100, channels: 1 };
+const testMeta: SourceMetadata = { sampleRate: 44100, channels: 1 };
 
 describe("BufferedAudioNode", () => {
 	it("type discrimination with is()", () => {
@@ -171,18 +176,21 @@ describe("BufferedAudioNode", () => {
 		transform.to(target);
 
 		let tornDown = false;
-		source.streams.push({
-			_teardown() {
+
+		class TeardownStream extends BufferedStream {
+			override _teardown(): void {
 				tornDown = true;
-			},
-		});
+			}
+		}
+
+		source.streams.push(new TeardownStream({} as never));
 
 		await source.teardown();
 
 		expect(tornDown).toBe(true);
 	});
 
-	it("clearStreams() empties streams on node and children", () => {
+	it("teardown() clears streams on node and children", async () => {
 		const source = new MockSource();
 		const transform = new MockTransform();
 		const target = new MockTarget();
@@ -190,10 +198,12 @@ describe("BufferedAudioNode", () => {
 		source.to(transform);
 		transform.to(target);
 
-		source.streams.push({ _teardown() {} });
-		transform.streams.push({ _teardown() {} });
+		class NoopStream extends BufferedStream {}
 
-		source.clearStreams();
+		source.streams.push(new NoopStream({} as never));
+		transform.streams.push(new NoopStream({} as never));
+
+		await source.teardown();
 
 		expect(source.streams).toHaveLength(0);
 		expect(transform.streams).toHaveLength(0);
