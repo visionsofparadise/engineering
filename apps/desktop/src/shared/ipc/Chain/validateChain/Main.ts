@@ -1,4 +1,4 @@
-import { validateChainDefinition } from "audio-chain-module";
+import { validateChainDefinition } from "buffered-audio-nodes";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import { VALIDATE_CHAIN_ACTION, type ValidateChainIpcParameters, type ValidateChainIpcReturn } from "./Renderer";
 

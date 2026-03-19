@@ -1,0 +1,20 @@
+2026-03-09T16:00:45.600Z |    71166.5ms |          18925 samples/sec |     0.43x RT | Node v22.20.0 win32
+2026-03-09T17:13:28.693Z |    41886.9ms |          64307 samples/sec |     1.46x RT | Node v22.20.0 win32
+2026-03-09T17:56:56.434Z |    84220.6ms |          31983 samples/sec |     0.73x RT | Node v22.20.0 win32
+2026-03-09T18:00:10.981Z |    75588.0ms |          35636 samples/sec |     0.81x RT | Node v22.20.0 win32
+2026-03-09T18:13:06.492Z |    41219.1ms |          65349 samples/sec |     1.48x RT | Node v22.20.0 win32
+2026-03-09T18:47:27.745Z |    47280.4ms |          56971 samples/sec |     1.29x RT | Node v22.20.0 win32
+2026-03-09T18:53:13.640Z |    41640.2ms |          64688 samples/sec |     1.47x RT | Node v22.20.0 win32
+2026-03-09T19:22:31.874Z |    34327.0ms |          78470 samples/sec |     1.78x RT | Node v22.20.0 win32
+2026-03-09T22:38:39.815Z |    33739.0ms |          79837 samples/sec |     1.81x RT | Node v22.20.0 win32
+2026-03-10T04:11:00.514Z |   100074.9ms |          26916 samples/sec |     0.61x RT | Node v22.20.0 win32
+2026-03-12T18:44:53.600Z |   107452.4ms |          25068 samples/sec |     0.57x RT | Node v22.20.0 win32
+2026-03-12T19:20:43.822Z |   138906.5ms |          19392 samples/sec |     0.44x RT | Node v22.20.0 win32
+2026-03-12T19:34:18.997Z |   102762.4ms |          13106 samples/sec |     0.30x RT | Node v22.20.0 win32
+2026-03-12T20:00:46.564Z |   107475.7ms |          12531 samples/sec |     0.28x RT | Node v22.20.0 win32
+2026-03-12T20:41:47.144Z |   130116.4ms |          20702 samples/sec |     0.47x RT | Node v22.20.0 win32
+2026-03-15T04:31:28.548Z |   163959.0ms |          16429 samples/sec |     0.37x RT | Node v22.20.0 win32
+2026-03-15T04:35:50.572Z |   194532.5ms |          13847 samples/sec |     0.31x RT | Node v22.20.0 win32
+2026-03-17T03:35:56.537Z | music-rebalance                |    23126.1ms |         116476 samples/sec |     2.64x RT | Node v22.20.0 win32
+2026-03-17T05:10:29.172Z | music-rebalance                |   189600.9ms |          14207 samples/sec |     0.32x RT | Node v22.20.0 win32
+2026-03-17T05:15:36.033Z | music-rebalance                |   151447.5ms |          17786 samples/sec |     0.40x RT | Node v22.20.0 win32

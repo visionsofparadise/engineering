@@ -1,4 +1,4 @@
-import type { ChainModuleReference } from "audio-chain-module";
+import type { ChainModuleReference } from "buffered-audio-nodes";
 import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 
 export interface ApplyInput {

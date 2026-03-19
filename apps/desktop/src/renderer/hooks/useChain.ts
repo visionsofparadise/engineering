@@ -1,4 +1,4 @@
-import type { ChainDefinition, ChainModuleReference } from "audio-chain-module";
+import type { ChainDefinition, ChainModuleReference } from "buffered-audio-nodes";
 import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 

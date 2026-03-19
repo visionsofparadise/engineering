@@ -33,7 +33,7 @@ export class BundlePackageMainIpc extends AsyncMainIpc<BundlePackageIpcParameter
 			format: "esm",
 			platform: "node",
 			outfile: input.outputPath,
-			external: ["audio-chain-module"],
+			external: ["buffered-audio-nodes"],
 		});
 
 		return undefined;

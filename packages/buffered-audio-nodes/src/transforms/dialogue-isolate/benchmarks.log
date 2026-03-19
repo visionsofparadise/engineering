@@ -1,0 +1,16 @@
+2026-03-09T22:40:10.677Z |    77143.3ms |          34917 samples/sec |     0.79x RT | Node v22.20.0 win32
+2026-03-09T23:47:54.865Z |    67352.3ms |          39993 samples/sec |     0.91x RT | Node v22.20.0 win32
+2026-03-09T23:53:01.087Z |    67616.8ms |          39837 samples/sec |     0.90x RT | Node v22.20.0 win32
+2026-03-09T23:56:49.873Z |    43493.9ms |          61931 samples/sec |     1.40x RT | Node v22.20.0 win32
+2026-03-10T00:11:22.625Z |    29845.0ms |          90254 samples/sec |     2.05x RT | Node v22.20.0 win32
+2026-03-10T04:10:58.180Z |    90399.8ms |          29797 samples/sec |     0.68x RT | Node v22.20.0 win32
+2026-03-12T18:44:35.782Z |   107979.8ms |          24946 samples/sec |     0.57x RT | Node v22.20.0 win32
+2026-03-12T19:20:23.369Z |   125068.9ms |          21537 samples/sec |     0.49x RT | Node v22.20.0 win32
+2026-03-12T19:33:52.796Z |   115528.9ms |          11658 samples/sec |     0.26x RT | Node v22.20.0 win32
+2026-03-12T20:00:34.683Z |    99122.8ms |          13587 samples/sec |     0.31x RT | Node v22.20.0 win32
+2026-03-12T20:41:11.798Z |    96924.9ms |          27791 samples/sec |     0.63x RT | Node v22.20.0 win32
+2026-03-15T04:31:00.903Z |   137278.7ms |          19622 samples/sec |     0.44x RT | Node v22.20.0 win32
+2026-03-15T04:35:19.985Z |   167486.2ms |          16083 samples/sec |     0.36x RT | Node v22.20.0 win32
+2026-03-17T03:36:24.286Z | dialogue-isolate               |    26832.3ms |         100388 samples/sec |     2.28x RT | Node v22.20.0 win32
+2026-03-17T05:09:26.423Z | dialogue-isolate               |   140981.8ms |          19106 samples/sec |     0.43x RT | Node v22.20.0 win32
+2026-03-17T05:15:05.106Z | dialogue-isolate               |   137834.4ms |          19543 samples/sec |     0.44x RT | Node v22.20.0 win32

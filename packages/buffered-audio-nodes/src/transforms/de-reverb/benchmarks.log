@@ -1,0 +1,22 @@
+2026-03-09T15:10:56.367Z |    43458.3ms |          30991 samples/sec |     0.70x RT | Node v22.20.0 win32
+2026-03-09T16:00:59.212Z |    53699.2ms |          25081 samples/sec |     0.57x RT | Node v22.20.0 win32
+2026-03-09T17:13:25.541Z |    54462.7ms |          49458 samples/sec |     1.12x RT | Node v22.20.0 win32
+2026-03-09T17:57:02.642Z |    93863.7ms |          28697 samples/sec |     0.65x RT | Node v22.20.0 win32
+2026-03-09T18:00:13.205Z |    81658.7ms |          32986 samples/sec |     0.75x RT | Node v22.20.0 win32
+2026-03-09T18:12:15.098Z |    39069.7ms |          68944 samples/sec |     1.56x RT | Node v22.20.0 win32
+2026-03-09T18:54:04.395Z |    41808.4ms |          64428 samples/sec |     1.46x RT | Node v22.20.0 win32
+2026-03-09T19:23:16.246Z |    35966.0ms |          74894 samples/sec |     1.70x RT | Node v22.20.0 win32
+2026-03-10T04:11:11.871Z |   117368.9ms |          22950 samples/sec |     0.52x RT | Node v22.20.0 win32
+2026-03-12T01:46:00.478Z |    41588.6ms |          64769 samples/sec |     1.47x RT | Node v22.20.0 win32
+2026-03-12T18:45:26.577Z |    92449.8ms |          29136 samples/sec |     0.66x RT | Node v22.20.0 win32
+2026-03-12T19:21:21.919Z |    96189.0ms |          28004 samples/sec |     0.64x RT | Node v22.20.0 win32
+2026-03-12T19:35:03.088Z |    77541.5ms |          17369 samples/sec |     0.39x RT | Node v22.20.0 win32
+2026-03-12T20:01:20.016Z |    57196.8ms |          23547 samples/sec |     0.53x RT | Node v22.20.0 win32
+2026-03-12T20:41:41.210Z |   126983.1ms |          21213 samples/sec |     0.48x RT | Node v22.20.0 win32
+2026-03-12T21:29:20.040Z |     4756.6ms |         566295 samples/sec |    12.84x RT | Node v22.20.0 win32
+2026-03-15T04:32:04.560Z |    17198.8ms |         156617 samples/sec |     3.55x RT | Node v22.20.0 win32
+2026-03-15T04:36:24.266Z |    16152.2ms |         166765 samples/sec |     3.78x RT | Node v22.20.0 win32
+2026-03-17T03:38:49.489Z | deReverb                       |     5734.2ms |         469747 samples/sec |    10.65x RT | Node v22.20.0 win32
+2026-03-17T04:26:46.061Z | deReverb                       |   154278.0ms |          17460 samples/sec |     0.40x RT | Node v22.20.0 win32
+2026-03-17T05:08:23.641Z | deReverb                       |    34514.1ms |          78044 samples/sec |     1.77x RT | Node v22.20.0 win32
+2026-03-17T05:14:00.359Z | deReverb                       |    58443.6ms |          46089 samples/sec |     1.05x RT | Node v22.20.0 win32

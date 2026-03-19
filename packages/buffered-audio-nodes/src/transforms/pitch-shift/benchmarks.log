@@ -1,0 +1,19 @@
+2026-03-09T15:59:46.651Z |     2750.2ms |         489710 samples/sec |    11.10x RT | Node v22.20.0 win32
+2026-03-09T17:12:49.656Z |     1417.6ms |        1900080 samples/sec |    43.09x RT | Node v22.20.0 win32
+2026-03-09T17:55:47.936Z |     4937.8ms |         545518 samples/sec |    12.37x RT | Node v22.20.0 win32
+2026-03-09T17:59:03.475Z |     5645.1ms |         477159 samples/sec |    10.82x RT | Node v22.20.0 win32
+2026-03-09T18:14:08.222Z |      913.4ms |        2949121 samples/sec |    66.87x RT | Node v22.20.0 win32
+2026-03-09T18:54:48.622Z |      885.9ms |        3040488 samples/sec |    68.95x RT | Node v22.20.0 win32
+2026-03-09T19:23:53.990Z |      691.5ms |        3895320 samples/sec |    88.33x RT | Node v22.20.0 win32
+2026-03-10T04:10:05.308Z |     2568.3ms |        1048800 samples/sec |    23.78x RT | Node v22.20.0 win32
+2026-03-12T18:43:48.805Z |     3405.3ms |         791009 samples/sec |    17.94x RT | Node v22.20.0 win32
+2026-03-12T19:19:39.634Z |     2624.1ms |        1026497 samples/sec |    23.28x RT | Node v22.20.0 win32
+2026-03-12T19:33:28.210Z |     4581.4ms |         293977 samples/sec |     6.67x RT | Node v22.20.0 win32
+2026-03-12T20:00:02.547Z |     3900.1ms |         345328 samples/sec |     7.83x RT | Node v22.20.0 win32
+2026-03-12T20:41:23.137Z |     4370.8ms |         616276 samples/sec |    13.97x RT | Node v22.20.0 win32
+2026-03-15T04:31:44.045Z |     2933.6ms |         918204 samples/sec |    20.82x RT | Node v22.20.0 win32
+2026-03-15T04:36:04.583Z |     4260.5ms |         632236 samples/sec |    14.34x RT | Node v22.20.0 win32
+2026-03-17T03:38:55.129Z | pitch-shift                    |      737.7ms |        3651352 samples/sec |    82.80x RT | Node v22.20.0 win32
+2026-03-17T04:25:56.810Z | pitch-shift                    |    14681.9ms |         183466 samples/sec |     4.16x RT | Node v22.20.0 win32
+2026-03-17T05:07:41.464Z | pitch-shift                    |     5086.5ms |         529562 samples/sec |    12.01x RT | Node v22.20.0 win32
+2026-03-17T05:13:36.676Z | pitch-shift                    |     5326.2ms |         505733 samples/sec |    11.47x RT | Node v22.20.0 win32

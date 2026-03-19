@@ -1,0 +1,20 @@
+2026-03-09T15:10:16.763Z |        0.1ms |    10740159489 samples/sec | 243541.03x RT | Node v22.20.0 win32
+2026-03-09T16:00:10.202Z |        0.1ms |    10013501858 samples/sec | 227063.53x RT | Node v22.20.0 win32
+2026-03-09T17:12:47.595Z |       49.8ms |       27064606 samples/sec |   613.71x RT | Node v22.20.0 win32
+2026-03-09T17:55:32.648Z |      140.5ms |        9586875 samples/sec |   217.39x RT | Node v22.20.0 win32
+2026-03-09T17:59:34.363Z |      193.4ms |        6964720 samples/sec |   157.93x RT | Node v22.20.0 win32
+2026-03-09T18:15:25.314Z |       30.9ms |       43541750 samples/sec |   987.34x RT | Node v22.20.0 win32
+2026-03-09T18:55:26.165Z |       29.7ms |       45370254 samples/sec |  1028.80x RT | Node v22.20.0 win32
+2026-03-09T19:24:25.272Z |       27.7ms |       48679686 samples/sec |  1103.85x RT | Node v22.20.0 win32
+2026-03-10T04:10:48.331Z |      116.9ms |       11519282 samples/sec |   261.21x RT | Node v22.20.0 win32
+2026-03-12T18:44:04.621Z |      234.7ms |        5738807 samples/sec |   130.13x RT | Node v22.20.0 win32
+2026-03-12T19:19:50.522Z |      469.3ms |        2870011 samples/sec |    65.08x RT | Node v22.20.0 win32
+2026-03-12T19:33:31.512Z |      210.1ms |        6410058 samples/sec |   145.35x RT | Node v22.20.0 win32
+2026-03-12T20:00:11.357Z |      206.5ms |        6522939 samples/sec |   147.91x RT | Node v22.20.0 win32
+2026-03-12T20:42:13.590Z |      107.4ms |       12538272 samples/sec |   284.31x RT | Node v22.20.0 win32
+2026-03-15T04:31:53.255Z |      161.7ms |        8330891 samples/sec |   188.91x RT | Node v22.20.0 win32
+2026-03-15T04:36:17.103Z |      247.8ms |        5434343 samples/sec |   123.23x RT | Node v22.20.0 win32
+2026-03-17T03:39:02.378Z | leveler                        |       72.6ms |       18540765 samples/sec |   420.43x RT | Node v22.20.0 win32
+2026-03-17T04:26:21.277Z | leveler                        |     2353.0ms |         572377 samples/sec |    12.98x RT | Node v22.20.0 win32
+2026-03-17T05:07:54.032Z | leveler                        |      223.0ms |        6039783 samples/sec |   136.96x RT | Node v22.20.0 win32
+2026-03-17T05:13:59.038Z | leveler                        |      311.5ms |        4323294 samples/sec |    98.03x RT | Node v22.20.0 win32

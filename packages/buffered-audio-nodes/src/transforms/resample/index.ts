@@ -1,0 +1,63 @@
+import { z } from "zod";
+import type { StreamContext } from "../../node";
+import { FfmpegNode, FfmpegStream, type FfmpegProperties } from "../ffmpeg";
+
+export const schema = z.object({
+	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
+	sampleRate: z.number().min(8000).max(192000).multipleOf(100).default(44100).describe("Sample Rate"),
+	dither: z.enum(["triangular", "lipshitz", "none"]).default("triangular").describe("Dither"),
+});
+
+export interface ResampleProperties extends FfmpegProperties {
+	readonly sampleRate: number;
+	readonly dither?: "triangular" | "lipshitz" | "none";
+}
+
+export class ResampleStream extends FfmpegStream<ResampleProperties> {
+	protected override _buildArgs(_context: StreamContext): Array<string> {
+		const { sampleRate, dither } = this.properties;
+		const ditherMethod = dither ?? "triangular";
+
+		return ["-af", `aresample=${sampleRate}:resampler=soxr:dither_method=${ditherMethod}`];
+	}
+
+	protected override _buildOutputArgs(context: StreamContext): Array<string> {
+		return ["-f", "f32le", "-ar", String(this.properties.sampleRate), "-ac", String(context.channels), "pipe:1"];
+	}
+}
+
+export class ResampleNode extends FfmpegNode<ResampleProperties> {
+	static override readonly moduleName = "Resample";
+	static override readonly moduleDescription = "Change sample rate";
+	static override readonly schema = schema;
+
+	static override is(value: unknown): value is ResampleNode {
+		return FfmpegNode.is(value) && value.type[3] === "resample";
+	}
+
+	override readonly type = ["async-module", "transform", "ffmpeg", "resample"] as const;
+
+	protected override createStream(context: StreamContext): ResampleStream {
+		return new ResampleStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	}
+
+	override clone(overrides?: Partial<ResampleProperties>): ResampleNode {
+		return new ResampleNode({ ...this.properties, previousProperties: this.properties, ...overrides });
+	}
+}
+
+export function resample(
+	ffmpegPath: string,
+	sampleRate: number,
+	options?: {
+		dither?: "triangular" | "lipshitz" | "none";
+		id?: string;
+	},
+): ResampleNode {
+	return new ResampleNode({
+		ffmpegPath,
+		sampleRate,
+		dither: options?.dither,
+		id: options?.id,
+	});
+}

@@ -246,7 +246,7 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 }
 
 const CORE_PACKAGE_URLS: ReadonlyArray<ModulePackageConfig> = [
-	{ url: "https://github.com/visionsofparadise/audio-chain-module.git", directory: "audio-chain-module" },
+	{ url: "https://github.com/visionsofparadise/buffered-audio-nodes.git", directory: "buffered-audio-nodes" },
 ];
 
 function defaultBatchConfig(): BatchConfig {

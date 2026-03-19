@@ -1,0 +1,126 @@
+import { z } from "zod";
+import type { ChunkBuffer } from "../../chunk-buffer";
+import type { StreamContext } from "../../node";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
+
+export const schema = z.object({
+	threshold: z.number().min(0).max(1).multipleOf(0.001).default(0.001).describe("Threshold"),
+	margin: z.number().min(0).max(1).multipleOf(0.001).default(0.01).describe("Margin"),
+	start: z.boolean().default(true).describe("Start"),
+	end: z.boolean().default(true).describe("End"),
+});
+
+export interface TrimProperties extends z.infer<typeof schema>, TransformNodeProperties {}
+
+export class TrimStream extends BufferedTransformStream<TrimProperties> {
+	private trimSampleRate: number;
+
+	constructor(properties: TrimProperties, context: StreamContext) {
+		super(properties, context);
+		this.trimSampleRate = context.sampleRate;
+	}
+
+	override async _process(buffer: ChunkBuffer): Promise<void> {
+		const props = this.properties;
+		const frames = buffer.frames;
+		const allAudio = await buffer.read(0, frames);
+		const channels = allAudio.samples.length;
+
+		if (channels === 0 || frames === 0) return;
+
+		const threshold = props.threshold;
+		const marginSeconds = props.margin;
+		const marginFrames = Math.round(marginSeconds * this.trimSampleRate);
+		const trimStart = props.start;
+		const trimEnd = props.end;
+
+		const firstAbove = findFirstAbove(allAudio.samples, frames, threshold);
+
+		if (firstAbove >= frames) {
+			await buffer.truncate(0);
+			return;
+		}
+
+		let startFrame = 0;
+		let endFrame = frames;
+
+		if (trimStart) {
+			startFrame = Math.max(0, firstAbove - marginFrames);
+		}
+
+		if (trimEnd) {
+			endFrame = findLastAbove(allAudio.samples, frames, threshold) + 1;
+			endFrame = Math.min(frames, endFrame + marginFrames);
+		}
+
+		if (startFrame >= endFrame) return;
+		if (startFrame === 0 && endFrame === frames) return;
+
+		const trimmedLength = endFrame - startFrame;
+		const trimmed: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < channels; ch++) {
+			const channel = allAudio.samples[ch];
+
+			if (!channel) {
+				trimmed.push(new Float32Array(trimmedLength));
+				continue;
+			}
+
+			trimmed.push(channel.subarray(startFrame, endFrame));
+		}
+
+		await buffer.truncate(0);
+		await buffer.append(trimmed);
+	}
+}
+
+export class TrimNode extends TransformNode<TrimProperties> {
+	static override readonly moduleName = "Trim";
+	static override readonly moduleDescription = "Remove silence from start and end";
+	static override readonly schema = schema;
+	static override is(value: unknown): value is TrimNode {
+		return TransformNode.is(value) && value.type[2] === "trim";
+	}
+
+	override readonly type = ["async-module", "transform", "trim"] as const;
+	override readonly bufferSize = WHOLE_FILE;
+	override readonly latency = WHOLE_FILE;
+
+	protected override createStream(context: StreamContext): TrimStream {
+		return new TrimStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
+	}
+
+	override clone(overrides?: Partial<TrimProperties>): TrimNode {
+		return new TrimNode({ ...this.properties, previousProperties: this.properties, ...overrides });
+	}
+}
+
+function findFirstAbove(samples: Array<Float32Array>, frames: number, threshold: number): number {
+	for (let index = 0; index < frames; index++) {
+		for (const channel of samples) {
+			if (Math.abs(channel[index] ?? 0) > threshold) {
+				return index;
+			}
+		}
+	}
+
+	return frames;
+}
+
+function findLastAbove(samples: Array<Float32Array>, frames: number, threshold: number): number {
+	for (let index = frames - 1; index >= 0; index--) {
+		for (const channel of samples) {
+			if (Math.abs(channel[index] ?? 0) > threshold) {
+				return index;
+			}
+		}
+	}
+
+	return 0;
+}
+
+export function trim(options?: { threshold?: number; margin?: number; start?: boolean; end?: boolean; id?: string }): TrimNode {
+	const parsed = schema.parse(options ?? {});
+	return new TrimNode({ ...parsed, id: options?.id });
+}
