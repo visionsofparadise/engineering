@@ -1,12 +1,13 @@
-import type { AudioChunk, RenderOptions } from "./node";
-import { BufferedAudioNode } from "./node";
-import type { SourceNode } from "./source";
-import type { TransformNode } from "./transform";
-import type { TargetNode } from "./target";
 import type { GraphDefinition } from "./graph-format";
+import type { AudioChunk, RenderOptions, StreamContext } from "./node";
+import { BufferedAudioNode } from "./node";
+import type { SourceNode } from "./sources";
+import type { TargetNode } from "./targets";
+import type { TransformNode } from "./transforms";
 
 export type NodeRegistry = Map<string, Map<string, new (options?: Record<string, unknown>) => BufferedAudioNode>>;
 
+// FIX: These guards are redundant, the classes have their own guards or instanceof
 function isSourceNode(value: unknown): value is SourceNode {
 	return BufferedAudioNode.is(value) && value.type[1] === "source";
 }
@@ -19,7 +20,8 @@ function isTargetNode(value: unknown): value is TargetNode {
 	return BufferedAudioNode.is(value) && value.type[1] === "target";
 }
 
-function detectCycle(node: BufferedAudioNode): void {
+// FIX: This needs to happen through our recursions, not externally
+export function detectCycle(node: BufferedAudioNode): void {
 	const visited = new Set<BufferedAudioNode>();
 	const stack = new Set<BufferedAudioNode>();
 
@@ -42,75 +44,64 @@ function detectCycle(node: BufferedAudioNode): void {
 	walk(node);
 }
 
-export function executeGraph(
-	source: SourceNode,
-	readable: ReadableStream<AudioChunk>,
-): Promise<void> {
-	detectCycle(source);
-	return walkNode(source, readable);
+// FIX: Along with fix for properties interface, no need to cast here
+function isBypassed(node: BufferedAudioNode): boolean {
+	return "bypass" in node.properties && (node.properties as { bypass?: boolean }).bypass === true;
 }
 
-function isBypassed(child: BufferedAudioNode): boolean {
-	return "bypass" in child.properties && (child.properties as { bypass?: boolean }).bypass === true;
-}
+// FIX: Our Target node class incorrectly has to() and children, instead we should only implement them on Source and Transform. This utility should then do a type check first
+function resolveChildren(node: BufferedAudioNode): Array<BufferedAudioNode> {
+	const result: Array<BufferedAudioNode> = [];
 
-function walkNode(
-	node: BufferedAudioNode,
-	readable: ReadableStream<AudioChunk>,
-): Promise<void> {
-	const activeChildren = node.children.filter(child => !isBypassed(child));
-	const bypassedChildren = node.children.filter(child => isBypassed(child));
-
-	const allTargets = [
-		...activeChildren,
-		...bypassedChildren.flatMap(child => child.children),
-	];
-
-	if (allTargets.length === 0) {
-		return readable.pipeTo(new WritableStream<AudioChunk>());
-	}
-
-	const first = allTargets[0];
-	if (allTargets.length === 1 && first !== undefined) {
-		return pipeToNode(first, readable);
-	}
-
-	const branches = teeReadable(readable, allTargets.length);
-	const promises: Array<Promise<void>> = [];
-
-	for (let offset = 0; offset < allTargets.length; offset++) {
-		const target = allTargets[offset];
-		const branch = branches[offset];
-		if (target !== undefined && branch !== undefined) {
-			promises.push(pipeToNode(target, branch));
+	for (const child of node.children) {
+		if (isBypassed(child)) {
+			result.push(...resolveChildren(child));
+		} else {
+			result.push(child);
 		}
 	}
 
-	return Promise.all(promises).then(() => undefined);
+	return result;
 }
 
-function pipeToNode(
-	node: BufferedAudioNode,
-	readable: ReadableStream<AudioChunk>,
-): Promise<void> {
+export function setupPipeline(node: BufferedAudioNode, readable: ReadableStream<AudioChunk>, context: StreamContext): Array<Promise<void>> {
+	const effectiveChildren = resolveChildren(node);
+
+	if (effectiveChildren.length === 0) return [];
+
+	if (effectiveChildren.length === 1) {
+		const only = effectiveChildren[0];
+		if (!only) return [];
+		return setupNode(only, readable, context);
+	}
+
+	const tees = teeReadable(readable, effectiveChildren.length);
+	return effectiveChildren.flatMap((child, index) => {
+		const tee = tees[index];
+		if (!tee) return [];
+		return setupNode(child, tee, context);
+	});
+}
+
+function setupNode(node: BufferedAudioNode, readable: ReadableStream<AudioChunk>, context: StreamContext): Array<Promise<void>> {
 	if (isTargetNode(node)) {
-		const writable = node.createWritable();
-		return readable.pipeTo(writable);
+		const stream = node.createStream(context);
+		const writable = stream.createWritableStream();
+		node.streams.push(stream);
+		return [readable.pipeTo(writable)];
 	}
 
 	if (isTransformNode(node)) {
-		const transform = node.createTransform();
-		const output = readable.pipeThrough(transform);
-		return walkNode(node, output);
+		const stream = node.createStream(context);
+		const output = stream.setup(readable);
+		node.streams.push(stream);
+		return setupPipeline(node, output, context);
 	}
 
-	return walkNode(node, readable);
+	return setupPipeline(node, readable, context);
 }
 
-function teeReadable(
-	readable: ReadableStream<AudioChunk>,
-	count: number,
-): Array<ReadableStream<AudioChunk>> {
+function teeReadable(readable: ReadableStream<AudioChunk>, count: number): Array<ReadableStream<AudioChunk>> {
 	if (count <= 1) return [readable];
 
 	const branches: Array<ReadableStream<AudioChunk>> = [];
@@ -126,10 +117,8 @@ function teeReadable(
 	return branches;
 }
 
-export function graphDefinitionToNodes(
-	definition: GraphDefinition,
-	registry: NodeRegistry,
-): Array<SourceNode> {
+// FIX: Can we move the following utilities to the graph-format file?
+export function graphDefinitionToNodes(definition: GraphDefinition, registry: NodeRegistry): Array<SourceNode> {
 	const nodeMap = new Map<string, BufferedAudioNode>();
 
 	for (const nodeDef of definition.nodes) {
@@ -153,7 +142,7 @@ export function graphDefinitionToNodes(
 		fromNode.to(toNode);
 	}
 
-	const targetIds = new Set(definition.edges.map(edge => edge.to));
+	const targetIds = new Set(definition.edges.map((edge) => edge.to));
 	const sources: Array<SourceNode> = [];
 
 	for (const nodeDef of definition.nodes) {
@@ -172,11 +161,7 @@ export function graphDefinitionToNodes(
 	return sources;
 }
 
-export async function renderGraph(
-	definition: GraphDefinition,
-	registry: NodeRegistry,
-	options?: RenderOptions,
-): Promise<void> {
+export async function renderGraph(definition: GraphDefinition, registry: NodeRegistry, options?: RenderOptions): Promise<void> {
 	const sources = graphDefinitionToNodes(definition, registry);
-	await Promise.all(sources.map(source => source.render(options)));
+	await Promise.all(sources.map((source) => source.render(options)));
 }

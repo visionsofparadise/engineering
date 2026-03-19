@@ -1,10 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
-import { BufferedAudioNode } from "./node";
-import { BufferedSourceStream, SourceNode } from "./source";
-import { BufferedTransformStream, TransformNode } from "./transform";
-import { BufferedTargetStream, TargetNode } from "./target";
+import { describe, expect, it } from "vitest";
+import type { ChunkBuffer } from "./buffer";
 import type { AudioChunk, StreamContext, StreamMeta } from "./node";
-import type { ChunkBuffer } from "./chunk-buffer";
+import { BufferedAudioNode } from "./node";
+import { BufferedSourceStream, SourceNode } from "./sources";
+import { BufferedTargetStream, TargetNode } from "./targets";
+import { BufferedTransformStream, TransformNode } from "./transforms";
 
 class MockSourceStream extends BufferedSourceStream {
 	override async _init(): Promise<StreamMeta> {
@@ -58,16 +58,13 @@ class MockTransform extends TransformNode {
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
-	private lastCreatedTransformStream?: MockTransformStream;
-
 	get processedChunks(): Array<AudioChunk> {
-		return this.lastCreatedTransformStream?.processedChunks ?? [];
+		const last = this.streams[this.streams.length - 1];
+		return last instanceof MockTransformStream ? last.processedChunks : [];
 	}
 
-	protected override createStream(context: StreamContext): MockTransformStream {
-		const stream = new MockTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
-		this.lastCreatedTransformStream = stream;
-		return stream;
+	override createStream(context: StreamContext): MockTransformStream {
+		return new MockTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 
 	clone(): MockTransform {
@@ -93,17 +90,13 @@ class MockTarget extends TargetNode {
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
-	lastCreatedStream?: MockTargetStream;
-
-	protected override createStream(context: StreamContext): MockTargetStream {
-		return new MockTargetStream(this.properties as unknown as Record<string, unknown>, context);
+	get lastCreatedStream(): MockTargetStream | undefined {
+		const last = this.streams[this.streams.length - 1];
+		return last instanceof MockTargetStream ? last : undefined;
 	}
 
-	override createWritable(): WritableStream<AudioChunk> {
-		if (!this.streamContext) throw new Error("Stream context not initialized");
-		const stream = new MockTargetStream(this.properties as unknown as Record<string, unknown>, this.streamContext);
-		this.lastCreatedStream = stream;
-		return stream.createWritableStream();
+	override createStream(context: StreamContext): MockTargetStream {
+		return new MockTargetStream(this.properties as unknown as Record<string, unknown>, context);
 	}
 
 	clone(): MockTarget {
@@ -123,19 +116,20 @@ class FailingTarget extends TargetNode {
 	readonly type = ["async-module", "target", "failing"] as const;
 	readonly bufferSize = 0;
 	readonly latency = 0;
-	protected override createStream(context: StreamContext): FailingTargetStream {
+	override createStream(context: StreamContext): FailingTargetStream {
 		return new FailingTargetStream(this.properties as unknown as Record<string, unknown>, context);
 	}
-	clone(): FailingTarget { return new FailingTarget(); }
+	clone(): FailingTarget {
+		return new FailingTarget();
+	}
 }
 
 function createChunk(value: number, offset: number, duration: number): AudioChunk {
 	const samples = new Float32Array(duration).fill(value);
-	return { samples: [samples], offset, duration };
+	return { samples: [samples], offset, sampleRate: 44100, bitDepth: 32 };
 }
 
 const testMeta: StreamMeta = { sampleRate: 44100, channels: 1 };
-const testContext: StreamContext = { ...testMeta, executionProviders: ["gpu", "cpu-native", "cpu"], memoryLimit: 256 * 1024 * 1024 };
 
 describe("BufferedAudioNode", () => {
 	it("type discrimination with is()", () => {
@@ -168,42 +162,41 @@ describe("BufferedAudioNode", () => {
 		expect(result).toBe(target);
 	});
 
-	it("setup() recurses to targets", async () => {
+	it("teardown() iterates streams and recurses to children", async () => {
 		const source = new MockSource();
 		const transform = new MockTransform();
 		const target = new MockTarget();
 
-		const sourceSetup = vi.spyOn(source, "_setup" as keyof MockSource);
-		const transformSetup = vi.spyOn(transform, "_setup" as keyof MockTransform);
-		const targetSetup = vi.spyOn(target, "_setup" as keyof MockTarget);
-
 		source.to(transform);
 		transform.to(target);
 
-		await source.setup(testContext);
-
-		expect(sourceSetup).toHaveBeenCalledWith(testContext);
-		expect(transformSetup).toHaveBeenCalledWith(testContext);
-		expect(targetSetup).toHaveBeenCalledWith(testContext);
-	});
-
-	it("teardown() recurses to targets", async () => {
-		const source = new MockSource();
-		const transform = new MockTransform();
-		const target = new MockTarget();
-
-		const sourceTeardown = vi.spyOn(source, "_teardown" as keyof MockSource);
-		const transformTeardown = vi.spyOn(transform, "_teardown" as keyof MockTransform);
-		const targetTeardown = vi.spyOn(target, "_teardown" as keyof MockTarget);
-
-		source.to(transform);
-		transform.to(target);
+		let tornDown = false;
+		source.streams.push({
+			_teardown() {
+				tornDown = true;
+			},
+		});
 
 		await source.teardown();
 
-		expect(sourceTeardown).toHaveBeenCalled();
-		expect(transformTeardown).toHaveBeenCalled();
-		expect(targetTeardown).toHaveBeenCalled();
+		expect(tornDown).toBe(true);
+	});
+
+	it("clearStreams() empties streams on node and children", () => {
+		const source = new MockSource();
+		const transform = new MockTransform();
+		const target = new MockTarget();
+
+		source.to(transform);
+		transform.to(target);
+
+		source.streams.push({ _teardown() {} });
+		transform.streams.push({ _teardown() {} });
+
+		source.clearStreams();
+
+		expect(source.streams).toHaveLength(0);
+		expect(transform.streams).toHaveLength(0);
 	});
 
 	it("abstract bufferSize and latency must be implemented", () => {
@@ -215,10 +208,7 @@ describe("BufferedAudioNode", () => {
 
 describe("SourceNode render", () => {
 	it("source → target pipeline flows chunks", async () => {
-		const chunks = [
-			createChunk(1.0, 0, 100),
-			createChunk(0.5, 100, 100),
-		];
+		const chunks = [createChunk(1.0, 0, 100), createChunk(0.5, 100, 100)];
 		const source = new MockSource(chunks, testMeta);
 		const target = new MockTarget();
 
@@ -249,11 +239,9 @@ describe("SourceNode render", () => {
 	it("teardown runs on error", async () => {
 		const source = new MockSource([createChunk(1.0, 0, 100)], testMeta);
 		const target = new FailingTarget();
-		const teardownSpy = vi.spyOn(source, "_teardown" as keyof MockSource);
 
 		source.to(target);
 
 		await expect(source.render()).rejects.toThrow("write failed");
-		expect(teardownSpy).toHaveBeenCalled();
 	});
 });

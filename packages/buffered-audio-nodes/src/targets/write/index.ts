@@ -1,9 +1,9 @@
-import { open, type FileHandle } from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
+import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
-import type { AudioChunk, StreamContext } from "../node";
-import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "../target";
-import { waitForDrain } from "../utils/ffmpeg";
+import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
+import type { AudioChunk, StreamContext } from "../../node";
+import { waitForDrain } from "../../utils/ffmpeg";
 
 export type WavBitDepth = "16" | "24" | "32" | "32f";
 
@@ -27,26 +27,26 @@ export interface WriteProperties extends TargetNodeProperties {
 }
 
 const WAV_HEADER_SIZE = 80;
-const UINT32_MAX = 0xFFFFFFFF;
+const UINT32_MAX = 0xffffffff;
 
 export class WriteStream extends BufferedTargetStream<WriteProperties> {
 	private fileHandle?: FileHandle;
 	private ffmpegProcess?: ChildProcess;
 	private ffmpegStdin?: NodeJS.WritableStream;
 	private ffmpegDone?: Promise<void>;
-	private sampleRate = 44100;
-	private channels = 1;
+	private sampleRate = 0;
+	private channels = 0;
 	private bytesWritten = 0;
 	private useEncoding = false;
 	private headerWritten = false;
 	private initialized = false;
 
-	private async lazyInit(): Promise<void> {
+	private async lazyInit(chunk: AudioChunk): Promise<void> {
 		if (this.initialized) return;
 		this.initialized = true;
 
-		this.sampleRate = this.context.sampleRate;
-		this.channels = this.context.channels;
+		this.sampleRate = chunk.sampleRate;
+		this.channels = chunk.samples.length;
 		this.bytesWritten = 0;
 		this.headerWritten = false;
 
@@ -94,13 +94,13 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 	}
 
 	override async _write(chunk: AudioChunk): Promise<void> {
-		await this.lazyInit();
+		await this.lazyInit(chunk);
 
 		const bytes = this.convertChunk(chunk);
 
 		if (this.useEncoding && this.ffmpegStdin) {
 			if (!this.headerWritten) {
-				const header = buildWavHeader(0xFFFFFFFF, this.sampleRate, this.channels, this.properties.bitDepth);
+				const header = buildWavHeader(0xffffffff, this.sampleRate, this.channels, this.properties.bitDepth);
 				await this.writeToStdin(header);
 				this.headerWritten = true;
 			}
@@ -124,9 +124,10 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 			this.ffmpegStdin = undefined;
 			this.ffmpegDone = undefined;
 		} else if (this.fileHandle) {
-			const header = this.bytesWritten > UINT32_MAX
-				? buildRf64Header(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth)
-				: buildWavHeader(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth);
+			const header =
+				this.bytesWritten > UINT32_MAX
+					? buildRf64Header(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth)
+					: buildWavHeader(this.bytesWritten, this.sampleRate, this.channels, this.properties.bitDepth);
 			await this.fileHandle.write(header, 0, WAV_HEADER_SIZE, 0);
 			await this.fileHandle.close();
 			this.fileHandle = undefined;
@@ -134,7 +135,7 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 	}
 
 	private convertChunk(chunk: AudioChunk): Buffer {
-		const frames = chunk.duration;
+		const frames = chunk.samples[0]?.length ?? 0;
 		const channels = chunk.samples.length;
 		const bytesPerSample = getBytesPerSample(this.properties.bitDepth);
 		const buffer = Buffer.alloc(frames * channels * bytesPerSample);
@@ -199,7 +200,7 @@ export class WriteNode extends TargetNode<WriteProperties> {
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
-	protected override createStream(context: StreamContext): WriteStream {
+	override createStream(context: StreamContext): WriteStream {
 		return new WriteStream(this.properties, context);
 	}
 
@@ -224,21 +225,21 @@ function writeSample(buffer: Buffer, offset: number, sample: number, bitDepth: W
 	switch (bitDepth) {
 		case "16": {
 			const clamped = Math.max(-1, Math.min(1, sample));
-			const value = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
+			const value = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
 			buffer.writeInt16LE(Math.round(value), offset);
 			return offset + 2;
 		}
 		case "24": {
 			const clamped = Math.max(-1, Math.min(1, sample));
-			const value = Math.round(clamped < 0 ? clamped * 0x800000 : clamped * 0x7FFFFF);
-			buffer[offset] = value & 0xFF;
-			buffer[offset + 1] = (value >> 8) & 0xFF;
-			buffer[offset + 2] = (value >> 16) & 0xFF;
+			const value = Math.round(clamped < 0 ? clamped * 0x800000 : clamped * 0x7fffff);
+			buffer[offset] = value & 0xff;
+			buffer[offset + 1] = (value >> 8) & 0xff;
+			buffer[offset + 2] = (value >> 16) & 0xff;
 			return offset + 3;
 		}
 		case "32": {
 			const clamped = Math.max(-1, Math.min(1, sample));
-			const value = clamped < 0 ? clamped * 0x80000000 : clamped * 0x7FFFFFFF;
+			const value = clamped < 0 ? clamped * 0x80000000 : clamped * 0x7fffffff;
 			buffer.writeInt32LE(Math.round(value), offset);
 			return offset + 4;
 		}

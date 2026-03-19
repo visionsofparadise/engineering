@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { AudioChunk, StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "../../transform";
 
 export const schema = z.object({
 	target: z.number().min(-60).max(0).multipleOf(1).default(-20).describe("Target"),
@@ -14,14 +14,20 @@ export const schema = z.object({
 export interface LevelerProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
-	private windowSamples: number;
+	private windowSamples = 0;
 	private currentGainDb = 0;
 	private windowSeconds: number;
 
 	constructor(properties: LevelerProperties, context: StreamContext) {
 		super(properties, context);
 		this.windowSeconds = this.properties.window;
-		this.windowSamples = Math.round(this.properties.window * context.sampleRate);
+	}
+
+	override _buffer(chunk: AudioChunk, buffer: ChunkBuffer): void | Promise<void> {
+		if (this.bufferSize === 0) {
+			this.bufferSize = Math.round(chunk.sampleRate * this.properties.window);
+		}
+		return super._buffer(chunk, buffer);
 	}
 
 	override _process(_buffer: ChunkBuffer): void {
@@ -29,6 +35,9 @@ export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
+		if (this.windowSamples === 0) {
+			this.windowSamples = Math.round(this.properties.window * chunk.sampleRate);
+		}
 		const { target, speed, maxGain, maxCut } = this.properties;
 
 		let rms = 0;
@@ -67,7 +76,7 @@ export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
 			return output;
 		});
 
-		return { samples, offset: chunk.offset, duration: chunk.duration };
+		return { samples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
 	}
 }
 
@@ -81,19 +90,9 @@ export class LevelerNode extends TransformNode<LevelerProperties> {
 
 	override readonly type = ["async-module", "transform", "leveler"] as const;
 	override readonly latency = 0;
+	override readonly bufferSize = 0;
 
-	private windowSamples = 22050;
-
-	override get bufferSize(): number {
-		return this.windowSamples;
-	}
-
-	protected override _setup(context: StreamContext): void {
-		super._setup(context);
-		this.windowSamples = Math.round(this.properties.window * context.sampleRate);
-	}
-
-	protected override createStream(context: StreamContext): LevelerStream {
+	override createStream(context: StreamContext): LevelerStream {
 		return new LevelerStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

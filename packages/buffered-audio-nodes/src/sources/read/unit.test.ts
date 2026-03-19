@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { join } from "node:path";
-import { read } from "./read";
-import { write } from "../targets/write";
-import { readToBuffer, readWavSamples } from "../utils/read-to-buffer";
 import { randomBytes } from "node:crypto";
-import { tmpdir } from "node:os";
 import { unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { read } from ".";
+import { write } from "../../targets/write";
+import { readToBuffer, readWavSamples } from "../../utils/read-to-buffer";
 
 const testVoice = join(import.meta.dirname, "../utils/test-voice.wav");
 
@@ -13,6 +13,7 @@ describe("ReadModule", () => {
 	it("returns correct StreamMeta matching the source WAV file", async () => {
 		const expected = await readWavSamples(testVoice);
 
+		// FIX: We're still using 'acm', can you update these mentions
 		const tempOut = join(tmpdir(), `acm-read-meta-${randomBytes(8).toString("hex")}.wav`);
 
 		try {

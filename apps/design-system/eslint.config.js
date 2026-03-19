@@ -5,6 +5,7 @@ import importX from "eslint-plugin-import-x";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
+import stylistic from "@stylistic/eslint-plugin";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
@@ -55,6 +56,7 @@ export default tseslint.config(
       "import-x": importX,
       "barrel-files": barrelFiles,
       "check-file": checkFile,
+      "@stylistic": stylistic,
     },
     settings: {
       react: {
@@ -222,6 +224,14 @@ export default tseslint.config(
       "@typescript-eslint/consistent-indexed-object-style": "off",
       "@typescript-eslint/no-unsafe-function-type": "off",
       "react-hooks/exhaustive-deps": "off",
+
+      "@stylistic/padding-line-between-statements": [
+        "error",
+        { blankLine: "always", prev: "*", next: "return" },
+        { blankLine: "always", prev: "block-like", next: "*" },
+        { blankLine: "always", prev: ["const", "let", "var"], next: "*" },
+        { blankLine: "any", prev: ["const", "let", "var"], next: ["const", "let", "var"] },
+      ],
     },
   },
 

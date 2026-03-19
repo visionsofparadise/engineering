@@ -1,14 +1,20 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight interleave loops with bounds-checked typed array access */
+import { randomUUID } from "node:crypto";
 import { open, unlink, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
-import type { AudioChunk } from "./node";
+
+// FIX: This doesn't make sense, there's never a time that ChunkBuffer doesn't know about sampleRate and bitDepth. If chunkBuffer receives mixed values it should throw.
+interface BufferChunk {
+	readonly samples: Array<Float32Array>;
+	readonly offset: number;
+}
 
 export type BufferStorage = "memory" | "file";
 
 const DEFAULT_STORAGE_THRESHOLD = 10 * 1024 * 1024; // 10MB
 
+// TODO: We have 2 implementations here. We need FileChunkBuffer and MemoryChunkBuffer to be extensions of a base ChunkBuffer
 export class ChunkBuffer {
 	private _frames = 0;
 	private _channels = 0;
@@ -27,9 +33,7 @@ export class ChunkBuffer {
 
 	constructor(bufferSize: number, channels: number, memoryLimit?: number) {
 		// Compute threshold from memory limit — use ~4% of available memory, clamped to reasonable range
-		this.storageThreshold = memoryLimit
-			? Math.max(1024 * 1024, Math.min(memoryLimit * 0.04, 64 * 1024 * 1024))
-			: DEFAULT_STORAGE_THRESHOLD;
+		this.storageThreshold = memoryLimit ? Math.max(1024 * 1024, Math.min(memoryLimit * 0.04, 64 * 1024 * 1024)) : DEFAULT_STORAGE_THRESHOLD;
 		this._channels = channels;
 
 		const initialCapacity = bufferSize === Infinity ? 44100 : bufferSize;
@@ -75,11 +79,11 @@ export class ChunkBuffer {
 		this._frames += duration;
 	}
 
-	async read(offset: number, frames: number): Promise<AudioChunk> {
+	async read(offset: number, frames: number): Promise<BufferChunk> {
 		const actualFrames = Math.min(frames, this._frames - offset);
 
 		if (actualFrames <= 0) {
-			return { samples: [], offset, duration: 0 };
+			return { samples: [], offset };
 		}
 
 		if (this.storage === "file") {
@@ -130,7 +134,7 @@ export class ChunkBuffer {
 		this._frames = frames;
 	}
 
-	async *iterate(chunkSize: number): AsyncGenerator<AudioChunk> {
+	async *iterate(chunkSize: number): AsyncGenerator<BufferChunk> {
 		let offset = 0;
 
 		while (offset < this._frames) {
@@ -141,7 +145,6 @@ export class ChunkBuffer {
 			offset += frames;
 		}
 	}
-
 
 	async reset(): Promise<void> {
 		this._frames = 0;
@@ -197,7 +200,7 @@ export class ChunkBuffer {
 		this.memoryWriteOffset = required;
 	}
 
-	private readMemory(offset: number, frames: number): AudioChunk {
+	private readMemory(offset: number, frames: number): BufferChunk {
 		const samples: Array<Float32Array> = [];
 
 		for (let ch = 0; ch < this._channels; ch++) {
@@ -205,7 +208,7 @@ export class ChunkBuffer {
 			samples.push(buf ? buf.slice(offset, offset + frames) : new Float32Array(frames));
 		}
 
-		return { samples, offset, duration: frames };
+		return { samples, offset };
 	}
 
 	private writeMemory(offset: number, samples: Array<Float32Array>): void {
@@ -252,7 +255,7 @@ export class ChunkBuffer {
 			const base = frame * channels;
 			for (let ch = 0; ch < channels; ch++) {
 				const memBuf = this.memoryChannels[ch];
-				interleaved[base + ch] = memBuf ? memBuf[frame] ?? 0 : 0;
+				interleaved[base + ch] = memBuf ? (memBuf[frame] ?? 0) : 0;
 			}
 		}
 
@@ -305,9 +308,9 @@ export class ChunkBuffer {
 		this.fileFramesWritten += duration;
 	}
 
-	private async readFile(offset: number, frames: number): Promise<AudioChunk> {
+	private async readFile(offset: number, frames: number): Promise<BufferChunk> {
 		if (!this.tempHandle) {
-			return { samples: [], offset, duration: 0 };
+			return { samples: [], offset };
 		}
 
 		const channels = this.fileChannels;
@@ -336,7 +339,7 @@ export class ChunkBuffer {
 			}
 		}
 
-		return { samples, offset, duration: frames };
+		return { samples, offset };
 	}
 
 	private async writeFile(offset: number, samples: Array<Float32Array>): Promise<void> {

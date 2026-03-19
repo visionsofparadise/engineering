@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
-import { executeGraph } from "./executor";
-import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type ExecutionProvider, type RenderOptions, type StreamContext, type StreamMeta } from "./node";
+import { detectCycle, setupPipeline } from "../executor";
+import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type ExecutionProvider, type RenderOptions, type StreamContext, type StreamMeta } from "../node";
 
 export interface RenderTiming {
 	readonly totalMs: number;
@@ -72,7 +72,7 @@ export abstract class BufferedSourceStream<P extends SourceNodeProperties = Sour
 				return controller.desiredSize;
 			},
 			enqueue: (chunk: AudioChunk) => {
-				this.framesRead += chunk.duration;
+				this.framesRead += chunk.samples[0]?.length ?? 0;
 				controller.enqueue(chunk);
 			},
 			close: () => {
@@ -102,15 +102,18 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 		const defaultProviders: ReadonlyArray<ExecutionProvider> = ["gpu", "cpu-native", "cpu"];
 		const memoryLimit = options?.memoryLimit ?? 256 * 1024 * 1024;
 
+		detectCycle(this);
+
+		// FIX: The separate path for clearStreams and teardown is pointing to the fact that it is too hard to manually go through the steps of render externally, you have imlemented this purely to make benchmarking easier. The actual solution is to refactor render to be a series of function calls that can be done externally, so benchmarking can intercept at any stage it needs to.
+		this.clearStreams();
+
 		const stream = this.createStream();
 		const meta = await stream._init();
-		const context: StreamContext = { ...meta, executionProviders: options?.executionProviders ?? defaultProviders, memoryLimit };
+		const context: StreamContext = { executionProviders: options?.executionProviders ?? defaultProviders, memoryLimit, durationFrames: meta.durationFrames };
 
-		await this.setup(context);
-
-		const stages = Math.max(1, collectPipeline(this).length);
+		const stages = Math.max(1, countNodes(this));
 		const chunkSize = options?.chunkSize ?? 128 * 1024;
-		const bytesPerChunk = context.channels * chunkSize * 4;
+		const bytesPerChunk = meta.channels * chunkSize * 4;
 		const computedHighWaterMark = Math.max(1, Math.floor(memoryLimit / (stages * bytesPerChunk)));
 		const highWaterMark = options?.highWaterMark ?? computedHighWaterMark;
 
@@ -118,7 +121,8 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 
 		try {
 			const readable = stream.createReadableStream(context, { ...options, highWaterMark });
-			await executeGraph(this, readable);
+			const promises = setupPipeline(this, readable, context);
+			await Promise.all(promises);
 		} finally {
 			const totalMs = performance.now() - start;
 			const audioDurationMs = meta.durationFrames !== undefined ? (meta.durationFrames / meta.sampleRate) * 1000 : 0;
@@ -132,14 +136,10 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 	}
 }
 
-export function collectPipeline(unit: BufferedAudioNode): Array<BufferedAudioNode> {
-	const result: Array<BufferedAudioNode> = [];
-	let current: BufferedAudioNode = unit;
-	while (current.children.length > 0) {
-		const first = current.children[0];
-		if (first === undefined) break;
-		result.push(first);
-		current = first;
+function countNodes(node: BufferedAudioNode): number {
+	let count = 0;
+	for (const child of node.children) {
+		count += 1 + countNodes(child);
 	}
-	return result;
+	return count;
 }

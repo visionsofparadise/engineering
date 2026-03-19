@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "./node";
+import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "../node";
 
 export interface TargetNodeProperties extends BufferedAudioNodeProperties {}
 
@@ -27,6 +27,10 @@ export abstract class BufferedTargetStream<P extends TargetNodeProperties = Targ
 	abstract _write(chunk: AudioChunk): Promise<void>;
 	abstract _close(): Promise<void>;
 
+	_teardown(): Promise<void> | void {
+		return;
+	}
+
 	createWritableStream(): WritableStream<AudioChunk> {
 		this.hasStarted = false;
 		this.framesWritten = 0;
@@ -40,7 +44,7 @@ export abstract class BufferedTargetStream<P extends TargetNodeProperties = Targ
 
 				await this._write(chunk);
 
-				this.framesWritten += chunk.duration;
+				this.framesWritten += chunk.samples[0]?.length ?? 0;
 
 				this.events.emit("progress", { framesProcessed: this.framesWritten, sourceTotalFrames: this.sourceTotalFrames });
 			},
@@ -58,17 +62,5 @@ export abstract class TargetNode<P extends TargetNodeProperties = TargetNodeProp
 		return BufferedAudioNode.is(value) && value.type[1] === "target";
 	}
 
-	protected streamContext?: StreamContext;
-
-	protected override _setup(context: StreamContext): Promise<void> | void {
-		this.streamContext = context;
-	}
-
-	protected abstract createStream(context: StreamContext): BufferedTargetStream<P>;
-
-	createWritable(): WritableStream<AudioChunk> {
-		if (!this.streamContext) throw new Error("Stream context not initialized");
-		const stream = this.createStream(this.streamContext);
-		return stream.createWritableStream();
-	}
+	abstract createStream(context: StreamContext): BufferedTargetStream<P>;
 }

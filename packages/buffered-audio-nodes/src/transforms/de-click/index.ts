@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { BufferedAudioNodeInput, StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 import { lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
 import { smoothEnvelope } from "../../utils/envelope";
 
@@ -13,17 +13,10 @@ export const schema = z.object({
 export interface DeClickProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 export class DeClickStream extends BufferedTransformStream<DeClickProperties> {
-	private processSampleRate: number;
-
-	constructor(properties: DeClickProperties, context: StreamContext) {
-		super(properties, context);
-		this.processSampleRate = context.sampleRate;
-	}
-
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const frames = buffer.frames;
 		const channels = buffer.channels;
-		const sampleRate = this.processSampleRate;
+		const sampleRate = this.sampleRate ?? 44100;
 		const { sensitivity, maxClickDuration } = this.properties;
 
 		const allAudio = await buffer.read(0, frames);
@@ -96,7 +89,7 @@ export class DeClickNode<P extends DeClickProperties = DeClickProperties> extend
 		super({ ...properties, ...schema.encode(properties) });
 	}
 
-	protected override createStream(context: StreamContext): DeClickStream {
+	override createStream(context: StreamContext): DeClickStream {
 		return new DeClickStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 
@@ -253,4 +246,3 @@ function approximateMedian(values: Float32Array): number {
 
 	return max;
 }
-

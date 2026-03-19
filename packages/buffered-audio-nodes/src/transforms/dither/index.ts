@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
 import type { AudioChunk, StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "../../transform";
 
 export const schema = z.object({
-	bitDepth: z.union([z.literal(16), z.literal(24)]).default(16).describe("Bit Depth"),
+	bitDepth: z
+		.union([z.literal(16), z.literal(24)])
+		.default(16)
+		.describe("Bit Depth"),
 	noiseShaping: z.boolean().default(false).describe("Noise Shaping"),
 });
 
@@ -46,7 +49,7 @@ export class DitherStream extends BufferedTransformStream<DitherProperties> {
 			return output;
 		});
 
-		return { samples, offset: chunk.offset, duration: chunk.duration };
+		return { samples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: this.properties.bitDepth };
 	}
 }
 
@@ -62,7 +65,7 @@ export class DitherNode extends TransformNode<DitherProperties> {
 	override readonly bufferSize = 0;
 	override readonly latency = 0;
 
-	protected override createStream(context: StreamContext): DitherStream {
+	override createStream(context: StreamContext): DitherStream {
 		return new DitherStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

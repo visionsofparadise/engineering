@@ -1,12 +1,12 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 import { applyBandpass } from "../../utils/apply-bandpass";
-import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
+import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { resampleDirect } from "../../utils/resample-direct";
-import { stft, istft } from "../../utils/stft";
+import { istft, stft } from "../../utils/stft";
 
 export interface StemGains {
 	readonly vocals: number;
@@ -22,7 +22,11 @@ export const schema = z.object({
 		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "htdemucs", download: "https://github.com/facebookresearch/demucs" })
 		.describe("HTDemucs source separation model (.onnx) — requires .onnx.data file alongside"),
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
-	onnxAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" }).describe("ONNX Runtime native addon"),
+	onnxAddonPath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" })
+		.describe("ONNX Runtime native addon"),
 	highPass: z.number().min(0).max(500).multipleOf(10).default(0).describe("High Pass"),
 	lowPass: z.number().min(0).max(22050).multipleOf(100).default(0).describe("Low Pass"),
 });
@@ -40,12 +44,6 @@ const TRANSITION_POWER = 1.0;
 
 export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalanceProperties> {
 	private session?: OnnxSession;
-	private sourceSampleRate: number;
-
-	constructor(properties: MusicRebalanceProperties, context: StreamContext) {
-		super(properties, context);
-		this.sourceSampleRate = context.sampleRate;
-	}
 
 	private ensureSession(): OnnxSession {
 		if (this.session) return this.session;
@@ -65,8 +63,8 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 		let left = chunk.samples[0] ?? new Float32Array(originalFrames);
 		let right = channels >= 2 ? (chunk.samples[1] ?? left) : left;
 
-		if (this.sourceSampleRate !== HTDEMUCS_SAMPLE_RATE) {
-			const resampled = await resampleDirect(props.ffmpegPath, [left, right], this.sourceSampleRate, HTDEMUCS_SAMPLE_RATE);
+		if ((this.sampleRate ?? 44100) !== HTDEMUCS_SAMPLE_RATE) {
+			const resampled = await resampleDirect(props.ffmpegPath, [left, right], this.sampleRate ?? 44100, HTDEMUCS_SAMPLE_RATE);
 			left = resampled[0] ?? left;
 			right = resampled[1] ?? right;
 		}
@@ -277,8 +275,8 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 
 		applyBandpass(outputChannels, HTDEMUCS_SAMPLE_RATE, props.highPass, props.lowPass);
 
-		if (this.sourceSampleRate !== HTDEMUCS_SAMPLE_RATE) {
-			const resampled = await resampleDirect(props.ffmpegPath, outputChannels, HTDEMUCS_SAMPLE_RATE, this.sourceSampleRate);
+		if ((this.sampleRate ?? 44100) !== HTDEMUCS_SAMPLE_RATE) {
+			const resampled = await resampleDirect(props.ffmpegPath, outputChannels, HTDEMUCS_SAMPLE_RATE, this.sampleRate ?? 44100);
 
 			for (let ch = 0; ch < outputChannels.length; ch++) {
 				const resampledCh = resampled[ch];
@@ -306,7 +304,7 @@ export class MusicRebalanceNode extends TransformNode<MusicRebalanceProperties> 
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): MusicRebalanceStream {
+	override createStream(context: StreamContext): MusicRebalanceStream {
 		return new MusicRebalanceStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

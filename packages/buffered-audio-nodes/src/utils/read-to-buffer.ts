@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { WaveFile } from "wavefile";
-import { ChunkBuffer } from "../chunk-buffer";
+import { ChunkBuffer } from "../buffer";
 import type { StreamMeta } from "../node";
 
 export interface WavSamples {

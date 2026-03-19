@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 
 export const schema = z.object({
 	threshold: z.number().min(0).max(1).multipleOf(0.001).default(0.001).describe("Threshold"),
@@ -13,13 +13,6 @@ export const schema = z.object({
 export interface TrimProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 export class TrimStream extends BufferedTransformStream<TrimProperties> {
-	private trimSampleRate: number;
-
-	constructor(properties: TrimProperties, context: StreamContext) {
-		super(properties, context);
-		this.trimSampleRate = context.sampleRate;
-	}
-
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const props = this.properties;
 		const frames = buffer.frames;
@@ -30,7 +23,7 @@ export class TrimStream extends BufferedTransformStream<TrimProperties> {
 
 		const threshold = props.threshold;
 		const marginSeconds = props.margin;
-		const marginFrames = Math.round(marginSeconds * this.trimSampleRate);
+		const marginFrames = Math.round(marginSeconds * (this.sampleRate ?? 44100));
 		const trimStart = props.start;
 		const trimEnd = props.end;
 
@@ -87,7 +80,7 @@ export class TrimNode extends TransformNode<TrimProperties> {
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): TrimStream {
+	override createStream(context: StreamContext): TrimStream {
 		return new TrimStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

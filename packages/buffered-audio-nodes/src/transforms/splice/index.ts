@@ -1,6 +1,6 @@
 import { z } from "zod";
+import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
 import type { AudioChunk, StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "../../transform";
 import { readWavSamples } from "../../utils/read-to-buffer";
 
 export const schema = z.object({
@@ -19,23 +19,18 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 	private async ensureInsertSamples(): Promise<void> {
 		if (this.insertSamples) return;
 		const props = this.properties;
-		const { samples, sampleRate, channels: fileChannels } = await readWavSamples(props.insertPath);
+		const { samples, sampleRate } = await readWavSamples(props.insertPath);
 
-		if (sampleRate !== this.context.sampleRate) {
-			throw new Error(`Splice: insert file sample rate ${sampleRate} does not match stream sample rate ${this.context.sampleRate}`);
+		if (this.sampleRate !== undefined && sampleRate !== this.sampleRate) {
+			throw new Error(`Splice: insert file sample rate ${sampleRate} does not match stream sample rate ${this.sampleRate}`);
 		}
 
 		const targetChannels = props.channels;
-		const expectedChannels = targetChannels ? targetChannels.length : this.context.channels;
-
-		if (fileChannels !== expectedChannels) {
-			throw new Error(`Splice: insert file channels ${fileChannels} does not match expected channels ${expectedChannels}`);
-		}
 
 		if (targetChannels) {
 			for (const ch of targetChannels) {
-				if (ch < 0 || ch >= this.context.channels) {
-					throw new Error(`Splice: target channel ${ch} is out of range [0, ${this.context.channels})`);
+				if (ch < 0) {
+					throw new Error(`Splice: target channel ${ch} is out of range`);
 				}
 			}
 		}
@@ -47,8 +42,9 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 	override async _unbuffer(chunk: AudioChunk): Promise<AudioChunk> {
 		await this.ensureInsertSamples();
 		const props = this.properties;
+		const chunkFrames = chunk.samples[0]?.length ?? 0;
 		const chunkStart = chunk.offset;
-		const chunkEnd = chunkStart + chunk.duration;
+		const chunkEnd = chunkStart + chunkFrames;
 		const insertEnd = props.insertAt + this.insertLength;
 
 		if (chunkEnd <= props.insertAt || chunkStart >= insertEnd) {
@@ -58,7 +54,7 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 		const samples = chunk.samples.map((channel) => new Float32Array(channel));
 
 		const overlapStart = Math.max(0, props.insertAt - chunkStart);
-		const overlapEnd = Math.min(chunk.duration, insertEnd - chunkStart);
+		const overlapEnd = Math.min(chunkFrames, insertEnd - chunkStart);
 		const insertOffset = Math.max(0, chunkStart - props.insertAt);
 
 		const targetChannels = props.channels;
@@ -95,7 +91,7 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 			}
 		}
 
-		return { samples, offset: chunk.offset, duration: chunk.duration };
+		return { samples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
 	}
 }
 
@@ -111,7 +107,7 @@ export class SpliceNode extends TransformNode<SpliceProperties> {
 	override readonly bufferSize = 0;
 	override readonly latency = 0;
 
-	protected override createStream(context: StreamContext): SpliceStream {
+	override createStream(context: StreamContext): SpliceStream {
 		return new SpliceStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

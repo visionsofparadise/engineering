@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { StreamMeta } from "../node";
 import { read } from "../sources/read";
 import { write, type WavBitDepth } from "../targets/write";
-import type { TransformNode } from "../transform";
+import type { TransformNode } from "../transforms";
 import { readToBuffer } from "./read-to-buffer";
 
 export interface TransformTestResult {

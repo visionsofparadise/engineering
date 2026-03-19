@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { AudioChunk, StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "../../transform";
 
 export const schema = z.object({
 	threshold: z.number().min(0).max(1).multipleOf(0.01).default(0.99).describe("Threshold"),
@@ -21,6 +22,13 @@ export interface DeClipProperties extends z.infer<typeof schema>, TransformNodeP
  *   IEEE JSTSP, 15(1), 5-24. https://doi.org/10.1109/JSTSP.2020.3042071
  */
 export class DeClipStream extends BufferedTransformStream<DeClipProperties> {
+	override _buffer(chunk: AudioChunk, buffer: ChunkBuffer): void | Promise<void> {
+		if (this.bufferSize === 0) {
+			this.bufferSize = Math.round(chunk.sampleRate * 0.05);
+		}
+		return super._buffer(chunk, buffer);
+	}
+
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
 		const samples = chunk.samples.map((channel) => {
 			const output = new Float32Array(channel);
@@ -35,7 +43,7 @@ export class DeClipStream extends BufferedTransformStream<DeClipProperties> {
 			return output;
 		});
 
-		return { samples, offset: chunk.offset, duration: chunk.duration };
+		return { samples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
 	}
 }
 
@@ -49,19 +57,9 @@ export class DeClipNode extends TransformNode<DeClipProperties> {
 
 	override readonly type = ["async-module", "transform", "de-clip"] as const;
 	readonly latency = 0;
+	readonly bufferSize = 0;
 
-	private clipSampleRate = 44100;
-
-	override get bufferSize(): number {
-		return Math.round(this.clipSampleRate * 0.05);
-	}
-
-	protected override _setup(context: StreamContext): void {
-		super._setup(context);
-		this.clipSampleRate = context.sampleRate;
-	}
-
-	protected override createStream(context: StreamContext): DeClipStream {
+	override createStream(context: StreamContext): DeClipStream {
 		return new DeClipStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

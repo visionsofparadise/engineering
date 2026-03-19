@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
 import { interleave } from "../../utils/interleave";
 import { FfmpegNode, FfmpegStream, type FfmpegProperties } from "../ffmpeg";
@@ -33,7 +33,9 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const props = this.properties;
-		this.measuredValues = await measureLoudness(buffer, this.context, props);
+		const sr = this.sampleRate ?? 44100;
+		const ch = buffer.channels;
+		this.measuredValues = await measureLoudness(buffer, sr, ch, props);
 
 		await super._process(buffer);
 
@@ -77,7 +79,7 @@ export class LoudnessNode extends FfmpegNode<LoudnessProperties> {
 
 	override readonly type = ["async-module", "transform", "ffmpeg", "loudness"] as const;
 
-	protected override createStream(context: StreamContext): LoudnessStream {
+	override createStream(context: StreamContext): LoudnessStream {
 		return new LoudnessStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 
@@ -88,7 +90,8 @@ export class LoudnessNode extends FfmpegNode<LoudnessProperties> {
 
 async function measureLoudness(
 	buffer: ChunkBuffer,
-	context: StreamContext,
+	sampleRate: number,
+	channels: number,
 	properties: LoudnessProperties,
 ): Promise<{
 	inputI: string;
@@ -101,7 +104,7 @@ async function measureLoudness(
 
 	const parts = [`I=${properties.target}`, `TP=${properties.truePeak}`, properties.lra !== undefined ? `LRA=${properties.lra}` : "", "print_format=json"].filter(Boolean);
 
-	const args = ["-f", "f32le", "-ar", String(context.sampleRate), "-ac", String(context.channels), "-i", "pipe:0", "-af", `loudnorm=${parts.join(":")}`, "-f", "null", "-"];
+	const args = ["-f", "f32le", "-ar", String(sampleRate), "-ac", String(channels), "-i", "pipe:0", "-af", `loudnorm=${parts.join(":")}`, "-f", "null", "-"];
 
 	return new Promise((resolve, reject) => {
 		const proc = spawn(binaryPath, args, {
@@ -147,13 +150,13 @@ async function measureLoudness(
 			});
 		});
 
-		void writeToStdin(stdin, buffer, context);
+		void writeToStdin(stdin, buffer, channels);
 	});
 }
 
-async function writeToStdin(stdin: NodeJS.WritableStream, buffer: ChunkBuffer, context: StreamContext): Promise<void> {
+async function writeToStdin(stdin: NodeJS.WritableStream, buffer: ChunkBuffer, channels: number): Promise<void> {
 	for await (const chunk of buffer.iterate(44100)) {
-		const interleaved = interleave(chunk.samples, chunk.duration, context.channels);
+		const interleaved = interleave(chunk.samples, chunk.samples[0]?.length ?? 0, channels);
 		const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
 
 		const canWrite = stdin.write(buf);

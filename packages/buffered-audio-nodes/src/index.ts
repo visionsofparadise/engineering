@@ -3,26 +3,26 @@
 export type { AudioChunk, ExecutionProvider, FileInputMeta, ModuleSchema, RenderOptions, StreamContext, StreamMeta } from "./node";
 
 // Base classes
-export { ChunkBuffer, type BufferStorage } from "./chunk-buffer";
+export { ChunkBuffer, type BufferStorage } from "./buffer";
 export { BufferedAudioNode, type BufferedAudioNodeInput, type BufferedAudioNodeProperties } from "./node";
-export { SourceNode, BufferedSourceStream, type RenderTiming, type SourceNodeProperties, type SourceStreamEventMap } from "./source";
-export { TargetNode, BufferedTargetStream, type TargetNodeProperties, type TargetStreamEventMap } from "./target";
-export { TransformNode, BufferedTransformStream, WHOLE_FILE, type TransformNodeProperties, type TransformStreamEventMap } from "./transform";
+export { BufferedSourceStream, SourceNode, type RenderTiming, type SourceNodeProperties, type SourceStreamEventMap } from "./sources";
+export { BufferedTargetStream, TargetNode, type TargetNodeProperties, type TargetStreamEventMap } from "./targets";
+export { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties, type TransformStreamEventMap } from "./transforms";
 
 // Graph format (BAG)
-export { validateGraphDefinition, type GraphDefinition, type GraphNode, type GraphEdge } from "./graph-format";
+export { validateGraphDefinition, type GraphDefinition, type GraphEdge, type GraphNode } from "./graph-format";
 
 // Graph executor
-export { executeGraph, renderGraph, graphDefinitionToNodes, type NodeRegistry } from "./executor";
+export { graphDefinitionToNodes, renderGraph, setupPipeline, type NodeRegistry } from "./executor";
 
 // Sources
 export { read, ReadNode, ReadStream, type ReadProperties } from "./sources/read";
 
 // Targets
-export { write, WriteNode, WriteStream, type WavBitDepth, type WriteProperties, type EncodingOptions } from "./targets/write";
-export { waveform, WaveformNode, WaveformStream, type WaveformProperties } from "./targets/waveform";
-export { spectrogram, SpectrogramNode, SpectrogramStream, type SpectrogramProperties, type FrequencyScale } from "./targets/spectrogram";
 export { loudnessStats, LoudnessStatsNode, LoudnessStatsStream, type LoudnessStats } from "./targets/loudness-stats";
+export { spectrogram, SpectrogramNode, SpectrogramStream, type FrequencyScale, type SpectrogramProperties } from "./targets/spectrogram";
+export { waveform, WaveformNode, WaveformStream, type WaveformProperties } from "./targets/waveform";
+export { write, WriteNode, WriteStream, type EncodingOptions, type WavBitDepth, type WriteProperties } from "./targets/write";
 
 // Transforms - basic
 export { cut, CutNode, CutStream, type CutProperties, type CutRegion } from "./transforms/cut";
@@ -36,8 +36,8 @@ export { trim, TrimNode, TrimStream, type TrimProperties } from "./transforms/tr
 
 // Transforms - ffmpeg-based
 export { ffmpeg, FfmpegNode, FfmpegStream, type FfmpegProperties } from "./transforms/ffmpeg";
-export { resample, ResampleNode, type ResampleProperties } from "./transforms/resample";
 export { loudness, LoudnessNode, LoudnessStream, type LoudnessProperties } from "./transforms/loudness";
+export { resample, ResampleNode, type ResampleProperties } from "./transforms/resample";
 
 // Transforms - engineering
 export { breathControl, BreathControlNode, BreathControlStream, type BreathControlProperties } from "./transforms/breath-control";

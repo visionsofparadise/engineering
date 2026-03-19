@@ -1,6 +1,6 @@
 import { z } from "zod";
+import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
 import type { AudioChunk, StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "../../transform";
 
 export const schema = z.object({
 	invert: z.boolean().default(true).describe("Invert"),
@@ -37,7 +37,7 @@ export class PhaseStream extends BufferedTransformStream<PhaseProperties> {
 			return output;
 		});
 
-		return { samples, offset: chunk.offset, duration: chunk.duration };
+		return { samples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
 	}
 
 	private applyPhaseRotation(chunk: AudioChunk, angle: number): AudioChunk {
@@ -64,7 +64,7 @@ export class PhaseStream extends BufferedTransformStream<PhaseProperties> {
 			return output;
 		});
 
-		return { samples, offset: chunk.offset, duration: chunk.duration };
+		return { samples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
 	}
 }
 
@@ -81,7 +81,7 @@ export class PhaseNode extends TransformNode<PhaseProperties> {
 	override readonly bufferSize = 0;
 	override readonly latency = 0;
 
-	protected override createStream(context: StreamContext): PhaseStream {
+	override createStream(context: StreamContext): PhaseStream {
 		return new PhaseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loops with bounds-checked typed array access */
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
@@ -11,8 +11,16 @@ export const schema = z.object({
 	predictionDelay: z.number().min(1).max(10).multipleOf(1).default(4).describe("Prediction Delay"),
 	filterLength: z.number().min(5).max(30).multipleOf(1).default(12).describe("Filter Length"),
 	iterations: z.number().min(1).max(10).multipleOf(1).default(4).describe("Iterations"),
-	vkfftAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "vkfft-addon", download: "https://github.com/visionsofparadise/vkfft-addon" }).describe("VkFFT native addon — GPU FFT acceleration"),
-	fftwAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" }).describe("FFTW native addon — CPU FFT acceleration"),
+	vkfftAddonPath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "vkfft-addon", download: "https://github.com/visionsofparadise/vkfft-addon" })
+		.describe("VkFFT native addon — GPU FFT acceleration"),
+	fftwAddonPath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" })
+		.describe("FFTW native addon — CPU FFT acceleration"),
 });
 
 export interface DeReverbProperties extends z.infer<typeof schema>, TransformNodeProperties {}
@@ -217,7 +225,7 @@ export class DeReverbNode extends TransformNode<DeReverbProperties> {
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): DeReverbStream {
+	override createStream(context: StreamContext): DeReverbStream {
 		return new DeReverbStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 
@@ -300,7 +308,19 @@ function solveWpeFilter(
 	solveLinearSystem(corrReal, corrImag, crossReal, crossImag, filterLen, outReal, outImag, arWork, aiWork, brWork, biWork);
 }
 
-function solveLinearSystem(aReal: Float32Array, aImag: Float32Array, bReal: Float32Array, bImag: Float32Array, size: number, outReal: Float32Array, outImag: Float32Array, ar: Float32Array, ai: Float32Array, br: Float32Array, bi: Float32Array): void {
+function solveLinearSystem(
+	aReal: Float32Array,
+	aImag: Float32Array,
+	bReal: Float32Array,
+	bImag: Float32Array,
+	size: number,
+	outReal: Float32Array,
+	outImag: Float32Array,
+	ar: Float32Array,
+	ai: Float32Array,
+	br: Float32Array,
+	bi: Float32Array,
+): void {
 	ar.set(aReal);
 	ai.set(aImag);
 	br.set(bReal);
@@ -399,7 +419,15 @@ function solveLinearSystem(aReal: Float32Array, aImag: Float32Array, bReal: Floa
 	}
 }
 
-export function deReverb(options?: { sensitivity?: number; predictionDelay?: number; filterLength?: number; iterations?: number; vkfftAddonPath?: string; fftwAddonPath?: string; id?: string }): DeReverbNode {
+export function deReverb(options?: {
+	sensitivity?: number;
+	predictionDelay?: number;
+	filterLength?: number;
+	iterations?: number;
+	vkfftAddonPath?: string;
+	fftwAddonPath?: string;
+	id?: string;
+}): DeReverbNode {
 	const sensitivity = Math.max(0, Math.min(1, options?.sensitivity ?? 0.5));
 
 	return new DeReverbNode({

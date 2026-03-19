@@ -1,11 +1,11 @@
-import type { ChunkBuffer } from "../../chunk-buffer";
-import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 import { z } from "zod";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
+import type { StreamContext } from "../../node";
 import { applyBandpass } from "../../utils/apply-bandpass";
 import { MixedRadixFft } from "../../utils/mixed-radix-fft";
-import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
+import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { resampleDirect } from "../../utils/resample-direct";
 import { hanningWindow } from "../../utils/stft";
 
@@ -16,7 +16,11 @@ export const schema = z.object({
 		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "Kim_Vocal_2", download: "https://huggingface.co/seanghay/uvr_models" })
 		.describe("MDX-Net vocal isolation model (.onnx)"),
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
-	onnxAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" }).describe("ONNX Runtime native addon"),
+	onnxAddonPath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" })
+		.describe("ONNX Runtime native addon"),
 	highPass: z.number().min(20).max(500).multipleOf(10).default(80).describe("High Pass"),
 	lowPass: z.number().min(1000).max(22050).multipleOf(100).default(20000).describe("Low Pass"),
 });
@@ -37,12 +41,10 @@ const CHANNEL_STRIDE = DIM_F * DIM_T;
 
 export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsolateProperties> {
 	private session?: OnnxSession;
-	private sourceSampleRate: number;
 	private fftInstance: MixedRadixFft;
 
 	constructor(properties: DialogueIsolateProperties, context: StreamContext) {
 		super(properties, context);
-		this.sourceSampleRate = context.sampleRate;
 		this.fftInstance = new MixedRadixFft(N_FFT);
 	}
 
@@ -68,8 +70,8 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 		let left44k = left;
 		let right44k = right;
 
-		if (this.sourceSampleRate !== SAMPLE_RATE) {
-			const resampled = await resampleDirect(props.ffmpegPath, [left, right], this.sourceSampleRate, SAMPLE_RATE);
+		if ((this.sampleRate ?? 44100) !== SAMPLE_RATE) {
+			const resampled = await resampleDirect(props.ffmpegPath, [left, right], this.sampleRate ?? 44100, SAMPLE_RATE);
 			left44k = resampled[0] ?? left;
 			right44k = resampled[1] ?? right;
 		}
@@ -165,8 +167,8 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 		let finalLeft: Float32Array = outputLeft;
 		let finalRight: Float32Array = outputRight;
 
-		if (this.sourceSampleRate !== SAMPLE_RATE) {
-			const resampled = await resampleDirect(props.ffmpegPath, [outputLeft, outputRight], SAMPLE_RATE, this.sourceSampleRate);
+		if ((this.sampleRate ?? 44100) !== SAMPLE_RATE) {
+			const resampled = await resampleDirect(props.ffmpegPath, [outputLeft, outputRight], SAMPLE_RATE, this.sampleRate ?? 44100);
 			finalLeft = resampled[0] ?? outputLeft;
 			finalRight = resampled[1] ?? outputRight;
 		}
@@ -181,7 +183,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 			outputChannels.push(out);
 		}
 
-		applyBandpass(outputChannels, this.sourceSampleRate, props.highPass, props.lowPass);
+		applyBandpass(outputChannels, this.sampleRate ?? 44100, props.highPass, props.lowPass);
 
 		await buffer.write(0, outputChannels);
 	}
@@ -200,7 +202,7 @@ export class DialogueIsolateNode extends TransformNode<DialogueIsolateProperties
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): DialogueIsolateStream {
+	override createStream(context: StreamContext): DialogueIsolateStream {
 		return new DialogueIsolateStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 
@@ -209,14 +211,7 @@ export class DialogueIsolateNode extends TransformNode<DialogueIsolateProperties
 	}
 }
 
-export function dialogueIsolate(options: {
-	modelPath: string;
-	ffmpegPath: string;
-	onnxAddonPath?: string;
-	highPass?: number;
-	lowPass?: number;
-	id?: string;
-}): DialogueIsolateNode {
+export function dialogueIsolate(options: { modelPath: string; ffmpegPath: string; onnxAddonPath?: string; highPass?: number; lowPass?: number; id?: string }): DialogueIsolateNode {
 	return new DialogueIsolateNode({
 		modelPath: options.modelPath,
 		ffmpegPath: options.ffmpegPath,

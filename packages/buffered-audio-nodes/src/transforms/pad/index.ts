@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 
 export const schema = z.object({
 	before: z.number().min(0).multipleOf(0.001).default(0).describe("Before"),
@@ -11,21 +11,13 @@ export const schema = z.object({
 export interface PadProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 export class PadStream extends BufferedTransformStream<PadProperties> {
-	private padSampleRate: number;
-	private padChannels: number;
-
-	constructor(properties: PadProperties, context: StreamContext) {
-		super(properties, context);
-		this.padSampleRate = context.sampleRate;
-		this.padChannels = context.channels;
-	}
-
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const { before, after } = this.properties;
-		const channels = this.padChannels;
+		const channels = buffer.channels;
+		const sr = this.sampleRate ?? 44100;
 
 		if (before > 0) {
-			const silenceFrames = Math.round(before * this.padSampleRate);
+			const silenceFrames = Math.round(before * sr);
 			const frames = buffer.frames;
 			const allAudio = await buffer.read(0, frames);
 
@@ -43,7 +35,7 @@ export class PadStream extends BufferedTransformStream<PadProperties> {
 		}
 
 		if (after > 0) {
-			const silenceFrames = Math.round(after * this.padSampleRate);
+			const silenceFrames = Math.round(after * sr);
 			const silence: Array<Float32Array> = [];
 
 			for (let ch = 0; ch < channels; ch++) {
@@ -67,7 +59,7 @@ export class PadNode extends TransformNode<PadProperties> {
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): PadStream {
+	override createStream(context: StreamContext): PadStream {
 		return new PadStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 
