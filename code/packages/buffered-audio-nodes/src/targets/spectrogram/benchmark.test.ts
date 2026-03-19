@@ -1,13 +1,13 @@
-import { describe, it } from "vitest";
 import { randomBytes } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolve, dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { appendBenchmarkLog } from "../utils/test-benchmark";
-import { binaries } from "../utils/test-binaries";
-import { read } from "../sources/read";
-import { spectrogram } from "./spectrogram";
+import { describe, it } from "vitest";
+import { spectrogram } from ".";
+import { read } from "../../sources/read";
+import { appendBenchmarkLog } from "../../utils/test-benchmark";
+import { binaries } from "../../utils/test-binaries";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const testVoice = resolve(here, "../utils/test-voice.wav");

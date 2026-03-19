@@ -25,9 +25,9 @@
     "url": "git+https://github.com/visionsofparadise/buffered-audio-nodes.git"
   },
   "scripts": {
-    "check": "concurrently \"eslint . --cache --format ../../agent-eslint.js\" \"tsc --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\"",
+    "check": "concurrently \"eslint . --fix --cache --format ../../agent-eslint.js\" \"tsc --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\"",
     "check:verbose": "concurrently \"eslint .\" \"tsc --noEmit\"",
-    "lint": "eslint . --cache --format ../../agent-eslint.js",
+    "lint": "eslint . --fix --cache --format ../../agent-eslint.js",
     "lint:verbose": "eslint .",
     "lint:fix": "eslint . --fix",
     "build": "tsup",

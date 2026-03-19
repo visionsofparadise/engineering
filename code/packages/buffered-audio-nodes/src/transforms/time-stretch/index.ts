@@ -29,7 +29,7 @@ export class TimeStretchNode extends FfmpegNode<TimeStretchProperties> {
 
 	override readonly type = ["async-module", "transform", "ffmpeg", "time-stretch"] as const;
 
-	protected override createStream(context: StreamContext): TimeStretchStream {
+	override createStream(context: StreamContext): TimeStretchStream {
 		return new TimeStretchStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

@@ -1,8 +1,8 @@
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
-import type { AudioChunk, StreamContext } from "../node";
-import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "../target";
-import { WHOLE_FILE } from "../transform";
+import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
+import type { AudioChunk, StreamContext } from "../../node";
+import { WHOLE_FILE } from "../../transforms";
 
 export const schema = z.object({
 	outputPath: z.string().default("").meta({ input: "file", mode: "save" }).describe("Output Path"),
@@ -31,12 +31,12 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 
 	private initialized = false;
 
-	private async lazyInit(): Promise<void> {
+	private async lazyInit(chunk: AudioChunk): Promise<void> {
 		if (this.initialized) return;
 		this.initialized = true;
 
-		this.channels = this.context.channels;
-		this.samplesPerPoint = Math.max(1, Math.round(this.context.sampleRate / this.properties.resolution));
+		this.channels = chunk.samples.length;
+		this.samplesPerPoint = Math.max(1, Math.round(chunk.sampleRate / this.properties.resolution));
 		this.currentMin = new Float32Array(this.channels).fill(1);
 		this.currentMax = new Float32Array(this.channels).fill(-1);
 
@@ -51,17 +51,17 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 		this.fileHandle = await open(this.properties.outputPath, "w");
 
 		const header = Buffer.alloc(HEADER_SIZE);
-		header.writeUInt32LE(this.context.sampleRate, 0);
-		header.writeUInt32LE(this.context.channels, 4);
+		header.writeUInt32LE(chunk.sampleRate, 0);
+		header.writeUInt32LE(this.channels, 4);
 		header.writeUInt32LE(this.properties.resolution, 8);
 		header.writeUInt32LE(0, 12);
 		await this.fileHandle.write(header, 0, HEADER_SIZE, 0);
 	}
 
 	override async _write(chunk: AudioChunk): Promise<void> {
-		await this.lazyInit();
+		await this.lazyInit(chunk);
 
-		const frames = chunk.duration;
+		const frames = chunk.samples[0]?.length ?? 0;
 
 		for (let frame = 0; frame < frames; frame++) {
 			for (let ch = 0; ch < this.channels; ch++) {
@@ -144,7 +144,7 @@ export class WaveformNode extends TargetNode<WaveformProperties> {
 	override readonly bufferSize = Infinity;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): WaveformStream {
+	override createStream(context: StreamContext): WaveformStream {
 		return new WaveformStream(this.properties, context);
 	}
 

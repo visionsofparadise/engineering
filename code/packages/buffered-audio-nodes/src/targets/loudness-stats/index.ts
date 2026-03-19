@@ -1,8 +1,8 @@
 import { z } from "zod";
-import type { AudioChunk, StreamContext } from "../node";
-import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "../target";
-import { WHOLE_FILE } from "../transform";
-import { biquadFilter, preFilterCoefficients, rlbFilterCoefficients } from "../utils/biquad";
+import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
+import type { AudioChunk, StreamContext } from "../../node";
+import { WHOLE_FILE } from "../../transforms";
+import { biquadFilter, preFilterCoefficients, rlbFilterCoefficients } from "../../utils/biquad";
 
 export const schema = z.object({});
 
@@ -14,28 +14,31 @@ export interface LoudnessStats {
 	readonly range: number;
 }
 
-export class LoudnessStatsStream extends BufferedTargetStream<TargetNodeProperties> {
+export class LoudnessStatsStream extends BufferedTargetStream {
 	private channels = 0;
 	private sampleRate = 0;
 	private truePeakValue = 0;
 	private channelBuffers: Array<Array<Float32Array>> = [];
 	private totalFrames = 0;
 	private _stats?: LoudnessStats;
+	private statsInitialized = false;
 
 	get stats(): LoudnessStats | undefined {
 		return this._stats;
 	}
 
-	constructor(properties: TargetNodeProperties, context: StreamContext) {
-		super(properties, context);
-		this.channels = context.channels;
-		this.sampleRate = context.sampleRate;
+	private ensureInit(chunk: AudioChunk): void {
+		if (this.statsInitialized) return;
+		this.statsInitialized = true;
+		this.channels = chunk.samples.length;
+		this.sampleRate = chunk.sampleRate;
 		for (let ch = 0; ch < this.channels; ch++) {
 			this.channelBuffers.push([]);
 		}
 	}
 
 	override async _write(chunk: AudioChunk): Promise<void> {
+		this.ensureInit(chunk);
 		for (let ch = 0; ch < this.channels; ch++) {
 			const samples = chunk.samples[ch];
 			if (!samples) continue;
@@ -50,7 +53,7 @@ export class LoudnessStatsStream extends BufferedTargetStream<TargetNodeProperti
 			}
 		}
 
-		this.totalFrames += chunk.duration;
+		this.totalFrames += chunk.samples[0]?.length ?? 0;
 	}
 
 	override async _close(): Promise<void> {
@@ -92,21 +95,13 @@ export class LoudnessStatsNode extends TargetNode {
 	override readonly bufferSize = Infinity;
 	override readonly latency = WHOLE_FILE;
 
-	private lastStream?: LoudnessStatsStream;
-
 	get stats(): LoudnessStats | undefined {
-		return this.lastStream?.stats;
+		const last = this.streams[this.streams.length - 1];
+		return last instanceof LoudnessStatsStream ? last.stats : undefined;
 	}
 
-	protected override createStream(context: StreamContext): LoudnessStatsStream {
+	override createStream(context: StreamContext): LoudnessStatsStream {
 		return new LoudnessStatsStream(this.properties, context);
-	}
-
-	override createWritable(): WritableStream<AudioChunk> {
-		if (!this.streamContext) throw new Error("Stream context not initialized");
-		const stream = this.createStream(this.streamContext);
-		this.lastStream = stream;
-		return stream.createWritableStream();
 	}
 
 	override clone(overrides?: Partial<TargetNodeProperties>): LoudnessStatsNode {

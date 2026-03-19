@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
-import type { AudioChunk, StreamContext } from "../node";
-import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "../target";
-import { WHOLE_FILE } from "../transform";
-import { detectFftBackend, getFftAddon } from "../utils/fft-backend";
-import { createFftWorkspace, fft, hanningWindow, type FftWorkspace } from "../utils/stft";
+import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
+import type { AudioChunk, StreamContext } from "../../node";
+import { WHOLE_FILE } from "../../transforms";
+import { detectFftBackend, getFftAddon } from "../../utils/fft-backend";
+import { createFftWorkspace, fft, hanningWindow, type FftWorkspace } from "../../utils/stft";
 
 export const schema = z.object({
 	outputPath: z.string().default("").meta({ input: "file", mode: "save" }).describe("Output Path"),
@@ -57,11 +57,11 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 
 	private initialized = false;
 
-	private async lazyInit(): Promise<void> {
+	private async lazyInit(chunk: AudioChunk): Promise<void> {
 		if (this.initialized) return;
 		this.initialized = true;
 
-		this.channels = this.context.channels;
+		this.channels = chunk.samples.length;
 		this.linearBins = this.properties.fftSize / 2 + 1;
 
 		this.windowCoefficients = hanningWindow(this.properties.fftSize);
@@ -74,14 +74,14 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 		const scale = this.properties.frequencyScale ?? "log";
 		const numBands = this.properties.numBands ?? 512;
 		const minFreq = this.properties.minFrequency ?? 20;
-		const maxFreq = this.properties.maxFrequency ?? this.context.sampleRate / 2;
+		const maxFreq = this.properties.maxFrequency ?? chunk.sampleRate / 2;
 
 		if (scale === "linear") {
 			this.bandMappings = undefined;
 			this.outputBins = this.linearBins;
 		} else {
 			const computeFn = scale === "mel" ? computeMelBandMappings : scale === "erb" ? computeErbBandMappings : computeLogBandMappings;
-			this.bandMappings = computeFn(numBands, minFreq, maxFreq, this.context.sampleRate, this.properties.fftSize);
+			this.bandMappings = computeFn(numBands, minFreq, maxFreq, chunk.sampleRate, this.properties.fftSize);
 			this.outputBins = numBands;
 		}
 
@@ -89,7 +89,7 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 		this.numFrames = 0;
 		this.fileOffset = HEADER_SIZE;
 
-		this.sampleBufferCapacity = this.properties.fftSize + 8 * 1024 * 1024 / 4;
+		this.sampleBufferCapacity = this.properties.fftSize + (8 * 1024 * 1024) / 4;
 		this.sampleBuffers = [];
 		for (let ch = 0; ch < this.channels; ch++) {
 			this.sampleBuffers.push(new Float32Array(this.sampleBufferCapacity));
@@ -99,8 +99,8 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 		this.fileHandle = await open(this.properties.outputPath, "w");
 
 		const header = Buffer.alloc(HEADER_SIZE);
-		header.writeUInt32LE(this.context.sampleRate, 0);
-		header.writeUInt32LE(this.context.channels, 4);
+		header.writeUInt32LE(chunk.sampleRate, 0);
+		header.writeUInt32LE(this.channels, 4);
 		header.writeUInt32LE(this.properties.fftSize, 8);
 		header.writeUInt32LE(this.properties.hopSize, 12);
 		header.writeUInt32LE(0, 16);
@@ -113,9 +113,9 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 	}
 
 	override async _write(chunk: AudioChunk): Promise<void> {
-		await this.lazyInit();
+		await this.lazyInit(chunk);
 
-		const frames = chunk.duration;
+		const frames = chunk.samples[0]?.length ?? 0;
 
 		if (this.sampleBufferOffset + frames > this.sampleBufferCapacity) {
 			const newCapacity = Math.max(this.sampleBufferCapacity * 2, this.sampleBufferOffset + frames);
@@ -212,7 +212,7 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 						windowed[si] = samples[offset + si]! * this.windowCoefficients[si]!;
 					}
 
-					const { re, im } = fft(windowed, this.workspace!);
+					const { re, im } = fft(windowed, this.workspace);
 
 					await this.writeFrame(ch, re, im, 0, halfSize, magScale);
 				}
@@ -310,7 +310,7 @@ export class SpectrogramNode extends TargetNode<SpectrogramProperties> {
 	override readonly bufferSize = Infinity;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): SpectrogramStream {
+	override createStream(context: StreamContext): SpectrogramStream {
 		return new SpectrogramStream(this.properties, context);
 	}
 

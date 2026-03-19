@@ -1,12 +1,12 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
-import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
-import { istft, stft } from "../../utils/stft";
+import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { resampleDirect } from "../../utils/resample-direct";
+import { istft, stft } from "../../utils/stft";
 
 export const schema = z.object({
 	modelPath1: z
@@ -20,9 +20,21 @@ export const schema = z.object({
 		.meta({ input: "file", mode: "open", accept: ".onnx", binary: "dtln-model_2", download: "https://github.com/breizhn/DTLN" })
 		.describe("DTLN time-domain model (.onnx)"),
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
-	onnxAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" }).describe("ONNX Runtime native addon"),
-	vkfftAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "vkfft-addon", download: "https://github.com/visionsofparadise/vkfft-addon" }).describe("VkFFT native addon — GPU FFT acceleration"),
-	fftwAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" }).describe("FFTW native addon — CPU FFT acceleration"),
+	onnxAddonPath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" })
+		.describe("ONNX Runtime native addon"),
+	vkfftAddonPath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "vkfft-addon", download: "https://github.com/visionsofparadise/vkfft-addon" })
+		.describe("VkFFT native addon — GPU FFT acceleration"),
+	fftwAddonPath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" })
+		.describe("FFTW native addon — CPU FFT acceleration"),
 });
 
 export interface VoiceDenoiseProperties extends z.infer<typeof schema>, TransformNodeProperties {}
@@ -36,13 +48,11 @@ const LSTM_UNITS = 128;
 export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProperties> {
 	private session1?: OnnxSession;
 	private session2?: OnnxSession;
-	private sourceSampleRate: number;
 	private fftBackend: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
 	constructor(properties: VoiceDenoiseProperties, context: StreamContext) {
 		super(properties, context);
-		this.sourceSampleRate = context.sampleRate;
 		const cpuProviders = context.executionProviders.filter((ep) => ep !== "gpu");
 		const fft = initFftBackend(cpuProviders.length > 0 ? cpuProviders : ["cpu"], properties);
 		this.fftBackend = fft.backend;
@@ -71,8 +81,8 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 
 			let input16k: Float32Array = channel;
 
-			if (this.sourceSampleRate !== DTLN_SAMPLE_RATE) {
-				const resampled = await resampleDirect(props.ffmpegPath, [channel], this.sourceSampleRate, DTLN_SAMPLE_RATE);
+			if ((this.sampleRate ?? 44100) !== DTLN_SAMPLE_RATE) {
+				const resampled = await resampleDirect(props.ffmpegPath, [channel], this.sampleRate ?? 44100, DTLN_SAMPLE_RATE);
 				input16k = resampled[0] ?? channel;
 			}
 
@@ -80,8 +90,8 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 
 			let output: Float32Array = denoised16k;
 
-			if (this.sourceSampleRate !== DTLN_SAMPLE_RATE) {
-				const resampled = await resampleDirect(props.ffmpegPath, [denoised16k], DTLN_SAMPLE_RATE, this.sourceSampleRate);
+			if ((this.sampleRate ?? 44100) !== DTLN_SAMPLE_RATE) {
+				const resampled = await resampleDirect(props.ffmpegPath, [denoised16k], DTLN_SAMPLE_RATE, this.sampleRate ?? 44100);
 				output = resampled[0] ?? denoised16k;
 			}
 
@@ -197,7 +207,7 @@ export class VoiceDenoiseNode extends TransformNode<VoiceDenoiseProperties> {
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): VoiceDenoiseStream {
+	override createStream(context: StreamContext): VoiceDenoiseStream {
 		return new VoiceDenoiseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

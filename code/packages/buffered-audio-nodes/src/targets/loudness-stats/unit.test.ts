@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { resolve, dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { read } from "../sources/read";
-import { loudnessStats } from "./loudness-stats";
+import { describe, expect, it } from "vitest";
+import { loudnessStats } from ".";
+import { read } from "../../sources/read";
 
 const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../utils/test-voice.wav");
 

@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 import { waitForDrain } from "../../utils/ffmpeg";
 import { deinterleaveBuffer, interleave } from "../../utils/interleave";
 
@@ -24,17 +24,26 @@ export class FfmpegStream<P extends FfmpegProperties = FfmpegProperties> extends
 		return typeof args === "function" ? args(_context) : args;
 	}
 
-	protected _buildOutputArgs(context: StreamContext): Array<string> {
-		return ["-f", "f32le", "-ar", String(context.sampleRate), "-ac", String(context.channels), "pipe:1"];
+	protected _buildOutputArgs(_context: StreamContext): Array<string> {
+		return ["-f", "f32le", "-ar", String(this.sampleRate ?? 44100), "-ac", String(this.ffmpegChannels), "pipe:1"];
 	}
+
+	protected get ffmpegChannels(): number {
+		return this._ffmpegChannels;
+	}
+
+	private _ffmpegChannels = 1;
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const props = this.properties;
-		const inputArgs = buildInputArgs(this.context);
+		this._ffmpegChannels = buffer.channels;
+		const sr = this.sampleRate ?? 44100;
+		const channels = buffer.channels;
+		const inputArgs = ["-f", "f32le", "-ar", String(sr), "-ac", String(channels), "-i", "pipe:0"];
 		const filterArgs = this._buildArgs(this.context);
 		const outputArgs = this._buildOutputArgs(this.context);
 
-		const result = await runFfmpeg(props.ffmpegPath, [...inputArgs, ...filterArgs, ...outputArgs], buffer, this.context);
+		const result = await runFfmpeg(props.ffmpegPath, [...inputArgs, ...filterArgs, ...outputArgs], buffer, channels);
 
 		await buffer.truncate(0);
 
@@ -58,7 +67,7 @@ export class FfmpegNode<P extends FfmpegProperties = FfmpegProperties> extends T
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): FfmpegStream<P> {
+	override createStream(context: StreamContext): FfmpegStream<P> {
 		return new FfmpegStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 
@@ -75,11 +84,7 @@ export function ffmpeg(options: { ffmpegPath: string; args: Array<string> | ((co
 	});
 }
 
-function buildInputArgs(context: StreamContext): Array<string> {
-	return ["-f", "f32le", "-ar", String(context.sampleRate), "-ac", String(context.channels), "-i", "pipe:0"];
-}
-
-function runFfmpeg(binaryPath: string, args: Array<string>, buffer: ChunkBuffer, context: StreamContext): Promise<Array<Float32Array>> {
+function runFfmpeg(binaryPath: string, args: Array<string>, buffer: ChunkBuffer, channels: number): Promise<Array<Float32Array>> {
 	return new Promise<Array<Float32Array>>((resolve, reject) => {
 		const proc: ChildProcess = spawn(binaryPath, args, {
 			stdio: ["pipe", "pipe", "pipe"],
@@ -117,7 +122,7 @@ function runFfmpeg(binaryPath: string, args: Array<string>, buffer: ChunkBuffer,
 			}
 
 			const outputBuffer = Buffer.concat(outputChunks);
-			const samples = deinterleaveBuffer(outputBuffer, context.channels);
+			const samples = deinterleaveBuffer(outputBuffer, channels);
 			resolve(samples);
 		});
 
@@ -125,17 +130,17 @@ function runFfmpeg(binaryPath: string, args: Array<string>, buffer: ChunkBuffer,
 			// Ignore EPIPE/EOF — expected when filters like trim close stdin early
 		});
 
-		void writeBufferToStdin(proc, stdin, buffer, context).catch(() => {
+		void writeBufferToStdin(proc, stdin, buffer).catch(() => {
 			// Ignore write errors — ffmpeg may close stdin before all data is written
 		});
 	});
 }
 
-async function writeBufferToStdin(proc: ChildProcess, stdin: NodeJS.WritableStream, buffer: ChunkBuffer, _context: StreamContext): Promise<void> {
+async function writeBufferToStdin(proc: ChildProcess, stdin: NodeJS.WritableStream, buffer: ChunkBuffer): Promise<void> {
 	const chunkSize = 44100;
 
 	for await (const chunk of buffer.iterate(chunkSize)) {
-		const interleaved = interleave(chunk.samples, chunk.duration, chunk.samples.length);
+		const interleaved = interleave(chunk.samples, chunk.samples[0]?.length ?? 0, chunk.samples.length);
 		const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
 
 		const canWrite = stdin.write(buf);

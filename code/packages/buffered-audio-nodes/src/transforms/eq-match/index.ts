@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { replaceChannel } from "../../utils/replace-channel";
@@ -9,9 +9,23 @@ import { istft, stft } from "../../utils/stft";
 
 export const schema = z.object({
 	referencePath: z.string().default("").describe("Reference Path"),
-	smoothing: z.number().min(0).max(1).multipleOf(0.01).default(1 / 3).describe("Smoothing"),
-	vkfftAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "vkfft-addon", download: "https://github.com/visionsofparadise/vkfft-addon" }).describe("VkFFT native addon — GPU FFT acceleration"),
-	fftwAddonPath: z.string().default("").meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" }).describe("FFTW native addon — CPU FFT acceleration"),
+	smoothing: z
+		.number()
+		.min(0)
+		.max(1)
+		.multipleOf(0.01)
+		.default(1 / 3)
+		.describe("Smoothing"),
+	vkfftAddonPath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "vkfft-addon", download: "https://github.com/visionsofparadise/vkfft-addon" })
+		.describe("VkFFT native addon — GPU FFT acceleration"),
+	fftwAddonPath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" })
+		.describe("FFTW native addon — CPU FFT acceleration"),
 });
 
 export interface EqMatchProperties extends z.infer<typeof schema>, TransformNodeProperties {}
@@ -45,7 +59,7 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 		const chunk = await refBuffer.read(0, refFrames);
 		const channel = chunk.samples[0];
 		if (channel) {
-			this.referenceSpectrum = computeAverageSpectrum(channel, this.context.sampleRate);
+			this.referenceSpectrum = computeAverageSpectrum(channel, this.sampleRate ?? 44100);
 		}
 		await refBuffer.close();
 	}
@@ -120,7 +134,7 @@ export class EqMatchNode extends TransformNode<EqMatchProperties> {
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): EqMatchStream {
+	override createStream(context: StreamContext): EqMatchStream {
 		return new EqMatchStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

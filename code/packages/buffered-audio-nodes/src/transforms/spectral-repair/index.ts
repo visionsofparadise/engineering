@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
@@ -39,14 +39,11 @@ export interface SpectralRepairProperties extends z.infer<typeof schema>, Transf
  *   Time-frequency Domain." arXiv:2409.06392. https://arxiv.org/abs/2409.06392
  */
 export class SpectralRepairStream extends BufferedTransformStream<SpectralRepairProperties> {
-	private repairSampleRate: number;
 	private fftBackend: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
 	constructor(properties: SpectralRepairProperties, context: StreamContext) {
 		super(properties, context);
-
-		this.repairSampleRate = context.sampleRate;
 
 		const fft = initFftBackend(context.executionProviders, properties);
 		this.fftBackend = fft.backend;
@@ -55,7 +52,7 @@ export class SpectralRepairStream extends BufferedTransformStream<SpectralRepair
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const props = this.properties;
-		const sampleRate = this.repairSampleRate;
+		const sampleRate = this.sampleRate ?? 44100;
 		const channels = buffer.channels;
 		const frames = buffer.frames;
 		const fftSize = 2048;
@@ -114,7 +111,7 @@ export class SpectralRepairNode extends TransformNode<SpectralRepairProperties> 
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): SpectralRepairStream {
+	override createStream(context: StreamContext): SpectralRepairStream {
 		return new SpectralRepairStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

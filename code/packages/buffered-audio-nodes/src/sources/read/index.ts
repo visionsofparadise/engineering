@@ -1,14 +1,18 @@
-import { open, stat, type FileHandle } from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
+import { open, stat, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
-import type { AudioChunk, StreamMeta } from "../node";
-import { BufferedSourceStream, SourceNode, type SourceNodeProperties } from "../source";
-import { deinterleaveBuffer } from "../utils/interleave";
+import { BufferedSourceStream, SourceNode, type SourceNodeProperties } from "..";
+import type { AudioChunk, StreamMeta } from "../../node";
+import { deinterleaveBuffer } from "../../utils/interleave";
 
 export const schema = z.object({
 	path: z.string().default("").meta({ input: "file", mode: "open" }),
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
-	ffprobePath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffprobe", download: "https://ffmpeg.org/download.html" }).describe("FFprobe — media file analyzer (included with FFmpeg)"),
+	ffprobePath: z
+		.string()
+		.default("")
+		.meta({ input: "file", mode: "open", binary: "ffprobe", download: "https://ffmpeg.org/download.html" })
+		.describe("FFprobe — media file analyzer (included with FFmpeg)"),
 });
 
 export interface ReadProperties extends z.infer<typeof schema>, SourceNodeProperties {
@@ -45,6 +49,8 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 	private remainder?: Buffer;
 
 	private useTranscode = false;
+	private sourceSampleRate = 0;
+	private sourceBitDepth = 0;
 
 	override async _init(): Promise<StreamMeta> {
 		const fh = await open(this.properties.path, "r").catch(() => undefined);
@@ -57,6 +63,7 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 
 			if (isWav) {
 				this.fileHandle = fh;
+
 				return this.initWav();
 			}
 
@@ -68,11 +75,13 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		}
 
 		this.useTranscode = true;
+
 		return this.initTranscode();
 	}
 
 	private async initWav(): Promise<StreamMeta> {
 		const fh = this.fileHandle;
+
 		if (!fh) throw new Error("File handle not initialized");
 
 		const fileInfo = await stat(this.properties.path);
@@ -135,6 +144,8 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 
 		this.format = format;
 		this.bytesRead = 0;
+		this.sourceSampleRate = format.sampleRate;
+		this.sourceBitDepth = format.bitsPerSample;
 
 		const selectedChannels = this.properties.channels;
 		this.outputChannels = selectedChannels ? selectedChannels.length : format.channels;
@@ -152,13 +163,10 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		const probe = await this.probe(this.properties.ffprobePath, this.properties.path);
 		const selectedChannels = this.properties.channels;
 		this.outputChannels = selectedChannels ? selectedChannels.length : probe.channels;
+		this.sourceSampleRate = probe.sampleRate;
+		this.sourceBitDepth = 32;
 
-		const args = [
-			"-i", this.properties.path,
-			"-f", "f32le",
-			"-acodec", "pcm_f32le",
-			"-ar", String(probe.sampleRate),
-		];
+		const args = ["-i", this.properties.path, "-f", "f32le", "-acodec", "pcm_f32le", "-ar", String(probe.sampleRate)];
 
 		if (selectedChannels) {
 			const panParts = selectedChannels.map((srcCh, outCh) => `c${outCh}=c${srcCh}`);
@@ -256,7 +264,8 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		controller.enqueue({
 			samples,
 			offset: frameOffset,
-			duration: frames,
+			sampleRate: this.sourceSampleRate,
+			bitDepth: this.sourceBitDepth,
 		});
 	}
 
@@ -292,7 +301,8 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 		controller.enqueue({
 			samples,
 			offset,
-			duration: frames,
+			sampleRate: this.sourceSampleRate,
+			bitDepth: this.sourceBitDepth,
 		});
 	}
 
@@ -325,13 +335,7 @@ export class ReadStream extends BufferedSourceStream<ReadProperties> {
 	}
 
 	private async probe(ffprobePath: string, filePath: string): Promise<ProbeResult> {
-		const proc = spawn(ffprobePath, [
-			"-v", "quiet",
-			"-print_format", "json",
-			"-show_streams",
-			"-select_streams", "a:0",
-			filePath,
-		], {
+		const proc = spawn(ffprobePath, ["-v", "quiet", "-print_format", "json", "-show_streams", "-select_streams", "a:0", filePath], {
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 
@@ -452,7 +456,7 @@ function readSample(data: Buffer, offset: number, bitsPerSample: number, audioFo
 		const byte1 = data[offset + 1] ?? 0;
 		const byte2 = data[offset + 2] ?? 0;
 		const raw = byte0 | (byte1 << 8) | (byte2 << 16);
-		return (raw > 0x7FFFFF ? raw - 0x1000000 : raw) / 0x800000;
+		return (raw > 0x7fffff ? raw - 0x1000000 : raw) / 0x800000;
 	}
 	if (bitsPerSample === 32) return data.readInt32LE(offset) / 0x80000000;
 	if (bitsPerSample === 8) return ((data[offset] ?? 128) - 128) / 128;

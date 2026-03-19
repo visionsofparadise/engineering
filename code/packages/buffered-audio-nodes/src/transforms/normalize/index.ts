@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { AudioChunk, StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 
 export const schema = z.object({
 	ceiling: z.number().min(0).max(1).multipleOf(0.01).default(1.0).describe("Ceiling"),
@@ -43,7 +43,7 @@ export class NormalizeStream extends BufferedTransformStream<NormalizeProperties
 			return scaled;
 		});
 
-		return { samples: scaledSamples, offset: chunk.offset, duration: chunk.duration };
+		return { samples: scaledSamples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
 	}
 }
 
@@ -59,7 +59,7 @@ export class NormalizeNode extends TransformNode<NormalizeProperties> {
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): NormalizeStream {
+	override createStream(context: StreamContext): NormalizeStream {
 		return new NormalizeStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

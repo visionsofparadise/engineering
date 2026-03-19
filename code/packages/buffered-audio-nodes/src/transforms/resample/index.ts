@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
 import { FfmpegNode, FfmpegStream, type FfmpegProperties } from "../ffmpeg";
 
@@ -14,6 +15,11 @@ export interface ResampleProperties extends FfmpegProperties {
 }
 
 export class ResampleStream extends FfmpegStream<ResampleProperties> {
+	override async _process(buffer: ChunkBuffer): Promise<void> {
+		await super._process(buffer);
+		this.sampleRate = this.properties.sampleRate;
+	}
+
 	protected override _buildArgs(_context: StreamContext): Array<string> {
 		const { sampleRate, dither } = this.properties;
 		const ditherMethod = dither ?? "triangular";
@@ -21,8 +27,8 @@ export class ResampleStream extends FfmpegStream<ResampleProperties> {
 		return ["-af", `aresample=${sampleRate}:resampler=soxr:dither_method=${ditherMethod}`];
 	}
 
-	protected override _buildOutputArgs(context: StreamContext): Array<string> {
-		return ["-f", "f32le", "-ar", String(this.properties.sampleRate), "-ac", String(context.channels), "pipe:1"];
+	protected override _buildOutputArgs(_context: StreamContext): Array<string> {
+		return ["-f", "f32le", "-ar", String(this.properties.sampleRate), "-ac", String(this.ffmpegChannels), "pipe:1"];
 	}
 }
 
@@ -37,7 +43,7 @@ export class ResampleNode extends FfmpegNode<ResampleProperties> {
 
 	override readonly type = ["async-module", "transform", "ffmpeg", "resample"] as const;
 
-	protected override createStream(context: StreamContext): ResampleStream {
+	override createStream(context: StreamContext): ResampleStream {
 		return new ResampleStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

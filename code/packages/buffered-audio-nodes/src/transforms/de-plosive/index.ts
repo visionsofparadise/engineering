@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { AudioChunk, StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "../../transform";
 
 export const schema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
@@ -10,17 +11,18 @@ export const schema = z.object({
 export interface DePlosiveProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 export class DePlosiveStream extends BufferedTransformStream<DePlosiveProperties> {
-	private plosiveSampleRate: number;
 	private lpState: Array<number> = [];
 
-	constructor(properties: DePlosiveProperties, context: StreamContext) {
-		super(properties, context);
-		this.plosiveSampleRate = context.sampleRate;
+	override _buffer(chunk: AudioChunk, buffer: ChunkBuffer): void | Promise<void> {
+		if (this.bufferSize === 0) {
+			this.bufferSize = Math.round(chunk.sampleRate * 0.02);
+		}
+		return super._buffer(chunk, buffer);
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
 		const { sensitivity, frequency } = this.properties;
-		const cutoffCoeff = Math.exp((-2 * Math.PI * frequency) / this.plosiveSampleRate);
+		const cutoffCoeff = Math.exp((-2 * Math.PI * frequency) / chunk.sampleRate);
 		const threshold = 0.1 * (1 - sensitivity);
 
 		while (this.lpState.length < chunk.samples.length) {
@@ -46,7 +48,7 @@ export class DePlosiveStream extends BufferedTransformStream<DePlosiveProperties
 			const isPlosive = lowRatio > 0.5 && Math.sqrt(lowEnergy / channel.length) > threshold;
 
 			if (isPlosive) {
-				const fadeLength = Math.min(channel.length, Math.round(this.plosiveSampleRate * 0.005));
+				const fadeLength = Math.min(channel.length, Math.round(chunk.sampleRate * 0.005));
 				let removalLpState = lpVal;
 
 				for (let index = 0; index < channel.length; index++) {
@@ -71,7 +73,7 @@ export class DePlosiveStream extends BufferedTransformStream<DePlosiveProperties
 			return output;
 		});
 
-		return { samples, offset: chunk.offset, duration: chunk.duration };
+		return { samples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
 	}
 }
 
@@ -85,19 +87,9 @@ export class DePlosiveNode extends TransformNode<DePlosiveProperties> {
 
 	override readonly type = ["async-module", "transform", "de-plosive"] as const;
 	override readonly latency = 0;
+	override readonly bufferSize = 0;
 
-	private sampleRate = 44100;
-
-	override get bufferSize(): number {
-		return Math.round(this.sampleRate * 0.02);
-	}
-
-	protected override _setup(context: StreamContext): void {
-		super._setup(context);
-		this.sampleRate = context.sampleRate;
-	}
-
-	protected override createStream(context: StreamContext): DePlosiveStream {
+	override createStream(context: StreamContext): DePlosiveStream {
 		return new DePlosiveStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

@@ -34,7 +34,7 @@ export class PitchShiftNode extends FfmpegNode<PitchShiftProperties> {
 
 	override readonly type = ["async-module", "transform", "ffmpeg", "pitch-shift"] as const;
 
-	protected override createStream(context: StreamContext): PitchShiftStream {
+	override createStream(context: StreamContext): PitchShiftStream {
 		return new PitchShiftStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

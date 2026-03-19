@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { ChunkBuffer } from "./chunk-buffer";
+import { afterEach, describe, expect, it } from "vitest";
+import { ChunkBuffer } from ".";
 
 describe("ChunkBuffer", () => {
 	let buffer: ChunkBuffer;
@@ -19,20 +19,10 @@ describe("ChunkBuffer", () => {
 		expect(buffer.channels).toBe(2);
 
 		const chunk = await buffer.read(0, 4);
-		expect(chunk.duration).toBe(4);
+		expect(chunk.samples[0]?.length ?? 0).toBe(4);
 		expect(chunk.offset).toBe(0);
-		expect(Array.from(chunk.samples[0]!)).toEqual([
-			expect.closeTo(0.1),
-			expect.closeTo(0.2),
-			expect.closeTo(0.3),
-			expect.closeTo(0.4),
-		]);
-		expect(Array.from(chunk.samples[1]!)).toEqual([
-			expect.closeTo(0.5),
-			expect.closeTo(0.6),
-			expect.closeTo(0.7),
-			expect.closeTo(0.8),
-		]);
+		expect(Array.from(chunk.samples[0]!)).toEqual([expect.closeTo(0.1), expect.closeTo(0.2), expect.closeTo(0.3), expect.closeTo(0.4)]);
+		expect(Array.from(chunk.samples[1]!)).toEqual([expect.closeTo(0.5), expect.closeTo(0.6), expect.closeTo(0.7), expect.closeTo(0.8)]);
 	});
 
 	it("transitions from memory to disk and reads still work", async () => {
@@ -55,14 +45,14 @@ describe("ChunkBuffer", () => {
 
 		// Read back a slice and verify values survived the memory->file transition
 		const chunk = await buffer.read(0, 10);
-		expect(chunk.duration).toBe(10);
+		expect(chunk.samples[0]?.length ?? 0).toBe(10);
 		for (let i = 0; i < 10; i++) {
 			expect(chunk.samples[0]![i]).toBeCloseTo(i / bigChunk.length, 5);
 		}
 
 		// Read from the middle
 		const mid = await buffer.read(135000, 5);
-		expect(mid.duration).toBe(5);
+		expect(mid.samples[0]?.length ?? 0).toBe(5);
 		for (let i = 0; i < 5; i++) {
 			expect(mid.samples[0]![i]).toBeCloseTo((135000 + i) / bigChunk.length, 5);
 		}
@@ -86,7 +76,7 @@ describe("ChunkBuffer", () => {
 
 		const chunk = await buffer.read(2, 3);
 		expect(chunk.offset).toBe(2);
-		expect(chunk.duration).toBe(3);
+		expect(chunk.samples[0]?.length ?? 0).toBe(3);
 		expect(Array.from(chunk.samples[0]!)).toEqual([30, 40, 50]);
 	});
 
@@ -101,7 +91,7 @@ describe("ChunkBuffer", () => {
 
 		const chunk = await buffer.read(0, 5);
 		// Should only get 3 frames back since that's the new length
-		expect(chunk.duration).toBe(3);
+		expect(chunk.samples[0]?.length ?? 0).toBe(3);
 		expect(Array.from(chunk.samples[0]!)).toEqual([1, 2, 3]);
 	});
 
@@ -128,7 +118,7 @@ describe("ChunkBuffer", () => {
 		await buffer.close();
 
 		const chunk = await buffer.read(0, 3);
-		expect(chunk.duration).toBe(0);
+		expect(chunk.samples[0]?.length ?? 0).toBe(0);
 		expect(chunk.samples).toEqual([]);
 	});
 

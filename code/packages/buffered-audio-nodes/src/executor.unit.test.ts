@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { BufferedSourceStream, SourceNode } from "./source";
-import { BufferedTransformStream, TransformNode } from "./transform";
-import { BufferedTargetStream, TargetNode } from "./target";
-import type { AudioChunk, StreamContext, StreamMeta } from "./node";
-import type { ChunkBuffer } from "./chunk-buffer";
-import { executeGraph } from "./executor";
+import { describe, expect, it } from "vitest";
+import type { ChunkBuffer } from "./buffer";
+import { detectCycle } from "./executor";
 import { validateGraphDefinition } from "./graph-format";
+import type { AudioChunk, StreamContext, StreamMeta } from "./node";
+import { BufferedSourceStream, SourceNode } from "./sources";
+import { BufferedTargetStream, TargetNode } from "./targets";
+import { BufferedTransformStream, TransformNode } from "./transforms";
 
 class MockSourceStream extends BufferedSourceStream {
 	override async _init(): Promise<StreamMeta> {
@@ -59,16 +59,13 @@ class MockTransform extends TransformNode {
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
-	private lastCreatedTransformStream?: MockTransformStream;
-
 	get processedChunks(): Array<AudioChunk> {
-		return this.lastCreatedTransformStream?.processedChunks ?? [];
+		const last = this.streams[this.streams.length - 1];
+		return last instanceof MockTransformStream ? last.processedChunks : [];
 	}
 
-	protected override createStream(context: StreamContext): MockTransformStream {
-		const stream = new MockTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
-		this.lastCreatedTransformStream = stream;
-		return stream;
+	override createStream(context: StreamContext): MockTransformStream {
+		return new MockTransformStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 
 	clone(): MockTransform {
@@ -94,17 +91,13 @@ class MockTarget extends TargetNode {
 	readonly bufferSize = 0;
 	readonly latency = 0;
 
-	lastCreatedStream?: MockTargetStream;
-
-	protected override createStream(context: StreamContext): MockTargetStream {
-		return new MockTargetStream(this.properties as unknown as Record<string, unknown>, context);
+	get lastCreatedStream(): MockTargetStream | undefined {
+		const last = this.streams[this.streams.length - 1];
+		return last instanceof MockTargetStream ? last : undefined;
 	}
 
-	override createWritable(): WritableStream<AudioChunk> {
-		if (!this.streamContext) throw new Error("Stream context not initialized");
-		const stream = new MockTargetStream(this.properties as unknown as Record<string, unknown>, this.streamContext);
-		this.lastCreatedStream = stream;
-		return stream.createWritableStream();
+	override createStream(context: StreamContext): MockTargetStream {
+		return new MockTargetStream(this.properties as unknown as Record<string, unknown>, context);
 	}
 
 	clone(): MockTarget {
@@ -114,7 +107,7 @@ class MockTarget extends TargetNode {
 
 function createChunk(value: number, offset: number, duration: number): AudioChunk {
 	const samples = new Float32Array(duration).fill(value);
-	return { samples: [samples], offset, duration };
+	return { samples: [samples], offset, sampleRate: 44100, bitDepth: 32 };
 }
 
 describe("Graph executor", () => {
@@ -172,8 +165,7 @@ describe("Graph executor", () => {
 		source.to(transform);
 		transform.children.push(source);
 
-		const readable = new ReadableStream<AudioChunk>();
-		expect(() => executeGraph(source, readable)).toThrow("Cycle detected");
+		expect(() => detectCycle(source)).toThrow("Cycle detected");
 	});
 
 	it("validates graph definition schema", () => {
@@ -193,9 +185,7 @@ describe("Graph executor", () => {
 
 	it("validates graph definition with default name", () => {
 		const valid = validateGraphDefinition({
-			nodes: [
-				{ id: "a", package: "buffered-audio-nodes", node: "read" },
-			],
+			nodes: [{ id: "a", package: "buffered-audio-nodes", node: "read" }],
 			edges: [],
 		});
 
@@ -203,9 +193,11 @@ describe("Graph executor", () => {
 	});
 
 	it("rejects invalid graph definition", () => {
-		expect(() => validateGraphDefinition({
-			nodes: [{ id: "", package: "test", node: "read" }],
-			edges: [],
-		})).toThrow();
+		expect(() =>
+			validateGraphDefinition({
+				nodes: [{ id: "", package: "test", node: "read" }],
+				edges: [],
+			}),
+		).toThrow();
 	});
 });

@@ -1,21 +1,24 @@
 import { z } from "zod";
-import { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import { ChunkBuffer } from "../../buffer";
 import type { AudioChunk, StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 
 export const schema = z.object({});
 
 export class ReverseStream extends BufferedTransformStream<TransformNodeProperties> {
 	private spareBuffer?: ChunkBuffer;
-	private spareChunkSize: number;
+	private spareChunkSize = 44100;
+	private spareInitialized = false;
 
-	constructor(properties: TransformNodeProperties, context: StreamContext) {
-		super(properties, context);
-		this.spareChunkSize = context.sampleRate;
-		this.spareBuffer = new ChunkBuffer(Infinity, context.channels, context.memoryLimit);
+	private ensureSpareBuffer(chunk: AudioChunk): void {
+		if (this.spareInitialized) return;
+		this.spareInitialized = true;
+		this.spareChunkSize = chunk.sampleRate;
+		this.spareBuffer = new ChunkBuffer(Infinity, chunk.samples.length, this.context.memoryLimit);
 	}
 
 	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {
+		this.ensureSpareBuffer(chunk);
 		await super._buffer(chunk, buffer);
 		await this.spareBuffer?.append(chunk.samples);
 	}
@@ -57,7 +60,7 @@ export class ReverseNode extends TransformNode {
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): ReverseStream {
+	override createStream(context: StreamContext): ReverseStream {
 		return new ReverseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

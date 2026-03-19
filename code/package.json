@@ -3,7 +3,10 @@
   "name": "engineering",
   "packageManager": "npm@10.9.3",
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "check": "turbo check",
     "lint": "turbo lint",
@@ -12,6 +15,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@stylistic/eslint-plugin": "^5.10.0",
     "check-dependency-version-consistency": "^4.1.0",
     "concurrently": "^9.0.0",
     "eslint": "^9.0.0",

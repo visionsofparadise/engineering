@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { SourceNode } from "./source";
 import { renderGraph, type NodeRegistry } from "./executor";
 import { validateGraphDefinition } from "./graph-format";
 import type { BufferedAudioNode } from "./node";
+import { SourceNode } from "./sources";
 
 const program = new Command();
 

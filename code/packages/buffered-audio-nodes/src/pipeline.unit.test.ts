@@ -1,10 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { WaveFile } from "wavefile";
 import { read } from "./sources/read";
 import { write } from "./targets/write";
 import { normalize } from "./transforms/normalize";
-import { join } from "node:path";
-import { writeFile, unlink, readFile, mkdir, rmdir } from "node:fs/promises";
-import { WaveFile } from "wavefile";
 
 const testDir = join(import.meta.dirname, "__test_fixtures__");
 
@@ -25,7 +25,7 @@ describe("Pipeline integration", () => {
 		const peakValue = 0.5;
 		const samples = new Float32Array(frames);
 		for (let index = 0; index < frames; index++) {
-			samples[index] = Math.sin(2 * Math.PI * 440 * index / sampleRate) * peakValue;
+			samples[index] = Math.sin((2 * Math.PI * 440 * index) / sampleRate) * peakValue;
 		}
 
 		const wavBuffer = createTestWav(sampleRate, 1, [samples]);

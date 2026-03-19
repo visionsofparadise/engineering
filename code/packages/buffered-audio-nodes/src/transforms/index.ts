@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
-import { ChunkBuffer } from "./chunk-buffer";
-import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "./node";
+import { ChunkBuffer } from "../buffer";
+import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "../node";
 
 export const WHOLE_FILE = Infinity;
 
@@ -19,12 +19,15 @@ export interface TransformStreamEventMap {
 export class BufferedTransformStream<P extends TransformNodeProperties = TransformNodeProperties> {
 	readonly properties: P;
 	readonly context: StreamContext;
-	readonly bufferSize: number;
+	bufferSize: number;
 	readonly overlap: number;
 	readonly events = new EventEmitter<TransformStreamEventMap>();
 
 	processingMs = 0;
 	framesProcessed = 0;
+
+	protected sampleRate?: number;
+	protected bitDepth?: number;
 
 	private chunkBuffer?: ChunkBuffer;
 	private bufferOffset = 0;
@@ -62,6 +65,14 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 		return chunk;
 	}
 
+	setup(input: ReadableStream<AudioChunk>): ReadableStream<AudioChunk> {
+		return input.pipeThrough(this.createTransformStream());
+	}
+
+	_teardown(): Promise<void> | void {
+		return;
+	}
+
 	createTransformStream(): TransformStream<AudioChunk, AudioChunk> {
 		return new TransformStream<AudioChunk, AudioChunk>({
 			transform: (chunk, controller) => this.handleTransform(chunk, controller),
@@ -76,13 +87,18 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 			this.events.emit("started");
 		}
 
-		this.inferredChunkSize ??= chunk.duration;
+		const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+		this.sampleRate ??= chunk.sampleRate;
+		this.bitDepth ??= chunk.bitDepth;
+
+		this.inferredChunkSize ??= chunkFrames;
 
 		const channels = chunk.samples.length;
 
 		this.chunkBuffer ??= new ChunkBuffer(this.bufferSize, channels, this.memoryLimit);
 
-		const samplesIn = chunk.duration;
+		const samplesIn = chunkFrames;
 		const start = performance.now();
 
 		await this._buffer(chunk, this.chunkBuffer);
@@ -157,7 +173,8 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 			const adjusted: AudioChunk = {
 				samples: chunk.samples,
 				offset: this.bufferOffset + chunk.offset,
-				duration: chunk.duration,
+				sampleRate: this.sampleRate ?? 44100,
+				bitDepth: this.bitDepth ?? 32,
 			};
 
 			const result = await this._unbuffer(adjusted);
@@ -192,16 +209,5 @@ export abstract class TransformNode<P extends TransformNodeProperties = Transfor
 		return BufferedAudioNode.is(value) && value.type[1] === "transform";
 	}
 
-	protected streamContext?: StreamContext;
-
-	protected override _setup(context: StreamContext): void {
-		this.streamContext = context;
-	}
-
-	protected abstract createStream(context: StreamContext): BufferedTransformStream;
-
-	createTransform(): TransformStream<AudioChunk, AudioChunk> {
-		if (!this.streamContext) throw new Error("Stream context not initialized");
-		return this.createStream(this.streamContext).createTransformStream();
-	}
+	abstract createStream(context: StreamContext): BufferedTransformStream;
 }

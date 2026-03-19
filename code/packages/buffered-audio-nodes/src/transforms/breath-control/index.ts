@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../chunk-buffer";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
+import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "../../transform";
 import { bandPassCoefficients, biquadFilter } from "../../utils/biquad";
 import { smoothEnvelope } from "../../utils/envelope";
 
@@ -14,17 +14,10 @@ export const schema = z.object({
 export interface BreathControlProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 export class BreathControlStream extends BufferedTransformStream<BreathControlProperties> {
-	private controlSampleRate: number;
-
-	constructor(properties: BreathControlProperties, context: StreamContext) {
-		super(properties, context);
-		this.controlSampleRate = context.sampleRate;
-	}
-
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const frames = buffer.frames;
 		const channels = buffer.channels;
-		const sampleRate = this.controlSampleRate;
+		const sampleRate = this.sampleRate ?? 44100;
 		const { sensitivity, reduction, mode } = this.properties;
 
 		const gainDb = mode === "remove" ? -96 : reduction;
@@ -159,7 +152,7 @@ export class BreathControlNode extends TransformNode<BreathControlProperties> {
 	override readonly bufferSize = WHOLE_FILE;
 	override readonly latency = WHOLE_FILE;
 
-	protected override createStream(context: StreamContext): BreathControlStream {
+	override createStream(context: StreamContext): BreathControlStream {
 		return new BreathControlStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 }, context);
 	}
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { DitherStream } from ".";
 import type { StreamContext } from "../../node";
 
-const context: StreamContext = { sampleRate: 44100, channels: 1, executionProviders: ["cpu"], memoryLimit: 256 * 1024 * 1024 };
+const context: StreamContext = { executionProviders: ["cpu"], memoryLimit: 256 * 1024 * 1024 };
 
 describe("DitherStream", () => {
 	it("quantizes samples to 16-bit grid", () => {
@@ -13,7 +13,8 @@ describe("DitherStream", () => {
 		const result = stream._unbuffer({
 			samples: [input],
 			offset: 0,
-			duration: input.length,
+			sampleRate: 44100,
+			bitDepth: 32,
 		});
 
 		for (const sample of (result as { samples: Array<Float32Array> }).samples[0]!) {
@@ -31,7 +32,8 @@ describe("DitherStream", () => {
 		const result = stream._unbuffer({
 			samples: [input],
 			offset: 0,
-			duration: input.length,
+			sampleRate: 44100,
+			bitDepth: 32,
 		});
 
 		for (const sample of (result as { samples: Array<Float32Array> }).samples[0]!) {
@@ -48,7 +50,8 @@ describe("DitherStream", () => {
 		const result = stream._unbuffer({
 			samples: [input],
 			offset: 0,
-			duration: input.length,
+			sampleRate: 44100,
+			bitDepth: 32,
 		});
 
 		for (const sample of (result as { samples: Array<Float32Array> }).samples[0]!) {
