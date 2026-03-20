@@ -69,7 +69,7 @@ class ScaleStream extends BufferedTransformStream {
 }
 
 class CompositeStream extends BufferedTransformStream {
-	override async setup(input: ReadableStream<AudioChunk>, _context: StreamContext): Promise<ReadableStream<AudioChunk>> {
+	override async _setup(input: ReadableStream<AudioChunk>, _context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		const first = new ScaleStream(2, {});
 		const second = new ScaleStream(0.5, {});
 		return input.pipeThrough(first.createTransformStream()).pipeThrough(second.createTransformStream());
@@ -146,7 +146,7 @@ describe("TransformNode lifecycle", () => {
 	}, 240_000);
 });
 
-describe("Composite stream via setup()", () => {
+describe("Composite stream via _setup()", () => {
 	it("chains internal transforms and produces correct output", async () => {
 		const tempOut = join(tmpdir(), `ban-composite-${randomBytes(8).toString("hex")}.wav`);
 		const original = await readWavSamples(testVoice);

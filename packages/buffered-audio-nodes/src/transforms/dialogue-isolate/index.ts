@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { applyBandpass } from "../../utils/apply-bandpass";
 import { MixedRadixFft } from "../../utils/mixed-radix-fft";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
@@ -45,8 +45,10 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 		this.fftInstance = new MixedRadixFft(N_FFT);
 	}
 
-	override _setup(context: StreamContext): void {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		this.session = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: filterOnnxProviders(context.executionProviders) });
+
+		return super._setup(input, context);
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {

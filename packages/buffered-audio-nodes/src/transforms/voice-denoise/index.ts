@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
@@ -47,7 +47,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
-	override _setup(context: StreamContext): void {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		const onnxProviders = filterOnnxProviders(context.executionProviders);
 
 		this.session1 = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath1, { executionProviders: onnxProviders });
@@ -58,6 +58,8 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
+
+		return super._setup(input, context);
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {

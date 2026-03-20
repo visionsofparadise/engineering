@@ -59,7 +59,7 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 
 	private initialized = false;
 
-	override async _setup(context: StreamContext): Promise<void> {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<void> {
 		this.linearBins = this.properties.fftSize / 2 + 1;
 		this.windowCoefficients = hanningWindow(this.properties.fftSize);
 		this.workspace = createFftWorkspace(this.properties.fftSize);
@@ -75,6 +75,8 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 		this.sampleBufferCapacity = this.properties.fftSize + (8 * 1024 * 1024) / 4;
 
 		this.fileHandle = await open(this.properties.outputPath, "w");
+
+		return super._setup(input, context);
 	}
 
 	private async initialize(chunk: AudioChunk): Promise<void> {

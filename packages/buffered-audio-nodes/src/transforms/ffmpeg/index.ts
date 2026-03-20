@@ -2,7 +2,7 @@ import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
 import { FileChunkBuffer } from "../../buffer/file";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { runFfmpeg, runFfmpegWithFile } from "./utils/process";
 
 export const schema = z.object({
@@ -18,8 +18,10 @@ export interface FfmpegProperties extends TransformNodeProperties {
 export class FfmpegStream<P extends FfmpegProperties = FfmpegProperties> extends BufferedTransformStream<P> {
 	private streamContext?: StreamContext;
 
-	override _setup(context: StreamContext): void {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		this.streamContext = context;
+
+		return super._setup(input, context);
 	}
 
 	protected _buildArgs(_context: StreamContext): Array<string> {

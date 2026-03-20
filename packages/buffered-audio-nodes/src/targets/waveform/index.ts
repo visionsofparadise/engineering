@@ -32,7 +32,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 
 	private initialized = false;
 
-	override async _setup(_context: StreamContext): Promise<void> {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<void> {
 		this.writeBufferOffset = 0;
 		this.writeBufferFileOffset = HEADER_SIZE;
 		this.totalPoints = 0;
@@ -40,6 +40,8 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 		this.samplesInCurrentWindow = 0;
 
 		this.fileHandle = await open(this.properties.outputPath, "w");
+
+		return super._setup(input, context);
 	}
 
 	private initialize(chunk: AudioChunk): void {

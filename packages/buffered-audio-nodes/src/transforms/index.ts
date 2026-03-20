@@ -48,17 +48,16 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 		return this.streamChunkSize ?? this.inferredChunkSize ?? 44100;
 	}
 
-	async setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
+	setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		this.sourceTotalFrames = context.durationFrames;
 		this.memoryLimit = context.memoryLimit;
 
-		await this._setup(context);
-
-		return input.pipeThrough(this.createTransformStream());
+		return this._setup(input, context);
 	}
 
-	_setup(_context: StreamContext): Promise<void> | void {
-		return;
+	// eslint-disable-next-line @typescript-eslint/require-await
+	async _setup(input: ReadableStream<AudioChunk>, _context: StreamContext): Promise<ReadableStream<AudioChunk>> {
+		return input.pipeThrough(this.createTransformStream());
 	}
 
 	createTransformStream(): TransformStream<AudioChunk, AudioChunk> {
