@@ -24,7 +24,7 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 	private inferredChunkSize?: number;
 	private hasStarted = false;
 
-	private readonly streamChunkSize?: number;
+	protected streamChunkSize?: number;
 	private sourceTotalFrames?: number;
 	private memoryLimit?: number;
 

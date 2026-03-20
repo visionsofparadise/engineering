@@ -10,7 +10,7 @@ import { read } from "../sources/read";
 import { write } from "../targets/write";
 import { readWavSamples } from "../utils/read-to-buffer";
 
-const testVoice = join(import.meta.dirname, "./utils/test-voice.wav");
+const testVoice = join(import.meta.dirname, "../utils/test-voice.wav");
 
 class PassthroughTransform extends TransformNode {
 	static override readonly moduleName = "Passthrough";
