@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
@@ -46,11 +46,13 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
-	override _setup(context: StreamContext): void {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		const fft = initFftBackend(context.executionProviders, this.properties);
 
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
+
+		return super._setup(input, context);
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {

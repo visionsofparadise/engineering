@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { replaceChannel } from "../../utils/replace-channel";
@@ -43,7 +43,7 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
-	override async _setup(context: StreamContext): Promise<void> {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		const fft = initFftBackend(context.executionProviders, this.properties);
 
 		this.fftBackend = fft.backend;
@@ -59,6 +59,8 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 		}
 
 		await refBuffer.close();
+
+		return super._setup(input, context);
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {

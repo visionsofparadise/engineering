@@ -18,7 +18,7 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 	private insertLength = 0;
 	private sampleRateChecked = false;
 
-	override async _setup(_context: StreamContext): Promise<void> {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		const { samples, sampleRate } = await readWavSamples(this.properties.insertPath);
 
 		const targetChannels = this.properties.channels;
@@ -34,6 +34,8 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 		this.insertSamples = samples;
 		this.insertSampleRate = sampleRate;
 		this.insertLength = samples[0]?.length ?? 0;
+
+		return super._setup(input, context);
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {

@@ -12,8 +12,10 @@ export class ReverseStream extends BufferedTransformStream {
 	private spareInitialized = false;
 	private reverseMemoryLimit?: number;
 
-	override _setup(context: StreamContext): void {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		this.reverseMemoryLimit = context.memoryLimit;
+
+		return super._setup(input, context);
 	}
 
 	private ensureSpareBuffer(chunk: AudioChunk): void {

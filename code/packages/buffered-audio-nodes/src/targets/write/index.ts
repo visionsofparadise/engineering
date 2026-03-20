@@ -42,7 +42,7 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 	private headerWritten = false;
 	private initialized = false;
 
-	override async _setup(_context: StreamContext): Promise<void> {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<void> {
 		this.bytesWritten = 0;
 		this.headerWritten = false;
 		this.initialized = false;
@@ -87,6 +87,8 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 		} else {
 			this.fileHandle = await open(this.properties.path, "w");
 		}
+
+		return super._setup(input, context);
 	}
 
 	private async initialize(chunk: AudioChunk): Promise<void> {

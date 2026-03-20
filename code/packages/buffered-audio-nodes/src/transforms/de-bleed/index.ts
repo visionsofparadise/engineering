@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { replaceChannel } from "../../utils/replace-channel";
 import { nlmsAdaptiveFilter } from "./utils/nlms";
@@ -17,13 +17,15 @@ export interface DeBleedProperties extends z.infer<typeof schema>, TransformNode
 export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 	private referenceSignal!: Float32Array;
 
-	override async _setup(_context: StreamContext): Promise<void> {
+	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		const { buffer: refBuffer } = await readToBuffer(this.properties.referencePath);
 		const chunk = await refBuffer.read(0, refBuffer.frames);
 		const channel = chunk.samples[0];
 
 		this.referenceSignal = channel ? Float32Array.from(channel) : new Float32Array(0);
 		await refBuffer.close();
+
+		return super._setup(input, context);
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {

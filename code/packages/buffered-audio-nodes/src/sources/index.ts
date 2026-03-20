@@ -26,7 +26,12 @@ export abstract class BufferedSourceStream<P extends SourceNodeProperties = Sour
 	abstract _read(): Promise<AudioChunk | undefined>;
 	abstract _flush(): Promise<void>;
 
-	setup(context: StreamContext): ReadableStream<AudioChunk> {
+	setup(context: StreamContext): Promise<ReadableStream<AudioChunk>> {
+		return this._setup(context);
+	}
+
+	// eslint-disable-next-line @typescript-eslint/require-await
+	async _setup(context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		let done = false;
 
 		this.framesRead = 0;
@@ -102,7 +107,7 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 
 		this.streams.push(stream);
 
-		const readable = stream.setup(context);
+		const readable = await stream.setup(context);
 		const promises = await this.setupChildren(readable, context);
 
 		await Promise.all(promises);
