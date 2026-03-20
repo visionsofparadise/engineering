@@ -5,7 +5,8 @@ import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from ".."
 import type { AudioChunk, StreamContext } from "../../node";
 import { WHOLE_FILE } from "../../transforms";
 import { detectFftBackend, getFftAddon } from "../../utils/fft-backend";
-import { createFftWorkspace, fft, hanningWindow, type FftWorkspace } from "../../utils/stft";
+import { createFftWorkspace, hanningWindow, type FftWorkspace } from "../../utils/stft";
+import { computeSpectrogramFrames } from "./utils/frames";
 import { FREQUENCY_SCALE_BYTE, computeMelBandMappings, computeErbBandMappings, computeLogBandMappings } from "./utils/frequency";
 
 export const schema = z.object({
@@ -200,39 +201,23 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 		}
 
 		for (let ch = 0; ch < this.channels; ch++) {
-			const samples = this.sampleBuffers[ch]!;
+			const frames = computeSpectrogramFrames(
+				this.sampleBuffers[ch]!,
+				batchFrames,
+				fftSize,
+				hopSize,
+				halfSize,
+				magScale,
+				this.outputBins,
+				this.windowCoefficients,
+				this.workspace,
+				addon,
+				this.bandMappings,
+				this.magnitudes,
+			);
 
-			if (addon) {
-				const batchInput = new Float32Array(fftSize * batchFrames);
-
-				for (let fi = 0; fi < batchFrames; fi++) {
-					const offset = fi * hopSize;
-					const destOffset = fi * fftSize;
-
-					for (let si = 0; si < fftSize; si++) {
-						batchInput[destOffset + si] = samples[offset + si]! * this.windowCoefficients[si]!;
-					}
-				}
-
-				const { re: batchRe, im: batchIm } = addon.batchFft(batchInput, fftSize, batchFrames);
-
-				for (let fi = 0; fi < batchFrames; fi++) {
-					await this.writeFrame(ch, batchRe, batchIm, fi * halfSize, halfSize, magScale);
-				}
-			} else {
-				const windowed = new Float32Array(fftSize);
-
-				for (let fi = 0; fi < batchFrames; fi++) {
-					const offset = fi * hopSize;
-
-					for (let si = 0; si < fftSize; si++) {
-						windowed[si] = samples[offset + si]! * this.windowCoefficients[si]!;
-					}
-
-					const { re, im } = fft(windowed, this.workspace);
-
-					await this.writeFrame(ch, re, im, 0, halfSize, magScale);
-				}
+			for (const frame of frames) {
+				await this.writeFrame(ch, frame);
 			}
 		}
 
@@ -252,7 +237,7 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 		this.sampleBufferOffset = keepCount > 0 ? keepCount : 0;
 	}
 
-	private async writeFrame(ch: number, re: Float32Array, im: Float32Array, reOffset: number, halfSize: number, magScale: number): Promise<void> {
+	private async writeFrame(ch: number, frame: Float32Array): Promise<void> {
 		const frameByteSize = this.outputBins * this.channels * 4;
 
 		if (this.writeBuffer && this.writeBufferOffset + frameByteSize > this.writeBuffer.length) {
@@ -264,44 +249,8 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 		if (!buf) return;
 		const offset = this.writeBufferOffset;
 
-		if (this.bandMappings) {
-			const magnitudes = this.magnitudes;
-
-			for (let bin = 0; bin < halfSize; bin++) {
-				const real = re[reOffset + bin]!;
-				const imag = im[reOffset + bin]!;
-
-				magnitudes[bin] = Math.sqrt(real * real + imag * imag) * magScale;
-			}
-
-			for (let band = 0; band < this.outputBins; band++) {
-				const mapping = this.bandMappings[band];
-
-				if (!mapping) continue;
-
-				let sum = 0;
-				let weightSum = 0;
-
-				for (let bin = mapping.binStart; bin <= mapping.binEnd; bin++) {
-					let weight = 1;
-
-					if (bin === mapping.binStart) weight = mapping.weightStart;
-					else if (bin === mapping.binEnd) weight = mapping.weightEnd;
-
-					sum += magnitudes[bin]! * weight;
-					weightSum += weight;
-				}
-
-				buf.writeFloatLE(weightSum > 0 ? sum / weightSum : 0, offset + (ch * this.outputBins + band) * 4);
-			}
-		} else {
-			for (let bin = 0; bin < this.outputBins; bin++) {
-				const real = re[reOffset + bin]!;
-				const imag = im[reOffset + bin]!;
-				const magnitude = Math.sqrt(real * real + imag * imag) * magScale;
-
-				buf.writeFloatLE(magnitude, offset + (ch * this.outputBins + bin) * 4);
-			}
+		for (let bin = 0; bin < this.outputBins; bin++) {
+			buf.writeFloatLE(frame[bin]!, offset + (ch * this.outputBins + bin) * 4);
 		}
 
 		this.writeBufferOffset += frameByteSize;

@@ -56,7 +56,8 @@ export { eqMatch, EqMatchNode, EqMatchStream, type EqMatchProperties } from "./t
 export { leveler, LevelerNode, LevelerStream, type LevelerProperties } from "./transforms/leveler";
 export { musicRebalance, MusicRebalanceNode, MusicRebalanceStream, type MusicRebalanceProperties, type StemGains } from "./transforms/music-rebalance";
 export { pitchShift, PitchShiftNode, type PitchShiftProperties } from "./transforms/pitch-shift";
-export { spectralRepair, SpectralRepairNode, SpectralRepairStream, type SpectralRegion, type SpectralRepairProperties } from "./transforms/spectral-repair";
+export { spectralRepair, SpectralRepairNode, SpectralRepairStream, type SpectralRepairProperties } from "./transforms/spectral-repair";
+export type { SpectralRegion } from "./transforms/spectral-repair/utils/interpolation";
 export { timeStretch, TimeStretchNode, type TimeStretchProperties } from "./transforms/time-stretch";
 export { voiceDenoise, VoiceDenoiseNode, VoiceDenoiseStream, type VoiceDenoiseProperties } from "./transforms/voice-denoise";
 

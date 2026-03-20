@@ -1,10 +1,10 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loops with bounds-checked typed array access */
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
 import type { StreamContext } from "../../node";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { replaceChannel } from "../../utils/replace-channel";
+import { nlmsAdaptiveFilter } from "./utils/nlms";
 
 export const schema = z.object({
 	referencePath: z.string().default("").describe("Reference Path"),
@@ -33,7 +33,6 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 		const reference = this.referenceSignal;
 
 		const output = new Float32Array(frames);
-		const filterCoeffs = new Float32Array(filterLength);
 
 		for (let ch = 0; ch < channels; ch++) {
 			const chunk = await buffer.read(0, frames);
@@ -42,49 +41,7 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 			if (!channel) continue;
 
 			output.fill(0);
-			filterCoeffs.fill(0);
-
-			let refPower = 0;
-
-			for (let index = 0; index < frames; index++) {
-				const newRef = index >= 0 && index < reference.length ? reference[index]! : 0;
-
-				refPower += newRef * newRef;
-
-				const droppedIndex = index - filterLength;
-
-				if (droppedIndex >= 0 && droppedIndex < reference.length) {
-					const oldRef = reference[droppedIndex]!;
-
-					refPower -= oldRef * oldRef;
-				}
-
-				if (refPower < 0) refPower = 0;
-
-				let predicted = 0;
-
-				for (let tap = 0; tap < filterLength; tap++) {
-					const refIndex = index - tap;
-
-					if (refIndex >= 0 && refIndex < reference.length) {
-						predicted += filterCoeffs[tap]! * reference[refIndex]!;
-					}
-				}
-
-				const error = channel[index]! - predicted;
-
-				output[index] = error;
-
-				const mu = refPower > 1e-10 ? stepSize / (refPower + 1e-10) : 0;
-
-				for (let tap = 0; tap < filterLength; tap++) {
-					const refIndex = index - tap;
-
-					if (refIndex >= 0 && refIndex < reference.length) {
-						filterCoeffs[tap] = filterCoeffs[tap]! + mu * error * reference[refIndex]!;
-					}
-				}
-			}
+			nlmsAdaptiveFilter(channel, reference, filterLength, stepSize, output);
 
 			await buffer.write(0, replaceChannel(chunk, ch, output, channels));
 		}

@@ -40,6 +40,10 @@ export class FileChunkBuffer extends ChunkBuffer {
 		if (this.memoryBuffer.bitDepth) this.setBitDepth(this.memoryBuffer.bitDepth);
 	}
 
+	get filePath(): string | undefined {
+		return this.flushed ? this.tempPath : undefined;
+	}
+
 	private async ensureFileHandle(): Promise<FileHandle> {
 		if (!this.tempHandle) {
 			this.tempPath = join(tmpdir(), `chunk-buffer-${randomUUID()}.bin`);

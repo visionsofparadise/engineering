@@ -3,6 +3,7 @@ import { z } from "zod";
 import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
 import type { AudioChunk, StreamContext } from "../../node";
 import { WHOLE_FILE } from "../../transforms";
+import { updateMinMax, writeMinMaxPoint } from "./utils/minmax";
 
 export const schema = z.object({
 	outputPath: z.string().default("").meta({ input: "file", mode: "save" }).describe("Output Path"),
@@ -79,14 +80,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 		const frames = chunk.samples[0]?.length ?? 0;
 
 		for (let frame = 0; frame < frames; frame++) {
-			for (let ch = 0; ch < this.channels; ch++) {
-				const sample = chunk.samples[ch]?.[frame] ?? 0;
-				const currentMinCh = this.currentMin[ch];
-				const currentMaxCh = this.currentMax[ch];
-
-				if (currentMinCh !== undefined && sample < currentMinCh) this.currentMin[ch] = sample;
-				if (currentMaxCh !== undefined && sample > currentMaxCh) this.currentMax[ch] = sample;
-			}
+			updateMinMax(chunk.samples, frame, this.channels, this.currentMin, this.currentMax);
 
 			this.samplesInCurrentWindow++;
 
@@ -128,13 +122,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 			await this.flushWriteBuffer();
 		}
 
-		const buf = this.writeBuffer;
-		const offset = this.writeBufferOffset;
-
-		for (let ch = 0; ch < this.channels; ch++) {
-			buf.writeFloatLE(this.currentMin[ch] ?? 0, offset + ch * 8);
-			buf.writeFloatLE(this.currentMax[ch] ?? 0, offset + ch * 8 + 4);
-		}
+		writeMinMaxPoint(this.currentMin, this.currentMax, this.channels, this.writeBuffer, this.writeBufferOffset);
 
 		this.writeBufferOffset += pointByteSize;
 		this.fileOffset += pointByteSize;
