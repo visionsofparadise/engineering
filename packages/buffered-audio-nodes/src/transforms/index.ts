@@ -1,6 +1,9 @@
-import { FileChunkBuffer, type ChunkBuffer } from "../buffer";
+import type { ChunkBuffer } from "../buffer";
+import { FileChunkBuffer } from "../buffer/file";
 import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "../node";
 import { BufferedStream } from "../stream";
+import { TargetNode } from "../targets";
+import { teeReadable } from "../utils/tee-readable";
 
 export const WHOLE_FILE = Infinity;
 
@@ -45,22 +48,6 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 		return this.streamChunkSize ?? this.inferredChunkSize ?? 44100;
 	}
 
-	_setup(_context: StreamContext): Promise<void> | void {
-		return;
-	}
-
-	_buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> | void {
-		return buffer.append(chunk.samples, chunk.sampleRate, chunk.bitDepth);
-	}
-
-	_process(_buffer: ChunkBuffer): Promise<void> | void {
-		return;
-	}
-
-	_unbuffer(chunk: AudioChunk): Promise<AudioChunk | undefined> | AudioChunk | undefined {
-		return chunk;
-	}
-
 	async setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		this.sourceTotalFrames = context.durationFrames;
 		this.memoryLimit = context.memoryLimit;
@@ -68,6 +55,10 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 		await this._setup(context);
 
 		return input.pipeThrough(this.createTransformStream());
+	}
+
+	_setup(_context: StreamContext): Promise<void> | void {
+		return;
 	}
 
 	createTransformStream(): TransformStream<AudioChunk, AudioChunk> {
@@ -196,6 +187,18 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 			await this.chunkBuffer.reset();
 		}
 	}
+
+	_buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> | void {
+		return buffer.append(chunk.samples, chunk.sampleRate, chunk.bitDepth);
+	}
+
+	_process(_buffer: ChunkBuffer): Promise<void> | void {
+		return;
+	}
+
+	_unbuffer(chunk: AudioChunk): Promise<AudioChunk | undefined> | AudioChunk | undefined {
+		return chunk;
+	}
 }
 
 export abstract class TransformNode<P extends TransformNodeProperties = TransformNodeProperties> extends BufferedAudioNode<P> {
@@ -203,26 +206,40 @@ export abstract class TransformNode<P extends TransformNodeProperties = Transfor
 		return BufferedAudioNode.is(value) && value.type[1] === "transform";
 	}
 
-	readonly children: Array<BufferedAudioNode> = [];
-
-	override getChildren(): ReadonlyArray<BufferedAudioNode> {
-		return this.children;
-	}
-
 	to<T extends BufferedAudioNode>(child: T): T {
-		this.children.push(child);
+		this.properties = { ...this.properties, children: [...(this.properties.children ?? []), child] } as P;
 
 		return child;
 	}
 
 	abstract createStream(): BufferedTransformStream;
 
-	// FIX: Don't we need to recurse here?
-	async setup(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
+	async setup(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<Array<Promise<void>>> {
 		const stream = this.createStream();
 
 		this.streams.push(stream);
 
-		return stream.setup(readable, context);
+		const output = await stream.setup(readable, context);
+
+		return this.setupChildren(output, context);
+	}
+
+	private async setupChildren(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<Array<Promise<void>>> {
+		const resolved = this.children;
+		const pairs = teeReadable(readable, resolved);
+
+		const nested = await Promise.all(
+			pairs.map(async ([stream, child]) => {
+				if (context.visited.has(child)) throw new Error("Cycle detected in node graph");
+
+				context.visited.add(child);
+
+				if (child instanceof TransformNode || child instanceof TargetNode) return child.setup(stream, context);
+
+				throw new Error(`Unknown child node type`);
+			}),
+		);
+
+		return nested.flat();
 	}
 }

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { FileChunkBuffer, MemoryChunkBuffer } from ".";
+import { FileChunkBuffer } from "./file";
+import { MemoryChunkBuffer } from "./memory";
 
 describe("MemoryChunkBuffer", () => {
 	let buffer: MemoryChunkBuffer;

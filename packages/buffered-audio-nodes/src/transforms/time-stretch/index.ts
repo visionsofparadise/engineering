@@ -13,8 +13,7 @@ export interface TimeStretchProperties extends FfmpegProperties {
 
 export class TimeStretchStream extends FfmpegStream<TimeStretchProperties> {
 	protected override _buildArgs(_context: StreamContext): Array<string> {
-		const props = this.properties;
-		const filters = buildAtempoChain(props.rate);
+		const filters = buildAtempoChain(this.properties.rate);
 
 		return ["-af", filters.join(",")];
 	}

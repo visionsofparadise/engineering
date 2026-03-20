@@ -52,11 +52,10 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
 	override _setup(context: StreamContext): void {
-		const props = this.properties;
 		const onnxProviders = filterOnnxProviders(context.executionProviders);
 
-		this.session1 = createOnnxSession(props.onnxAddonPath, props.modelPath1, { executionProviders: onnxProviders });
-		this.session2 = createOnnxSession(props.onnxAddonPath, props.modelPath2, { executionProviders: onnxProviders });
+		this.session1 = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath1, { executionProviders: onnxProviders });
+		this.session2 = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath2, { executionProviders: onnxProviders });
 
 		const cpuProviders = context.executionProviders.filter((ep) => ep !== "gpu");
 		const fft = initFftBackend(cpuProviders.length > 0 ? cpuProviders : ["cpu"], this.properties);
@@ -66,7 +65,6 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		const props = this.properties;
 		const frames = buffer.frames;
 		const channels = buffer.channels;
 
@@ -79,7 +77,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 			let input16k: Float32Array = channel;
 
 			if ((this.sampleRate ?? 44100) !== DTLN_SAMPLE_RATE) {
-				const resampled = await resampleDirect(props.ffmpegPath, [channel], this.sampleRate ?? 44100, DTLN_SAMPLE_RATE);
+				const resampled = await resampleDirect(this.properties.ffmpegPath, [channel], this.sampleRate ?? 44100, DTLN_SAMPLE_RATE);
 
 				input16k = resampled[0] ?? channel;
 			}
@@ -89,7 +87,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 			let output: Float32Array = denoised16k;
 
 			if ((this.sampleRate ?? 44100) !== DTLN_SAMPLE_RATE) {
-				const resampled = await resampleDirect(props.ffmpegPath, [denoised16k], DTLN_SAMPLE_RATE, this.sampleRate ?? 44100);
+				const resampled = await resampleDirect(this.properties.ffmpegPath, [denoised16k], DTLN_SAMPLE_RATE, this.sampleRate ?? 44100);
 
 				output = resampled[0] ?? denoised16k;
 			}
@@ -109,7 +107,6 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 	}
 
 	private processDtln(signal: Float32Array): Float32Array {
-		const { session1, session2 } = this;
 
 		const originalLength = signal.length;
 
@@ -155,7 +152,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 				magnitude[bin] = Math.log(Math.sqrt(re * re + im * im) + 1e-7);
 			}
 
-			const result1 = session1.run({
+			const result1 = this.session1.run({
 				input_2: { data: magnitude, dims: [1, 1, FFT_BINS] },
 				input_3: { data: states1, dims: [1, 2, LSTM_UNITS, 2] },
 			});
@@ -175,7 +172,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 
 			const maskedTimeDomain = istft(maskedStft, BLOCK_LEN, BLOCK_LEN, this.fftBackend, this.fftAddonOptions);
 
-			const result2 = session2.run({
+			const result2 = this.session2.run({
 				input_4: { data: maskedTimeDomain, dims: [1, 1, BLOCK_LEN] },
 				input_5: { data: states2, dims: [1, 2, LSTM_UNITS, 2] },
 			});

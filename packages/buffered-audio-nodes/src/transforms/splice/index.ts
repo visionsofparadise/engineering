@@ -19,10 +19,9 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 	private sampleRateChecked = false;
 
 	override async _setup(_context: StreamContext): Promise<void> {
-		const props = this.properties;
-		const { samples, sampleRate } = await readWavSamples(props.insertPath);
+		const { samples, sampleRate } = await readWavSamples(this.properties.insertPath);
 
-		const targetChannels = props.channels;
+		const targetChannels = this.properties.channels;
 
 		if (targetChannels) {
 			for (const ch of targetChannels) {
@@ -46,23 +45,22 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 			}
 		}
 
-		const props = this.properties;
 		const chunkFrames = chunk.samples[0]?.length ?? 0;
 		const chunkStart = chunk.offset;
 		const chunkEnd = chunkStart + chunkFrames;
-		const insertEnd = props.insertAt + this.insertLength;
+		const insertEnd = this.properties.insertAt + this.insertLength;
 
-		if (chunkEnd <= props.insertAt || chunkStart >= insertEnd) {
+		if (chunkEnd <= this.properties.insertAt || chunkStart >= insertEnd) {
 			return chunk;
 		}
 
 		const samples = chunk.samples.map((channel) => new Float32Array(channel));
 
-		const overlapStart = Math.max(0, props.insertAt - chunkStart);
+		const overlapStart = Math.max(0, this.properties.insertAt - chunkStart);
 		const overlapEnd = Math.min(chunkFrames, insertEnd - chunkStart);
-		const insertOffset = Math.max(0, chunkStart - props.insertAt);
+		const insertOffset = Math.max(0, chunkStart - this.properties.insertAt);
 
-		const targetChannels = props.channels;
+		const targetChannels = this.properties.channels;
 
 		if (targetChannels) {
 			for (let insertCh = 0; insertCh < targetChannels.length; insertCh++) {

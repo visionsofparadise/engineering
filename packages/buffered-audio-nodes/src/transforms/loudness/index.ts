@@ -32,11 +32,10 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		const props = this.properties;
 		const sr = this.sampleRate ?? 44100;
 		const ch = buffer.channels;
 
-		this.measuredValues = await measureLoudness(buffer, sr, ch, props);
+		this.measuredValues = await measureLoudness(buffer, sr, ch, this.properties);
 
 		await super._process(buffer);
 
@@ -44,8 +43,7 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 	}
 
 	private buildArgsWithMeasurement(): Array<string> {
-		const props = this.properties;
-		const { target, truePeak, lra } = props;
+		const { target, truePeak, lra } = this.properties;
 
 		if (this.measuredValues) {
 			const { inputI, inputTp, inputLra, inputThresh, targetOffset } = this.measuredValues;

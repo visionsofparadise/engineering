@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- methods are async to satisfy the abstract ChunkBuffer interface */
 import type { AudioChunk } from "../../node";
-import { ChunkBuffer } from "../chunk-buffer";
+import { ChunkBuffer } from "..";
 
 export class MemoryChunkBuffer extends ChunkBuffer {
 	private memoryChannels: Array<Float32Array> = [];

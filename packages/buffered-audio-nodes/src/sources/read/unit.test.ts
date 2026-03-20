@@ -3,7 +3,9 @@ import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { read, ReadNode, ReadWavStream, ReadFfmpegStream, ReadWavNode, ReadFfmpegNode, readWav, readFfmpeg } from ".";
+import { read, ReadNode } from ".";
+import { ReadWavStream, ReadWavNode, readWav } from "./wav";
+import { ReadFfmpegStream, ReadFfmpegNode, readFfmpeg } from "./ffmpeg";
 import { write } from "../../targets/write";
 import { readToBuffer, readWavSamples } from "../../utils/read-to-buffer";
 

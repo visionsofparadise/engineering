@@ -14,18 +14,17 @@ export interface TrimProperties extends z.infer<typeof schema>, TransformNodePro
 
 export class TrimStream extends BufferedTransformStream<TrimProperties> {
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		const props = this.properties;
 		const frames = buffer.frames;
 		const allAudio = await buffer.read(0, frames);
 		const channels = allAudio.samples.length;
 
 		if (channels === 0 || frames === 0) return;
 
-		const threshold = props.threshold;
-		const marginSeconds = props.margin;
+		const threshold = this.properties.threshold;
+		const marginSeconds = this.properties.margin;
 		const marginFrames = Math.round(marginSeconds * (this.sampleRate ?? 44100));
-		const trimStart = props.start;
-		const trimEnd = props.end;
+		const trimStart = this.properties.start;
+		const trimEnd = this.properties.end;
 
 		const firstAbove = findFirstAbove(allAudio.samples, frames, threshold);
 

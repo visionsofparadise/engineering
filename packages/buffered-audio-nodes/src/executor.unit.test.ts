@@ -168,7 +168,7 @@ describe("Graph executor", () => {
 
 		source.to(transform);
 		transform.to(target);
-		transform.children.push(target);
+		transform.to(target);
 
 		await expect(source.render()).rejects.toThrow("Cycle detected");
 	});

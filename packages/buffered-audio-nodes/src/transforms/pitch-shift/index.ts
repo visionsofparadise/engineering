@@ -15,8 +15,7 @@ export interface PitchShiftProperties extends FfmpegProperties {
 
 export class PitchShiftStream extends FfmpegStream<PitchShiftProperties> {
 	protected override _buildArgs(_context: StreamContext): Array<string> {
-		const props = this.properties;
-		const { semitones, cents } = props;
+		const { semitones, cents } = this.properties;
 		const totalSemitones = semitones + (cents ?? 0) / 100;
 		const pitchRatio = Math.pow(2, totalSemitones / 12);
 

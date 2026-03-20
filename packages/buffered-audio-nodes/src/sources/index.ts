@@ -1,6 +1,8 @@
-import { setupPipeline } from "../executor";
 import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type ExecutionProvider, type RenderOptions, type StreamContext } from "../node";
 import { BufferedStream } from "../stream";
+import { TargetNode } from "../targets";
+import { TransformNode } from "../transforms";
+import { teeReadable } from "../utils/tee-readable";
 
 export interface SourceMetadata {
 	readonly sampleRate: number;
@@ -20,6 +22,7 @@ export abstract class BufferedSourceStream<P extends SourceNodeProperties = Sour
 	private framesRead = 0;
 
 	abstract getMetadata(): Promise<SourceMetadata>;
+
 	abstract _read(): Promise<AudioChunk | undefined>;
 	abstract _flush(): Promise<void>;
 
@@ -73,12 +76,8 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 		return BufferedAudioNode.is(value) && value.type[1] === "source";
 	}
 
-	readonly children: Array<BufferedAudioNode> = [];
-
-	override getChildren(): ReadonlyArray<BufferedAudioNode> { return this.children; }
-
 	to<T extends BufferedAudioNode>(child: T): T {
-		this.children.push(child);
+		this.properties = { ...this.properties, children: [...(this.properties.children ?? []), child] } as P;
 
 		return child;
 	}
@@ -101,10 +100,30 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 		const stream = this.createStream();
 
 		this.streams.push(stream);
+
 		const readable = stream.setup(context);
-		const promises = await setupPipeline(this, readable, context);
+		const promises = await this.setupChildren(readable, context);
 
 		await Promise.all(promises);
+	}
+
+	private async setupChildren(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<Array<Promise<void>>> {
+		const resolved = this.children;
+		const pairs = teeReadable(readable, resolved);
+
+		const nested = await Promise.all(
+			pairs.map(async ([stream, child]) => {
+				if (context.visited.has(child)) throw new Error("Cycle detected in node graph");
+
+				context.visited.add(child);
+
+				if (child instanceof TargetNode || child instanceof TransformNode) return child.setup(stream, context);
+
+				throw new Error(`Unknown child node type`);
+			}),
+		);
+
+		return nested.flat();
 	}
 
 	async render(options?: RenderOptions): Promise<void> {
@@ -148,7 +167,7 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 function countNodes(node: BufferedAudioNode): number {
 	let count = 0;
 
-	for (const child of node.getChildren()) {
+	for (const child of node.children) {
 		count += 1 + countNodes(child);
 	}
 
