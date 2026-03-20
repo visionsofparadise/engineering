@@ -46,16 +46,10 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 	private session!: OnnxSession;
 
 	override _setup(context: StreamContext): void {
-		const props = this.properties;
-
-		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(context.executionProviders) });
+		this.session = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: filterOnnxProviders(context.executionProviders) });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		// FIX: Don't do this indirection. Get rid of this habit throughout the codebase
-		const props = this.properties;
-		const session = this.session;
-
 		const originalFrames = buffer.frames;
 		const channels = buffer.channels;
 		const chunk = await buffer.read(0, originalFrames);
@@ -64,7 +58,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 		let right = channels >= 2 ? (chunk.samples[1] ?? left) : left;
 
 		if ((this.sampleRate ?? 44100) !== HTDEMUCS_SAMPLE_RATE) {
-			const resampled = await resampleDirect(props.ffmpegPath, [left, right], this.sampleRate ?? 44100, HTDEMUCS_SAMPLE_RATE);
+			const resampled = await resampleDirect(this.properties.ffmpegPath, [left, right], this.sampleRate ?? 44100, HTDEMUCS_SAMPLE_RATE);
 
 			left = resampled[0] ?? left;
 			right = resampled[1] ?? right;
@@ -185,7 +179,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 			inputData.set(segLeft, 0);
 			inputData.set(segRight, SEGMENT_SAMPLES);
 
-			const result = session.run({
+			const result = this.session.run({
 				input: { data: inputData, dims: [1, 2, SEGMENT_SAMPLES] },
 				x: { data: xData, dims: [1, 4, xBinsConst, xFramesConst] },
 			});
@@ -248,7 +242,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 			}
 		}
 
-		const { stems } = props;
+		const { stems } = this.properties;
 		const stemGains = [stems.drums, stems.bass, stems.other, stems.vocals];
 		const outputChannels: Array<Float32Array> = [];
 
@@ -276,10 +270,10 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 			outputChannels.push(output);
 		}
 
-		applyBandpass(outputChannels, HTDEMUCS_SAMPLE_RATE, props.highPass, props.lowPass);
+		applyBandpass(outputChannels, HTDEMUCS_SAMPLE_RATE, this.properties.highPass, this.properties.lowPass);
 
 		if ((this.sampleRate ?? 44100) !== HTDEMUCS_SAMPLE_RATE) {
-			const resampled = await resampleDirect(props.ffmpegPath, outputChannels, HTDEMUCS_SAMPLE_RATE, this.sampleRate ?? 44100);
+			const resampled = await resampleDirect(this.properties.ffmpegPath, outputChannels, HTDEMUCS_SAMPLE_RATE, this.sampleRate ?? 44100);
 
 			for (let ch = 0; ch < outputChannels.length; ch++) {
 				const resampledCh = resampled[ch];

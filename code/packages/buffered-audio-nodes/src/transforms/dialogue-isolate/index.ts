@@ -48,15 +48,10 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 	}
 
 	override _setup(context: StreamContext): void {
-		const props = this.properties;
-
-		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(context.executionProviders) });
+		this.session = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: filterOnnxProviders(context.executionProviders) });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		const props = this.properties;
-		const session = this.session;
-
 		const frames = buffer.frames;
 		const channels = buffer.channels;
 		const chunk = await buffer.read(0, frames);
@@ -69,7 +64,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 		let right44k = right;
 
 		if ((this.sampleRate ?? 44100) !== SAMPLE_RATE) {
-			const resampled = await resampleDirect(props.ffmpegPath, [left, right], this.sampleRate ?? 44100, SAMPLE_RATE);
+			const resampled = await resampleDirect(this.properties.ffmpegPath, [left, right], this.sampleRate ?? 44100, SAMPLE_RATE);
 
 			left44k = resampled[0] ?? left;
 			right44k = resampled[1] ?? right;
@@ -126,7 +121,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 				stft7680IntoTensor(fft, segRight, inputData, 1 * CHANNEL_STRIDE, 3 * CHANNEL_STRIDE);
 			}
 
-			const result = session.run({
+			const result = this.session.run({
 				input: { data: inputData, dims: [1, 4, DIM_F, DIM_T] },
 			});
 
@@ -168,7 +163,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 		let finalRight: Float32Array = outputRight;
 
 		if ((this.sampleRate ?? 44100) !== SAMPLE_RATE) {
-			const resampled = await resampleDirect(props.ffmpegPath, [outputLeft, outputRight], SAMPLE_RATE, this.sampleRate ?? 44100);
+			const resampled = await resampleDirect(this.properties.ffmpegPath, [outputLeft, outputRight], SAMPLE_RATE, this.sampleRate ?? 44100);
 
 			finalLeft = resampled[0] ?? outputLeft;
 			finalRight = resampled[1] ?? outputRight;
@@ -185,7 +180,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 			outputChannels.push(out);
 		}
 
-		applyBandpass(outputChannels, this.sampleRate ?? 44100, props.highPass, props.lowPass);
+		applyBandpass(outputChannels, this.sampleRate ?? 44100, this.properties.highPass, this.properties.lowPass);
 
 		await buffer.write(0, outputChannels);
 	}

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
-import { FileChunkBuffer, type ChunkBuffer } from "../../buffer";
+import type { ChunkBuffer } from "../../buffer";
+import { FileChunkBuffer } from "../../buffer/file";
 import type { AudioChunk, StreamContext } from "../../node";
 
 export const schema = z.object({});

@@ -22,8 +22,7 @@ export class FfmpegStream<P extends FfmpegProperties = FfmpegProperties> extends
 	}
 
 	protected _buildArgs(_context: StreamContext): Array<string> {
-		const props = this.properties;
-		const { args } = props;
+		const { args } = this.properties;
 
 		if (!args) return [];
 
@@ -41,19 +40,16 @@ export class FfmpegStream<P extends FfmpegProperties = FfmpegProperties> extends
 	private _ffmpegChannels = 1;
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		const props = this.properties;
-		const context = this.streamContext;
-
-		if (!context) throw new Error("FfmpegStream._process called before setup()");
+		if (!this.streamContext) throw new Error("FfmpegStream._process called before setup()");
 
 		this._ffmpegChannels = buffer.channels;
 		const sr = this.sampleRate ?? 44100;
 		const channels = buffer.channels;
 		const inputArgs = ["-f", "f32le", "-ar", String(sr), "-ac", String(channels), "-i", "pipe:0"];
-		const filterArgs = this._buildArgs(context);
-		const outputArgs = this._buildOutputArgs(context);
+		const filterArgs = this._buildArgs(this.streamContext);
+		const outputArgs = this._buildOutputArgs(this.streamContext);
 
-		const result = await runFfmpeg(props.ffmpegPath, [...inputArgs, ...filterArgs, ...outputArgs], buffer, channels);
+		const result = await runFfmpeg(this.properties.ffmpegPath, [...inputArgs, ...filterArgs, ...outputArgs], buffer, channels);
 
 		await buffer.truncate(0);
 

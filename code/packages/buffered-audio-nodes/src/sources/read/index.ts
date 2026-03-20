@@ -1,13 +1,8 @@
-/* eslint-disable barrel-files/avoid-barrel-files */
 import { extname } from "node:path";
 import { z } from "zod";
 import { SourceNode, type SourceNodeProperties } from "..";
 import { ReadFfmpegStream } from "./ffmpeg";
 import { ReadWavStream } from "./wav";
-
-// FIX: Get rid of these reexports. stop being lazy
-export { ffmpegSchema, readFfmpeg, ReadFfmpegNode, ReadFfmpegStream, type ReadFfmpegProperties } from "./ffmpeg";
-export { readSample, readWav, ReadWavNode, ReadWavStream, wavSchema, type ReadWavProperties } from "./wav";
 
 export const schema = z.object({
 	path: z.string().default("").meta({ input: "file", mode: "open" }),

@@ -56,11 +56,11 @@ export abstract class TargetNode<P extends TargetNodeProperties = TargetNodeProp
 
 	abstract createStream(): BufferedTargetStream<P>;
 
-	setup(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<void> {
+	setup(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<Array<Promise<void>>> {
 		const stream = this.createStream();
 
 		this.streams.push(stream);
 
-		return stream.setup(readable, context);
+		return Promise.resolve([stream.setup(readable, context)]);
 	}
 }

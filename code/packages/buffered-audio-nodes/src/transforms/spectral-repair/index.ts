@@ -46,7 +46,6 @@ export class SpectralRepairStream extends BufferedTransformStream<SpectralRepair
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		const props = this.properties;
 		const sampleRate = this.sampleRate ?? 44100;
 		const channels = buffer.channels;
 		const frames = buffer.frames;
@@ -78,7 +77,7 @@ export class SpectralRepairStream extends BufferedTransformStream<SpectralRepair
 			const freqPerBin = sampleRate / fftSize;
 			const timePerFrame = hopSize / sampleRate;
 
-			for (const region of props.regions) {
+			for (const region of this.properties.regions) {
 				const startFrame = Math.floor(region.startTime / timePerFrame);
 				const endFrame = Math.ceil(region.endTime / timePerFrame);
 				const startBin = Math.floor(region.startFreq / freqPerBin);

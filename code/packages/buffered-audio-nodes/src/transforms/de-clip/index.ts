@@ -31,22 +31,21 @@ export class DeClipStream extends BufferedTransformStream<DeClipProperties> {
 		return super._buffer(chunk, buffer);
 	}
 
-	override _unbuffer(chunk: AudioChunk): AudioChunk {
-		// FIX: This looks like this should happen in _process
-		const samples = chunk.samples.map((channel) => {
-			const output = new Float32Array(channel);
-			const clipThreshold = this.properties.threshold;
+	override async _process(buffer: ChunkBuffer): Promise<void> {
+		for await (const chunk of buffer.iterate(this.bufferSize)) {
+			const samples = chunk.samples.map((channel) => {
+				const output = new Float32Array(channel);
+				const regions = detectClippedRegions(channel, this.properties.threshold);
 
-			const regions = detectClippedRegions(channel, clipThreshold);
+				for (const region of regions) {
+					reconstructClippedRegion(output, region.start, region.end, this.properties.threshold);
+				}
 
-			for (const region of regions) {
-				reconstructClippedRegion(output, region.start, region.end, clipThreshold);
-			}
+				return output;
+			});
 
-			return output;
-		});
-
-		return { samples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
+			await buffer.write(chunk.offset, samples);
+		}
 	}
 }
 

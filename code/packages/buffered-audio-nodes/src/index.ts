@@ -1,9 +1,12 @@
 /* eslint-disable barrel-files/avoid-barrel-files */
 // Types
-export type { AudioChunk, ExecutionProvider, FileInputMeta, ModuleSchema, RenderOptions, StreamContext } from "./node";
+export type { AudioChunk, ExecutionProvider, RenderOptions, StreamContext } from "./node";
+export type { FileInputMeta, ModuleSchema } from "./schema";
 
 // Base classes
-export { ChunkBuffer, FileChunkBuffer, MemoryChunkBuffer, type BufferStorage } from "./buffer";
+export { ChunkBuffer, type BufferStorage } from "./buffer";
+export { FileChunkBuffer } from "./buffer/file";
+export { MemoryChunkBuffer } from "./buffer/memory";
 export { BufferedAudioNode, type BufferedAudioNodeInput, type BufferedAudioNodeProperties } from "./node";
 export { BufferedStream, type StreamEventMap } from "./stream";
 export { BufferedSourceStream, SourceNode, type RenderTiming, type SourceMetadata, type SourceNodeProperties } from "./sources";
@@ -13,13 +16,10 @@ export { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeP
 // Graph format (BAG)
 export { graphDefinitionToNodes, renderGraph, validateGraphDefinition, type GraphDefinition, type GraphEdge, type GraphNode, type NodeRegistry } from "./graph-format";
 
-// Graph executor
-export { setupPipeline } from "./executor";
-
 // Sources
-export { read, ReadNode, ReadWavStream, ReadFfmpegStream, type ReadProperties } from "./sources/read";
-export { ReadWavNode, readWav, readSample, wavSchema, type ReadWavProperties } from "./sources/read";
-export { ReadFfmpegNode, readFfmpeg, ffmpegSchema, type ReadFfmpegProperties } from "./sources/read";
+export { read, ReadNode, type ReadProperties } from "./sources/read";
+export { ReadWavNode, readWav, readSample, ReadWavStream, wavSchema, type ReadWavProperties } from "./sources/read/wav";
+export { ReadFfmpegNode, readFfmpeg, ReadFfmpegStream, ffmpegSchema, type ReadFfmpegProperties } from "./sources/read/ffmpeg";
 
 // Targets
 export { loudnessStats, LoudnessStatsNode, LoudnessStatsStream, type LoudnessStats } from "./targets/loudness-stats";
@@ -62,3 +62,4 @@ export { voiceDenoise, VoiceDenoiseNode, VoiceDenoiseStream, type VoiceDenoisePr
 
 // Utilities
 export { dbToLinear, linearToDb } from "./utils/db";
+export { teeReadable } from "./utils/tee-readable";

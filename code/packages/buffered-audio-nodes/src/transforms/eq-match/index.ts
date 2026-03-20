@@ -49,8 +49,7 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
 
-		const props = this.properties;
-		const { buffer: refBuffer } = await readToBuffer(props.referencePath);
+		const { buffer: refBuffer } = await readToBuffer(this.properties.referencePath);
 		const refFrames = refBuffer.frames;
 		const chunk = await refBuffer.read(0, refFrames);
 		const channel = chunk.samples[0];
@@ -64,7 +63,6 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		if (!this.referenceSpectrum) return;
-		const props = this.properties;
 
 		const frames = buffer.frames;
 		const channels = buffer.channels;
@@ -95,7 +93,7 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 			const stftResult = stft(channel, fftSize, hopSize, stftOutput, this.fftBackend, this.fftAddonOptions);
 
 			const inputSpectrum = averageSpectrumFromStft(stftResult, halfSize);
-			const correctionDb = computeCorrection(this.referenceSpectrum, inputSpectrum, props.smoothing);
+			const correctionDb = computeCorrection(this.referenceSpectrum, inputSpectrum, this.properties.smoothing);
 			const correctionLinear = correctionDb.map((db) => Math.pow(10, db / 20));
 
 			for (let frame = 0; frame < stftResult.frames; frame++) {

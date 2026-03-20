@@ -33,12 +33,10 @@ export interface BufferedAudioNodeProperties {
 	readonly previousProperties?: BufferedAudioNodeProperties;
 	readonly bufferSize?: number;
 	readonly latency?: number;
+	readonly children?: ReadonlyArray<BufferedAudioNode>;
 }
 
 export type BufferedAudioNodeInput<P extends BufferedAudioNodeProperties = BufferedAudioNodeProperties> = P;
-
-// FIX: Get rid of this reexport
-export type { FileInputMeta, ModuleSchema } from "./schema";
 
 export abstract class BufferedAudioNode<P extends BufferedAudioNodeProperties = BufferedAudioNodeProperties> {
 	static readonly moduleName: string;
@@ -51,7 +49,7 @@ export abstract class BufferedAudioNode<P extends BufferedAudioNodeProperties = 
 		return typeof value === "object" && value !== null && "type" in value && Array.isArray(value.type) && value.type[0] === "buffered-audio-node";
 	}
 
-	readonly properties: P;
+	properties: P;
 
 	get id(): string | undefined {
 		return this.properties.id;
@@ -64,9 +62,23 @@ export abstract class BufferedAudioNode<P extends BufferedAudioNodeProperties = 
 		return this.properties.latency ?? 0;
 	}
 
-	// FIX: This method doesn't make sense for targets
-	getChildren(): ReadonlyArray<BufferedAudioNode> {
-		return [];
+	get isBypassed(): boolean {
+		return this.properties.bypass === true;
+	}
+
+	get children(): ReadonlyArray<BufferedAudioNode> {
+		const raw = this.properties.children ?? [];
+		const resolved: Array<BufferedAudioNode> = [];
+
+		for (const child of raw) {
+			if (child.isBypassed) {
+				resolved.push(...child.children);
+			} else {
+				resolved.push(child);
+			}
+		}
+
+		return resolved;
 	}
 
 	readonly streams: Array<BufferedStream> = [];
@@ -88,7 +100,7 @@ export abstract class BufferedAudioNode<P extends BufferedAudioNodeProperties = 
 
 		this.streams.length = 0;
 
-		for (const child of this.getChildren()) {
+		for (const child of this.children) {
 			await child.teardown();
 		}
 	}
