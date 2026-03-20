@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { loudnessStats } from ".";
 import { read } from "../../sources/read";
 
-const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../utils/test-voice.wav");
+const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/test-voice.wav");
 
 describe("loudness-stats", () => {
 	it("processes voice audio and produces stats", async () => {

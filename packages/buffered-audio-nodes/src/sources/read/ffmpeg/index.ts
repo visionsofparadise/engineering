@@ -38,6 +38,20 @@ export class ReadFfmpegStream<P extends ReadFfmpegProperties = ReadFfmpegPropert
 	override async getMetadata(): Promise<SourceMetadata> {
 		const probe = await this.probe(this.properties.ffprobePath, this.properties.path);
 		const selectedChannels = this.properties.channels;
+		const channels = selectedChannels ? selectedChannels.length : probe.channels;
+
+		return {
+			sampleRate: probe.sampleRate,
+			channels,
+			durationFrames: Math.round(probe.duration * probe.sampleRate),
+		};
+	}
+
+	private async ensureInitialized(): Promise<void> {
+		if (this.ffmpegProcess) return;
+
+		const probe = await this.probe(this.properties.ffprobePath, this.properties.path);
+		const selectedChannels = this.properties.channels;
 
 		this.outputChannels = selectedChannels ? selectedChannels.length : probe.channels;
 		this.sourceSampleRate = probe.sampleRate;
@@ -67,15 +81,11 @@ export class ReadFfmpegStream<P extends ReadFfmpegProperties = ReadFfmpegPropert
 		this.frameOffset = 0;
 
 		proc.stderr.resume();
-
-		return {
-			sampleRate: probe.sampleRate,
-			channels: this.outputChannels,
-			durationFrames: Math.round(probe.duration * probe.sampleRate),
-		};
 	}
 
 	override async _read(): Promise<AudioChunk | undefined> {
+		await this.ensureInitialized();
+
 		const bytesPerFrame = this.outputChannels * 4;
 		const targetBytes = DEFAULT_CHUNK_SIZE * bytesPerFrame;
 

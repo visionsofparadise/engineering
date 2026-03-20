@@ -15,7 +15,10 @@ export class DePlosiveStream extends BufferedTransformStream<DePlosiveProperties
 
 	override _buffer(chunk: AudioChunk, buffer: ChunkBuffer): void | Promise<void> {
 		if (this.bufferSize === 0) {
-			this.bufferSize = Math.round(chunk.sampleRate * 0.02);
+			const blockSize = Math.round(chunk.sampleRate * 0.02);
+
+			this.bufferSize = blockSize;
+			this.streamChunkSize = blockSize;
 		}
 
 		return super._buffer(chunk, buffer);

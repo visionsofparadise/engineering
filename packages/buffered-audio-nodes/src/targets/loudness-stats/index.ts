@@ -99,6 +99,8 @@ export class LoudnessStatsNode extends TargetNode {
 
 	override readonly type = ["buffered-audio-node", "target", "loudness-stats"] as const;
 
+	private cachedStats?: LoudnessStats;
+
 	constructor(properties?: TargetNodeProperties) {
 		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
 	}
@@ -106,7 +108,15 @@ export class LoudnessStatsNode extends TargetNode {
 	get stats(): LoudnessStats | undefined {
 		const last = this.streams[this.streams.length - 1];
 
-		return last instanceof LoudnessStatsStream ? last.stats : undefined;
+		return last instanceof LoudnessStatsStream ? last.stats : this.cachedStats;
+	}
+
+	override _teardown(): void {
+		const last = this.streams[this.streams.length - 1];
+
+		if (last instanceof LoudnessStatsStream && last.stats) {
+			this.cachedStats = last.stats;
+		}
 	}
 
 	override createStream(): LoudnessStatsStream {

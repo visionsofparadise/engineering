@@ -10,7 +10,7 @@ import { appendBenchmarkLog } from "../../utils/test-benchmark";
 import { binaries } from "../../utils/test-binaries";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const testVoice = resolve(here, "../utils/test-voice.wav");
+const testVoice = resolve(here, "../../utils/test-voice.wav");
 
 const configs = [
 	{ name: "spectrogram [js]", fftwAddonPath: "" },

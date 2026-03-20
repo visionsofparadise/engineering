@@ -7,7 +7,7 @@ import { write } from ".";
 import { read } from "../../sources/read";
 import { readWavSamples } from "../../utils/read-to-buffer";
 
-const testVoice = join(import.meta.dirname, "../utils/test-voice.wav");
+const testVoice = join(import.meta.dirname, "../../utils/test-voice.wav");
 
 describe("WriteModule", () => {
 	it("round-trips a WAV file with correct duration and sample rate", async () => {

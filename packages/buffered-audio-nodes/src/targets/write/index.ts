@@ -45,6 +45,7 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 	override async _setup(_context: StreamContext): Promise<void> {
 		this.bytesWritten = 0;
 		this.headerWritten = false;
+		this.initialized = false;
 
 		const encoding = this.properties.encoding;
 
