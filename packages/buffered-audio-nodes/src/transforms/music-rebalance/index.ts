@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, ExecutionProvider, StreamContext } from "../../node";
+import type { StreamContext } from "../../node";
 import { applyBandpass } from "../../utils/apply-bandpass";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { resampleDirect } from "../../utils/resample-direct";
-import { istft, stft } from "../../utils/stft";
+import { computeIstftScaled, computeStftScaled, reflectPad } from "./utils/dsp";
 
 export interface StemGains {
 	readonly vocals: number;
@@ -43,28 +43,18 @@ const OVERLAP = 0.25;
 const TRANSITION_POWER = 1.0;
 
 export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalanceProperties> {
-	private session?: OnnxSession;
-	private executionProviders: ReadonlyArray<ExecutionProvider> = [];
+	private session!: OnnxSession;
 
-	// FIX: Should be _setup()
-	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
-		this.executionProviders = context.executionProviders;
-
-		return super.setup(input, context);
-	}
-
-	private ensureSession(): OnnxSession {
-		if (this.session) return this.session;
+	override _setup(context: StreamContext): void {
 		const props = this.properties;
 
-		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(this.executionProviders) });
-
-		return this.session;
+		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(context.executionProviders) });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
+		// FIX: Don't do this indirection. Get rid of this habit throughout the codebase
 		const props = this.properties;
-		const session = this.ensureSession(); // FIX: This is the type of thing you do in setup, fix elsewhere too
+		const session = this.session;
 
 		const originalFrames = buffer.frames;
 		const channels = buffer.channels;
@@ -355,66 +345,4 @@ export function musicRebalance(
 		},
 		id: options?.id,
 	});
-}
-
-// --- DSP helpers ---
-
-function reflectPad(signal: Float32Array, padLeft: number, padRight: number, totalLen: number): Float32Array {
-	const result = new Float32Array(totalLen);
-
-	result.set(signal, padLeft);
-
-	for (let index = 0; index < padLeft; index++) {
-		result[padLeft - 1 - index] = result[padLeft + index] ?? 0;
-	}
-
-	const signalEnd = padLeft + signal.length - 1;
-
-	for (let index = 0; index < padRight; index++) {
-		result[signalEnd + index + 1] = result[signalEnd - index] ?? 0;
-	}
-
-	return result;
-}
-
-interface ComplexStft {
-	real: Array<Float32Array>;
-	imag: Array<Float32Array>;
-}
-
-function computeStftScaled(signal: Float32Array): ComplexStft {
-	const scale = 1 / Math.sqrt(FFT_SIZE);
-	const result = stft(signal, FFT_SIZE, HOP_SIZE);
-
-	for (const frame of result.real) {
-		for (let index = 0; index < frame.length; index++) {
-			frame[index] = (frame[index] ?? 0) * scale;
-		}
-	}
-
-	for (const frame of result.imag) {
-		for (let index = 0; index < frame.length; index++) {
-			frame[index] = (frame[index] ?? 0) * scale;
-		}
-	}
-
-	return result;
-}
-
-function computeIstftScaled(real: Array<Float32Array>, imag: Array<Float32Array>, outputLength: number): Float32Array {
-	const scale = Math.sqrt(FFT_SIZE);
-
-	for (const frame of real) {
-		for (let index = 0; index < frame.length; index++) {
-			frame[index] = (frame[index] ?? 0) * scale;
-		}
-	}
-
-	for (const frame of imag) {
-		for (let index = 0; index < frame.length; index++) {
-			frame[index] = (frame[index] ?? 0) * scale;
-		}
-	}
-
-	return istft({ real, imag, frames: real.length, fftSize: FFT_SIZE }, HOP_SIZE, outputLength);
 }

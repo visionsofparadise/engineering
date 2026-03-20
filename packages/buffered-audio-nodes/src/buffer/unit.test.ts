@@ -25,32 +25,6 @@ describe("MemoryChunkBuffer", () => {
 		expect(Array.from(chunk.samples[1]!)).toEqual([expect.closeTo(0.5), expect.closeTo(0.6), expect.closeTo(0.7), expect.closeTo(0.8)]);
 	});
 
-	it("transitions from memory to disk and reads still work", async () => {
-		// memoryLimit=256 => storageThreshold = max(1MB, 256*0.04) = 1MB
-		// With 1 channel: 1MB / 4 = 262144 frames. Need > 262144 to trigger.
-		buffer = new MemoryChunkBuffer(1024, 1, 256);
-
-		const bigChunk = new Float32Array(270000);
-		for (let i = 0; i < bigChunk.length; i++) bigChunk[i] = i / bigChunk.length;
-		await buffer.append([bigChunk]);
-
-		expect(buffer.frames).toBe(270000);
-
-		// Read back a slice and verify values survived the memory->file transition
-		const chunk = await buffer.read(0, 10);
-		expect(chunk.samples[0]?.length ?? 0).toBe(10);
-		for (let i = 0; i < 10; i++) {
-			expect(chunk.samples[0]![i]).toBeCloseTo(i / bigChunk.length, 5);
-		}
-
-		// Read from the middle
-		const mid = await buffer.read(135000, 5);
-		expect(mid.samples[0]?.length ?? 0).toBe(5);
-		for (let i = 0; i < 5; i++) {
-			expect(mid.samples[0]![i]).toBeCloseTo((135000 + i) / bigChunk.length, 5);
-		}
-	});
-
 	it("append empty array results in frames=0", async () => {
 		buffer = new MemoryChunkBuffer(1024, 1);
 
@@ -223,94 +197,6 @@ describe("MemoryChunkBuffer", () => {
 		expect(chunk.samples[1]![2]).toBeCloseTo(5);
 		expect(chunk.samples[1]![3]).toBeCloseTo(6);
 	});
-
-	it("preserves metadata after memory-to-file promotion", async () => {
-		buffer = new MemoryChunkBuffer(1024, 1, 256);
-
-		await buffer.append([new Float32Array(100)], 44100, 16);
-
-		// Force promotion with a large append
-		const bigChunk = new Float32Array(270000);
-		await buffer.append([bigChunk], 44100, 16);
-
-		expect(buffer.sampleRate).toBe(44100);
-		expect(buffer.bitDepth).toBe(16);
-
-		const chunk = await buffer.read(0, 1);
-		expect(chunk.sampleRate).toBe(44100);
-		expect(chunk.bitDepth).toBe(16);
-	});
-
-	it("setSampleRate works after memory-to-file promotion", async () => {
-		buffer = new MemoryChunkBuffer(1024, 1, 256);
-
-		const bigChunk = new Float32Array(270000);
-		await buffer.append([bigChunk], 44100, 16);
-
-		// After promotion, setSampleRate should propagate to delegate
-		buffer.setSampleRate(48000);
-		expect(buffer.sampleRate).toBe(48000);
-
-		const chunk = await buffer.read(0, 1);
-		expect(chunk.sampleRate).toBe(48000);
-	});
-
-	it("write works after memory-to-file promotion", async () => {
-		buffer = new MemoryChunkBuffer(1024, 1, 256);
-
-		const bigChunk = new Float32Array(270000);
-		for (let i = 0; i < bigChunk.length; i++) bigChunk[i] = 0;
-		await buffer.append([bigChunk]);
-
-		// After promotion, write should delegate
-		const patch = new Float32Array([0.5, 0.6, 0.7]);
-		await buffer.write(100, [patch]);
-
-		const chunk = await buffer.read(100, 3);
-		expect(chunk.samples[0]![0]).toBeCloseTo(0.5);
-		expect(chunk.samples[0]![1]).toBeCloseTo(0.6);
-		expect(chunk.samples[0]![2]).toBeCloseTo(0.7);
-	});
-
-	it("truncate works after memory-to-file promotion", async () => {
-		buffer = new MemoryChunkBuffer(1024, 1, 256);
-
-		const bigChunk = new Float32Array(270000);
-		await buffer.append([bigChunk]);
-
-		expect(buffer.frames).toBe(270000);
-
-		await buffer.truncate(1000);
-		expect(buffer.frames).toBe(1000);
-	});
-
-	it("reset works after memory-to-file promotion", async () => {
-		buffer = new MemoryChunkBuffer(1024, 1, 256);
-
-		const bigChunk = new Float32Array(270000);
-		await buffer.append([bigChunk]);
-
-		await buffer.reset();
-		expect(buffer.frames).toBe(0);
-	});
-
-	it("iterate works after memory-to-file promotion", async () => {
-		buffer = new MemoryChunkBuffer(1024, 1, 256);
-
-		const bigChunk = new Float32Array(270000);
-		for (let i = 0; i < bigChunk.length; i++) bigChunk[i] = i / bigChunk.length;
-		await buffer.append([bigChunk]);
-
-		const chunks = [];
-		for await (const chunk of buffer.iterate(100000)) {
-			chunks.push(chunk);
-		}
-
-		expect(chunks).toHaveLength(3); // 270000 / 100000 = 2.7 => 3 chunks
-		expect(chunks[0]!.samples[0]!.length).toBe(100000);
-		expect(chunks[1]!.samples[0]!.length).toBe(100000);
-		expect(chunks[2]!.samples[0]!.length).toBe(70000);
-	});
 });
 
 describe("FileChunkBuffer", () => {
@@ -321,7 +207,7 @@ describe("FileChunkBuffer", () => {
 	});
 
 	it("append and read back samples", async () => {
-		buffer = new FileChunkBuffer(2);
+		buffer = new FileChunkBuffer(1024, 2);
 
 		const left = new Float32Array([0.1, 0.2, 0.3]);
 		const right = new Float32Array([0.4, 0.5, 0.6]);
@@ -341,7 +227,7 @@ describe("FileChunkBuffer", () => {
 	});
 
 	it("read sub-range", async () => {
-		buffer = new FileChunkBuffer(1);
+		buffer = new FileChunkBuffer(1024, 1);
 
 		await buffer.append([new Float32Array([10, 20, 30, 40, 50])]);
 
@@ -351,7 +237,7 @@ describe("FileChunkBuffer", () => {
 	});
 
 	it("write overwrites data at offset", async () => {
-		buffer = new FileChunkBuffer(1);
+		buffer = new FileChunkBuffer(1024, 1);
 
 		await buffer.append([new Float32Array([1, 2, 3, 4, 5])]);
 		await buffer.write(2, [new Float32Array([30, 40])]);
@@ -361,7 +247,7 @@ describe("FileChunkBuffer", () => {
 	});
 
 	it("truncate shortens the buffer", async () => {
-		buffer = new FileChunkBuffer(1);
+		buffer = new FileChunkBuffer(1024, 1);
 
 		await buffer.append([new Float32Array([1, 2, 3, 4, 5])]);
 		await buffer.truncate(3);
@@ -372,7 +258,7 @@ describe("FileChunkBuffer", () => {
 	});
 
 	it("reset clears the buffer", async () => {
-		buffer = new FileChunkBuffer(1);
+		buffer = new FileChunkBuffer(1024, 1);
 
 		await buffer.append([new Float32Array([1, 2, 3])]);
 		await buffer.reset();
@@ -380,7 +266,7 @@ describe("FileChunkBuffer", () => {
 	});
 
 	it("iterate yields chunks", async () => {
-		buffer = new FileChunkBuffer(1);
+		buffer = new FileChunkBuffer(1024, 1);
 
 		await buffer.append([new Float32Array([1, 2, 3, 4, 5])]);
 
@@ -395,7 +281,7 @@ describe("FileChunkBuffer", () => {
 	});
 
 	it("captures and returns metadata", async () => {
-		buffer = new FileChunkBuffer(1);
+		buffer = new FileChunkBuffer(1024, 1);
 
 		await buffer.append([new Float32Array([1])], 96000, 24);
 		expect(buffer.sampleRate).toBe(96000);
@@ -407,12 +293,126 @@ describe("FileChunkBuffer", () => {
 	});
 
 	it("close cleans up and returns empty on read", async () => {
-		buffer = new FileChunkBuffer(1);
+		buffer = new FileChunkBuffer(1024, 1);
 
 		await buffer.append([new Float32Array([1, 2, 3])]);
 		await buffer.close();
 
 		const chunk = await buffer.read(0, 3);
 		expect(chunk.samples).toEqual([]);
+	});
+
+	it("transitions from memory to disk and reads still work", async () => {
+		// memoryLimit=256 => storageThreshold = max(1MB, 256*0.04) = 1MB
+		// With 1 channel: 1MB / 4 = 262144 frames. Need > 262144 to trigger.
+		buffer = new FileChunkBuffer(1024, 1, 256);
+
+		const bigChunk = new Float32Array(270000);
+		for (let i = 0; i < bigChunk.length; i++) bigChunk[i] = i / bigChunk.length;
+		await buffer.append([bigChunk]);
+
+		expect(buffer.frames).toBe(270000);
+
+		// Read back a slice and verify values survived the memory->file transition
+		const chunk = await buffer.read(0, 10);
+		expect(chunk.samples[0]?.length ?? 0).toBe(10);
+		for (let i = 0; i < 10; i++) {
+			expect(chunk.samples[0]![i]).toBeCloseTo(i / bigChunk.length, 5);
+		}
+
+		// Read from the middle
+		const mid = await buffer.read(135000, 5);
+		expect(mid.samples[0]?.length ?? 0).toBe(5);
+		for (let i = 0; i < 5; i++) {
+			expect(mid.samples[0]![i]).toBeCloseTo((135000 + i) / bigChunk.length, 5);
+		}
+	});
+
+	it("preserves metadata after memory-to-file flush", async () => {
+		buffer = new FileChunkBuffer(1024, 1, 256);
+
+		await buffer.append([new Float32Array(100)], 44100, 16);
+
+		// Force flush with a large append
+		const bigChunk = new Float32Array(270000);
+		await buffer.append([bigChunk], 44100, 16);
+
+		expect(buffer.sampleRate).toBe(44100);
+		expect(buffer.bitDepth).toBe(16);
+
+		const chunk = await buffer.read(0, 1);
+		expect(chunk.sampleRate).toBe(44100);
+		expect(chunk.bitDepth).toBe(16);
+	});
+
+	it("setSampleRate works after memory-to-file flush", async () => {
+		buffer = new FileChunkBuffer(1024, 1, 256);
+
+		const bigChunk = new Float32Array(270000);
+		await buffer.append([bigChunk], 44100, 16);
+
+		// After flush, setSampleRate should still work
+		buffer.setSampleRate(48000);
+		expect(buffer.sampleRate).toBe(48000);
+
+		const chunk = await buffer.read(0, 1);
+		expect(chunk.sampleRate).toBe(48000);
+	});
+
+	it("write works after memory-to-file flush", async () => {
+		buffer = new FileChunkBuffer(1024, 1, 256);
+
+		const bigChunk = new Float32Array(270000);
+		for (let i = 0; i < bigChunk.length; i++) bigChunk[i] = 0;
+		await buffer.append([bigChunk]);
+
+		// After flush, write should use file I/O
+		const patch = new Float32Array([0.5, 0.6, 0.7]);
+		await buffer.write(100, [patch]);
+
+		const chunk = await buffer.read(100, 3);
+		expect(chunk.samples[0]![0]).toBeCloseTo(0.5);
+		expect(chunk.samples[0]![1]).toBeCloseTo(0.6);
+		expect(chunk.samples[0]![2]).toBeCloseTo(0.7);
+	});
+
+	it("truncate works after memory-to-file flush", async () => {
+		buffer = new FileChunkBuffer(1024, 1, 256);
+
+		const bigChunk = new Float32Array(270000);
+		await buffer.append([bigChunk]);
+
+		expect(buffer.frames).toBe(270000);
+
+		await buffer.truncate(1000);
+		expect(buffer.frames).toBe(1000);
+	});
+
+	it("reset works after memory-to-file flush", async () => {
+		buffer = new FileChunkBuffer(1024, 1, 256);
+
+		const bigChunk = new Float32Array(270000);
+		await buffer.append([bigChunk]);
+
+		await buffer.reset();
+		expect(buffer.frames).toBe(0);
+	});
+
+	it("iterate works after memory-to-file flush", async () => {
+		buffer = new FileChunkBuffer(1024, 1, 256);
+
+		const bigChunk = new Float32Array(270000);
+		for (let i = 0; i < bigChunk.length; i++) bigChunk[i] = i / bigChunk.length;
+		await buffer.append([bigChunk]);
+
+		const chunks = [];
+		for await (const chunk of buffer.iterate(100000)) {
+			chunks.push(chunk);
+		}
+
+		expect(chunks).toHaveLength(3); // 270000 / 100000 = 2.7 => 3 chunks
+		expect(chunks[0]!.samples[0]!.length).toBe(100000);
+		expect(chunks[1]!.samples[0]!.length).toBe(100000);
+		expect(chunks[2]!.samples[0]!.length).toBe(70000);
 	});
 });

@@ -3,7 +3,7 @@ import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { read, ReadNode, ReadWavStream, ReadFfmpegStream } from ".";
+import { read, ReadNode, ReadWavStream, ReadFfmpegStream, ReadWavNode, ReadFfmpegNode, readWav, readFfmpeg } from ".";
 import { write } from "../../targets/write";
 import { readToBuffer, readWavSamples } from "../../utils/read-to-buffer";
 
@@ -37,6 +37,77 @@ describe("ReadNode", () => {
 		const node = new ReadNode({ path: "test.ogg", ffmpegPath: "", ffprobePath: "/usr/bin/ffprobe" });
 
 		await expect(node.getMetadata()).rejects.toThrow("Non-WAV file requires ffmpegPath and ffprobePath");
+	});
+});
+
+describe("ReadWavNode", () => {
+	it("creates a ReadWavNode via readWav convenience function", () => {
+		const node = readWav("test.wav");
+
+		expect(node).toBeInstanceOf(ReadWavNode);
+	});
+
+	it("creates a ReadWavNode with channel selection", () => {
+		const node = readWav("test.wav", { channels: [0] });
+
+		expect(node).toBeInstanceOf(ReadWavNode);
+	});
+
+	it("reads WAV file metadata correctly", async () => {
+		const node = readWav(testVoice);
+		const meta = await node.getMetadata();
+
+		expect(meta.sampleRate).toBeGreaterThan(0);
+		expect(meta.channels).toBeGreaterThan(0);
+		expect(meta.durationFrames).toBeGreaterThan(0);
+	}, 240_000);
+
+	it("renders a WAV file through ReadWavNode", async () => {
+		const tempOut = join(tmpdir(), `ban-readwav-${randomBytes(8).toString("hex")}.wav`);
+
+		try {
+			const source = readWav(testVoice);
+			const target = write(tempOut, { bitDepth: "32f" });
+			source.to(target);
+			await source.render();
+
+			const result = await readWavSamples(tempOut);
+			const expected = await readWavSamples(testVoice);
+
+			expect(result.sampleRate).toBe(expected.sampleRate);
+			expect(result.channels).toBe(expected.channels);
+			expect(result.durationFrames).toBe(expected.durationFrames);
+		} finally {
+			await unlink(tempOut).catch(() => undefined);
+		}
+	}, 240_000);
+
+	it("clones with overrides", () => {
+		const node = readWav("test.wav");
+		const cloned = node.clone({ path: "other.wav" });
+
+		expect(cloned).toBeInstanceOf(ReadWavNode);
+	});
+});
+
+describe("ReadFfmpegNode", () => {
+	it("creates a ReadFfmpegNode via readFfmpeg convenience function", () => {
+		const node = readFfmpeg("test.mp3", { ffmpegPath: "/usr/bin/ffmpeg", ffprobePath: "/usr/bin/ffprobe" });
+
+		expect(node).toBeInstanceOf(ReadFfmpegNode);
+	});
+
+	it("creates a ReadFfmpegNode with channel selection", () => {
+		const node = readFfmpeg("test.mp3", { channels: [0], ffmpegPath: "/usr/bin/ffmpeg", ffprobePath: "/usr/bin/ffprobe" });
+
+		expect(node).toBeInstanceOf(ReadFfmpegNode);
+	});
+
+	it("clones with overrides", () => {
+		const node = readFfmpeg("test.mp3", { ffmpegPath: "/usr/bin/ffmpeg", ffprobePath: "/usr/bin/ffprobe" });
+		const cloned = node.clone({ path: "other.flac" });
+
+		expect(cloned).toBeInstanceOf(ReadFfmpegNode);
 	});
 });
 

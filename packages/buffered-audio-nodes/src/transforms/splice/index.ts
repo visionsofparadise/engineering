@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
-import type { AudioChunk } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { readWavSamples } from "../../utils/read-to-buffer";
 
 export const schema = z.object({
@@ -13,17 +13,14 @@ export interface SpliceProperties extends z.infer<typeof schema>, TransformNodeP
 }
 
 export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
-	private insertSamples?: Array<Float32Array>;
+	private insertSamples!: Array<Float32Array>;
+	private insertSampleRate = 0;
 	private insertLength = 0;
+	private sampleRateChecked = false;
 
-	private async ensureInsertSamples(): Promise<void> {
-		if (this.insertSamples) return;
+	override async _setup(_context: StreamContext): Promise<void> {
 		const props = this.properties;
 		const { samples, sampleRate } = await readWavSamples(props.insertPath);
-
-		if (this.sampleRate !== undefined && sampleRate !== this.sampleRate) {
-			throw new Error(`Splice: insert file sample rate ${sampleRate} does not match stream sample rate ${this.sampleRate}`);
-		}
 
 		const targetChannels = props.channels;
 
@@ -36,11 +33,19 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 		}
 
 		this.insertSamples = samples;
+		this.insertSampleRate = sampleRate;
 		this.insertLength = samples[0]?.length ?? 0;
 	}
 
-	override async _unbuffer(chunk: AudioChunk): Promise<AudioChunk> {
-		await this.ensureInsertSamples();
+	override _unbuffer(chunk: AudioChunk): AudioChunk {
+		if (!this.sampleRateChecked) {
+			this.sampleRateChecked = true;
+
+			if (this.sampleRate !== undefined && this.insertSampleRate !== this.sampleRate) {
+				throw new Error(`Splice: insert file sample rate ${this.insertSampleRate} does not match stream sample rate ${this.sampleRate}`);
+			}
+		}
+
 		const props = this.properties;
 		const chunkFrames = chunk.samples[0]?.length ?? 0;
 		const chunkStart = chunk.offset;
@@ -65,7 +70,7 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 
 				if (primaryCh === undefined) continue;
 				const channelSamples = samples[primaryCh];
-				const insertChannel = this.insertSamples?.[insertCh];
+				const insertChannel = this.insertSamples[insertCh];
 
 				if (!channelSamples || !insertChannel) continue;
 
@@ -81,7 +86,7 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 		} else {
 			for (let ch = 0; ch < samples.length; ch++) {
 				const channelSamples = samples[ch];
-				const insertChannel = this.insertSamples?.[ch];
+				const insertChannel = this.insertSamples[ch];
 
 				if (!channelSamples || !insertChannel) continue;
 

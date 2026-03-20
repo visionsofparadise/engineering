@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, ExecutionProvider, StreamContext } from "../../node";
+import type { StreamContext } from "../../node";
 import { applyBandpass } from "../../utils/apply-bandpass";
 import { MixedRadixFft } from "../../utils/mixed-radix-fft";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { resampleDirect } from "../../utils/resample-direct";
-import { hanningWindow } from "../../utils/stft";
+import { stft7680IntoTensor, istft7680FromTensor } from "./utils/stft";
 
 export const schema = z.object({
 	modelPath: z
@@ -33,40 +33,29 @@ const HOP_SIZE = 1024;
 const DIM_F = 3072;
 const DIM_T = 256;
 const COMPENSATE = 1.009;
-const NB_BINS = N_FFT / 2 + 1; // 3841
 const SEGMENT_SAMPLES = N_FFT + (DIM_T - 1) * HOP_SIZE; // 268800
 const OVERLAP = 0.25;
 const TRANSITION_POWER = 1.0;
 const CHANNEL_STRIDE = DIM_F * DIM_T;
 
 export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsolateProperties> {
-	private session?: OnnxSession;
+	private session!: OnnxSession;
 	private fftInstance: MixedRadixFft;
-	private executionProviders: ReadonlyArray<ExecutionProvider> = [];
 
 	constructor(properties: DialogueIsolateProperties) {
 		super(properties);
 		this.fftInstance = new MixedRadixFft(N_FFT);
 	}
 
-	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
-		this.executionProviders = context.executionProviders;
-
-		return super.setup(input, context);
-	}
-
-	private ensureSession(): OnnxSession {
-		if (this.session) return this.session;
+	override _setup(context: StreamContext): void {
 		const props = this.properties;
 
-		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(this.executionProviders) });
-
-		return this.session;
+		this.session = createOnnxSession(props.onnxAddonPath, props.modelPath, { executionProviders: filterOnnxProviders(context.executionProviders) });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const props = this.properties;
-		const session = this.ensureSession();
+		const session = this.session;
 
 		const frames = buffer.frames;
 		const channels = buffer.channels;
@@ -237,74 +226,3 @@ export function dialogueIsolate(options: { modelPath: string; ffmpegPath: string
 	});
 }
 
-// --- STFT/iSTFT with direct tensor packing ---
-
-function stft7680IntoTensor(fft: MixedRadixFft, signal: Float32Array, tensor: Float32Array, realOffset: number, imagOffset: number): void {
-	const win = hanningWindow(N_FFT);
-	const windowed = fft.frameRe;
-	const zeros = fft.frameIm;
-
-	zeros.fill(0);
-
-	let frame = 0;
-
-	for (let start = 0; start + N_FFT <= signal.length; start += HOP_SIZE) {
-		for (let index = 0; index < N_FFT; index++) {
-			windowed[index] = (signal[start + index] ?? 0) * (win[index] ?? 0);
-		}
-
-		fft.fft(windowed, zeros, fft.outRe, fft.outIm);
-
-		for (let freq = 0; freq < DIM_F; freq++) {
-			tensor[realOffset + freq * DIM_T + frame] = fft.outRe[freq] ?? 0;
-			tensor[imagOffset + freq * DIM_T + frame] = fft.outIm[freq] ?? 0;
-		}
-
-		frame++;
-	}
-}
-
-function istft7680FromTensor(fft: MixedRadixFft, tensor: Float32Array, realOffset: number, imagOffset: number, numFrames: number, scale: number, output: Float32Array, windowSum: Float32Array): void {
-	const win = hanningWindow(N_FFT);
-	const fullRe = fft.frameRe;
-	const fullIm = fft.frameIm;
-	const outputLength = output.length;
-
-	for (let frame = 0; frame < numFrames; frame++) {
-		fullRe.fill(0);
-		fullIm.fill(0);
-
-		for (let freq = 0; freq < DIM_F; freq++) {
-			fullRe[freq] = (tensor[realOffset + freq * DIM_T + frame] ?? 0) * scale;
-			fullIm[freq] = (tensor[imagOffset + freq * DIM_T + frame] ?? 0) * scale;
-		}
-
-		for (let index = 1; index < NB_BINS - 1; index++) {
-			fullRe[N_FFT - index] = fullRe[index] ?? 0;
-			fullIm[N_FFT - index] = -(fullIm[index] ?? 0);
-		}
-
-		fft.ifft(fullRe, fullIm, fft.outRe, fft.outIm);
-
-		const frameOffset = frame * HOP_SIZE;
-
-		for (let index = 0; index < N_FFT; index++) {
-			const pos = frameOffset + index;
-
-			if (pos < outputLength) {
-				const wt = win[index] ?? 0;
-
-				output[pos] = (output[pos] ?? 0) + (fft.outRe[index] ?? 0) * wt;
-				windowSum[pos] = (windowSum[pos] ?? 0) + wt * wt;
-			}
-		}
-	}
-
-	for (let index = 0; index < outputLength; index++) {
-		const ws = windowSum[index] ?? 0;
-
-		if (ws > 1e-8) {
-			output[index] = (output[index] ?? 0) / ws;
-		}
-	}
-}

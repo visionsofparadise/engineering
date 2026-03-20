@@ -3,6 +3,7 @@ import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeP
 import type { ChunkBuffer } from "../../buffer";
 import { bandPassCoefficients, biquadFilter } from "../../utils/biquad";
 import { smoothEnvelope } from "../../utils/envelope";
+import { findRegions } from "./utils/regions";
 
 export const schema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
@@ -166,32 +167,6 @@ export class BreathControlNode extends TransformNode<BreathControlProperties> {
 	override clone(overrides?: Partial<BreathControlProperties>): BreathControlNode {
 		return new BreathControlNode({ ...this.properties, previousProperties: this.properties, ...overrides });
 	}
-}
-
-interface Region {
-	start: number;
-	end: number;
-}
-
-function findRegions(mask: Uint8Array, minDuration: number, length: number): Array<Region> {
-	const regions: Array<Region> = [];
-	let regionStart = -1;
-
-	for (let index = 0; index <= length; index++) {
-		const active = index < length && (mask[index] ?? 0) > 0;
-
-		if (active && regionStart === -1) {
-			regionStart = index;
-		} else if (!active && regionStart !== -1) {
-			if (index - regionStart >= minDuration) {
-				regions.push({ start: regionStart, end: index });
-			}
-
-			regionStart = -1;
-		}
-	}
-
-	return regions;
 }
 
 export function breathControl(options?: { sensitivity?: number; reduction?: number; mode?: "remove" | "attenuate"; id?: string }): BreathControlNode {

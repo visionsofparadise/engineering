@@ -18,6 +18,8 @@ export { setupPipeline } from "./executor";
 
 // Sources
 export { read, ReadNode, ReadWavStream, ReadFfmpegStream, type ReadProperties } from "./sources/read";
+export { ReadWavNode, readWav, readSample, wavSchema, type ReadWavProperties } from "./sources/read";
+export { ReadFfmpegNode, readFfmpeg, ffmpegSchema, type ReadFfmpegProperties } from "./sources/read";
 
 // Targets
 export { loudnessStats, LoudnessStatsNode, LoudnessStatsStream, type LoudnessStats } from "./targets/loudness-stats";

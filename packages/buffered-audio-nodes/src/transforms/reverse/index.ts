@@ -1,27 +1,25 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
-import { MemoryChunkBuffer, type ChunkBuffer } from "../../buffer";
+import { FileChunkBuffer, type ChunkBuffer } from "../../buffer";
 import type { AudioChunk, StreamContext } from "../../node";
 
 export const schema = z.object({});
 
 export class ReverseStream extends BufferedTransformStream {
-	private spareBuffer?: MemoryChunkBuffer;
+	private spareBuffer?: FileChunkBuffer;
 	private spareChunkSize = 44100;
 	private spareInitialized = false;
 	private reverseMemoryLimit?: number;
 
-	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+	override _setup(context: StreamContext): void {
 		this.reverseMemoryLimit = context.memoryLimit;
-
-		return super.setup(input, context);
 	}
 
 	private ensureSpareBuffer(chunk: AudioChunk): void {
 		if (this.spareInitialized) return;
 		this.spareInitialized = true;
 		this.spareChunkSize = chunk.sampleRate;
-		this.spareBuffer = new MemoryChunkBuffer(Infinity, chunk.samples.length, this.reverseMemoryLimit);
+		this.spareBuffer = new FileChunkBuffer(Infinity, chunk.samples.length, this.reverseMemoryLimit);
 	}
 
 	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {

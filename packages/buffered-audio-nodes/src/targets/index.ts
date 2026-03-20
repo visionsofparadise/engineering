@@ -11,8 +11,14 @@ export abstract class BufferedTargetStream<P extends TargetNodeProperties = Targ
 	abstract _write(chunk: AudioChunk): Promise<void>;
 	abstract _close(): Promise<void>;
 
-	setup(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<void> {
+	_setup(_context: StreamContext): Promise<void> | void {
+		return;
+	}
+
+	async setup(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<void> {
 		this.sourceTotalFrames = context.durationFrames;
+
+		await this._setup(context);
 
 		return readable.pipeTo(this.createWritableStream());
 	}

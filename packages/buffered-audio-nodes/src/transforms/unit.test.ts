@@ -69,7 +69,7 @@ class ScaleStream extends BufferedTransformStream {
 }
 
 class CompositeStream extends BufferedTransformStream {
-	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+	override async setup(input: ReadableStream<AudioChunk>, _context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		const first = new ScaleStream(2, {});
 		const second = new ScaleStream(0.5, {});
 		return input.pipeThrough(first.createTransformStream()).pipeThrough(second.createTransformStream());
