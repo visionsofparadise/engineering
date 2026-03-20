@@ -2,10 +2,11 @@
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
 import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
-import type { AudioChunk, ExecutionProvider, StreamContext } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { WHOLE_FILE } from "../../transforms";
 import { detectFftBackend, getFftAddon } from "../../utils/fft-backend";
 import { createFftWorkspace, fft, hanningWindow, type FftWorkspace } from "../../utils/stft";
+import { FREQUENCY_SCALE_BYTE, computeMelBandMappings, computeErbBandMappings, computeLogBandMappings } from "./utils/frequency";
 
 export const schema = z.object({
 	outputPath: z.string().default("").meta({ input: "file", mode: "save" }).describe("Output Path"),
@@ -57,12 +58,22 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 
 	private initialized = false;
 
-	private executionProviders: ReadonlyArray<ExecutionProvider> = [];
+	override async _setup(context: StreamContext): Promise<void> {
+		this.linearBins = this.properties.fftSize / 2 + 1;
+		this.windowCoefficients = hanningWindow(this.properties.fftSize);
+		this.workspace = createFftWorkspace(this.properties.fftSize);
 
-	override setup(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<void> {
-		this.executionProviders = context.executionProviders;
+		const fftAddonOptions = { fftwPath: this.properties.fftwAddonPath || undefined };
+		const fftBackend = detectFftBackend(context.executionProviders, fftAddonOptions);
 
-		return super.setup(readable, context);
+		this.addon = getFftAddon(fftBackend, fftAddonOptions);
+		this.magnitudes = new Float32Array(this.linearBins);
+		this.numFrames = 0;
+		this.fileOffset = HEADER_SIZE;
+		this.sampleBufferOffset = 0;
+		this.sampleBufferCapacity = this.properties.fftSize + (8 * 1024 * 1024) / 4;
+
+		this.fileHandle = await open(this.properties.outputPath, "w");
 	}
 
 	private async initialize(chunk: AudioChunk): Promise<void> {
@@ -70,15 +81,6 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 		this.initialized = true;
 
 		this.channels = chunk.samples.length;
-		this.linearBins = this.properties.fftSize / 2 + 1;
-
-		this.windowCoefficients = hanningWindow(this.properties.fftSize);
-		this.workspace = createFftWorkspace(this.properties.fftSize);
-
-		const fftAddonOptions = { fftwPath: this.properties.fftwAddonPath || undefined };
-		const fftBackend = detectFftBackend(this.executionProviders, fftAddonOptions);
-
-		this.addon = getFftAddon(fftBackend, fftAddonOptions);
 
 		const scale = this.properties.frequencyScale ?? "log";
 		const numBands = this.properties.numBands ?? 512;
@@ -95,19 +97,12 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 			this.outputBins = numBands;
 		}
 
-		this.magnitudes = new Float32Array(this.linearBins);
-		this.numFrames = 0;
-		this.fileOffset = HEADER_SIZE;
-
-		this.sampleBufferCapacity = this.properties.fftSize + (8 * 1024 * 1024) / 4;
 		this.sampleBuffers = [];
 		for (let ch = 0; ch < this.channels; ch++) {
 			this.sampleBuffers.push(new Float32Array(this.sampleBufferCapacity));
 		}
 
-		this.sampleBufferOffset = 0;
-
-		this.fileHandle = await open(this.properties.outputPath, "w");
+		if (!this.fileHandle) return;
 
 		const header = Buffer.alloc(HEADER_SIZE);
 
@@ -345,106 +340,6 @@ export class SpectrogramNode extends TargetNode<SpectrogramProperties> {
 	override clone(overrides?: Partial<SpectrogramProperties>): SpectrogramNode {
 		return new SpectrogramNode({ ...this.properties, previousProperties: this.properties, ...overrides });
 	}
-}
-
-export const FREQUENCY_SCALE_BYTE: Record<FrequencyScale, number> = { linear: 0, log: 1, mel: 2, erb: 3 };
-
-function freqToMel(freq: number): number {
-	return 2595 * Math.log10(1 + freq / 700);
-}
-
-function melToFreq(mel: number): number {
-	return 700 * (Math.pow(10, mel / 2595) - 1);
-}
-
-function freqToErb(freq: number): number {
-	return 21.4 * Math.log10(1 + 0.00437 * freq);
-}
-
-function erbToFreq(erb: number): number {
-	return (Math.pow(10, erb / 21.4) - 1) / 0.00437;
-}
-
-function computeScaledBandMappings(
-	numBands: number,
-	minFreq: number,
-	maxFreq: number,
-	sampleRate: number,
-	fftSize: number,
-	toScale: (f: number) => number,
-	fromScale: (s: number) => number,
-): ReadonlyArray<BandMapping> {
-	const scaleMin = toScale(minFreq);
-	const scaleMax = toScale(maxFreq);
-	const scaleStep = (scaleMax - scaleMin) / numBands;
-	const binWidth = sampleRate / fftSize;
-	const numLinearBins = fftSize / 2 + 1;
-
-	const mappings: Array<BandMapping> = [];
-
-	for (let band = 0; band < numBands; band++) {
-		const freqLow = fromScale(scaleMin + band * scaleStep);
-		const freqHigh = fromScale(scaleMin + (band + 1) * scaleStep);
-
-		const exactBinLow = freqLow / binWidth;
-		const exactBinHigh = freqHigh / binWidth;
-
-		const binStart = Math.max(0, Math.floor(exactBinLow));
-		const binEnd = Math.min(numLinearBins - 1, Math.ceil(exactBinHigh));
-
-		const weightStart = 1 - (exactBinLow - binStart);
-		const weightEnd = 1 - (binEnd - exactBinHigh);
-
-		mappings.push({
-			binStart,
-			binEnd: Math.max(binStart, binEnd),
-			weightStart: Math.max(0, Math.min(1, weightStart)),
-			weightEnd: Math.max(0, Math.min(1, weightEnd)),
-		});
-	}
-
-	return mappings;
-}
-
-function computeMelBandMappings(numBands: number, minFreq: number, maxFreq: number, sampleRate: number, fftSize: number): ReadonlyArray<BandMapping> {
-	return computeScaledBandMappings(numBands, minFreq, maxFreq, sampleRate, fftSize, freqToMel, melToFreq);
-}
-
-function computeErbBandMappings(numBands: number, minFreq: number, maxFreq: number, sampleRate: number, fftSize: number): ReadonlyArray<BandMapping> {
-	return computeScaledBandMappings(numBands, minFreq, maxFreq, sampleRate, fftSize, freqToErb, erbToFreq);
-}
-
-function computeLogBandMappings(numBands: number, minFreq: number, maxFreq: number, sampleRate: number, fftSize: number): ReadonlyArray<BandMapping> {
-	const logMin = Math.log(minFreq);
-	const logMax = Math.log(maxFreq);
-	const logStep = (logMax - logMin) / numBands;
-	const binWidth = sampleRate / fftSize;
-	const numLinearBins = fftSize / 2 + 1;
-
-	const mappings: Array<BandMapping> = [];
-
-	for (let band = 0; band < numBands; band++) {
-		const freqLow = Math.exp(logMin + band * logStep);
-		const freqHigh = Math.exp(logMin + (band + 1) * logStep);
-
-		const exactBinLow = freqLow / binWidth;
-		const exactBinHigh = freqHigh / binWidth;
-
-		const binStart = Math.max(0, Math.floor(exactBinLow));
-		const binEnd = Math.min(numLinearBins - 1, Math.ceil(exactBinHigh));
-
-		const weightStart = 1 - (exactBinLow - binStart);
-		const weightEnd = 1 - (binEnd - exactBinHigh);
-
-		mappings.push({
-			binStart,
-			binEnd: Math.max(binStart, binEnd),
-			weightStart: Math.max(0, Math.min(1, weightStart)),
-			weightEnd: Math.max(0, Math.min(1, weightEnd)),
-		});
-	}
-
-	return mappings;
 }
 
 export function spectrogram(

@@ -1,17 +1,13 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, StreamContext } from "../../node";
+import type { StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
+import { interpolateTfRegion, type SpectralRegion } from "./utils/interpolation";
 
-export interface SpectralRegion {
-	readonly startTime: number;
-	readonly endTime: number;
-	readonly startFreq: number;
-	readonly endFreq: number;
-}
+export type { SpectralRegion } from "./utils/interpolation";
 
 export const schema = z.object({
 	method: z.enum(["ar", "nmf"]).default("ar").describe("Method"),
@@ -42,13 +38,11 @@ export class SpectralRepairStream extends BufferedTransformStream<SpectralRepair
 	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
-	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+	override _setup(context: StreamContext): void {
 		const fft = initFftBackend(context.executionProviders, this.properties);
 
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
-
-		return super.setup(input, context);
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -120,95 +114,6 @@ export class SpectralRepairNode extends TransformNode<SpectralRepairProperties> 
 
 	override clone(overrides?: Partial<SpectralRepairProperties>): SpectralRepairNode {
 		return new SpectralRepairNode({ ...this.properties, previousProperties: this.properties, ...overrides });
-	}
-}
-
-/**
- * Jacobi-style iteration: reads from source arrays, writes to separate buffers,
- * then swaps. This avoids the directional bias of in-place (Gauss-Seidel) updates.
- */
-function interpolateTfRegion(real: Array<Float32Array>, imag: Array<Float32Array>, startFrame: number, endFrame: number, startBin: number, endBin: number): void {
-	const iterations = 5;
-	const clampedStart = Math.max(0, startFrame);
-	const clampedEnd = Math.min(real.length, endFrame);
-
-	if (clampedStart >= clampedEnd) return;
-
-	const halfSize = real[0]?.length ?? 0;
-	const clampedStartBin = Math.max(0, startBin);
-	const clampedEndBin = Math.min(halfSize, endBin);
-
-	// Allocate write buffers for the region
-	const regionFrames = clampedEnd - clampedStart;
-	const regionBins = clampedEndBin - clampedStartBin;
-	const writeReal = new Float32Array(regionFrames * regionBins);
-	const writeImag = new Float32Array(regionFrames * regionBins);
-
-	for (let iter = 0; iter < iterations; iter++) {
-		// Read from current state, write to buffers
-		for (let frame = clampedStart; frame < clampedEnd; frame++) {
-			const realFrame = real[frame];
-			const imagFrame = imag[frame];
-
-			if (!realFrame || !imagFrame) continue;
-
-			for (let bin = clampedStartBin; bin < clampedEndBin; bin++) {
-				let realSum = 0;
-				let imagSum = 0;
-				let count = 0;
-
-				const prevFrame = real[frame - 1];
-				const nextFrame = real[frame + 1];
-				const prevImag = imag[frame - 1];
-				const nextImag = imag[frame + 1];
-
-				if (prevFrame && prevImag) {
-					realSum += prevFrame[bin] ?? 0;
-					imagSum += prevImag[bin] ?? 0;
-					count++;
-				}
-
-				if (nextFrame && nextImag) {
-					realSum += nextFrame[bin] ?? 0;
-					imagSum += nextImag[bin] ?? 0;
-					count++;
-				}
-
-				if (bin > 0) {
-					realSum += realFrame[bin - 1] ?? 0;
-					imagSum += imagFrame[bin - 1] ?? 0;
-					count++;
-				}
-
-				if (bin < halfSize - 1) {
-					realSum += realFrame[bin + 1] ?? 0;
-					imagSum += imagFrame[bin + 1] ?? 0;
-					count++;
-				}
-
-				if (count > 0) {
-					const bufferIndex = (frame - clampedStart) * regionBins + (bin - clampedStartBin);
-
-					writeReal[bufferIndex] = realSum / count;
-					writeImag[bufferIndex] = imagSum / count;
-				}
-			}
-		}
-
-		// Copy write buffers back to source arrays
-		for (let frame = clampedStart; frame < clampedEnd; frame++) {
-			const realFrame = real[frame];
-			const imagFrame = imag[frame];
-
-			if (!realFrame || !imagFrame) continue;
-
-			for (let bin = clampedStartBin; bin < clampedEndBin; bin++) {
-				const bufferIndex = (frame - clampedStart) * regionBins + (bin - clampedStartBin);
-
-				realFrame[bin] = writeReal[bufferIndex] ?? 0;
-				imagFrame[bin] = writeImag[bufferIndex] ?? 0;
-			}
-		}
 	}
 }
 

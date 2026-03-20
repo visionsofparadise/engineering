@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { WaveFile } from "wavefile";
-import { MemoryChunkBuffer, type ChunkBuffer } from "../buffer";
+import { FileChunkBuffer, type ChunkBuffer } from "../buffer";
 import type { SourceMetadata } from "../sources";
 
 export interface WavSamples {
@@ -42,7 +42,7 @@ export interface ReadToBufferResult {
 
 export async function readToBuffer(path: string): Promise<ReadToBufferResult> {
 	const { samples, sampleRate, channels, durationFrames } = await readWavSamples(path);
-	const buffer = new MemoryChunkBuffer(durationFrames, channels);
+	const buffer = new FileChunkBuffer(durationFrames, channels);
 
 	await buffer.append(samples);
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
+import { findFirstAbove, findLastAbove } from "./utils/silence";
 
 export const schema = z.object({
 	threshold: z.number().min(0).max(1).multipleOf(0.001).default(0.001).describe("Threshold"),
@@ -89,30 +90,6 @@ export class TrimNode extends TransformNode<TrimProperties> {
 	override clone(overrides?: Partial<TrimProperties>): TrimNode {
 		return new TrimNode({ ...this.properties, previousProperties: this.properties, ...overrides });
 	}
-}
-
-function findFirstAbove(samples: Array<Float32Array>, frames: number, threshold: number): number {
-	for (let index = 0; index < frames; index++) {
-		for (const channel of samples) {
-			if (Math.abs(channel[index] ?? 0) > threshold) {
-				return index;
-			}
-		}
-	}
-
-	return frames;
-}
-
-function findLastAbove(samples: Array<Float32Array>, frames: number, threshold: number): number {
-	for (let index = frames - 1; index >= 0; index--) {
-		for (const channel of samples) {
-			if (Math.abs(channel[index] ?? 0) > threshold) {
-				return index;
-			}
-		}
-	}
-
-	return 0;
 }
 
 export function trim(options?: { threshold?: number; margin?: number; start?: boolean; end?: boolean; id?: string }): TrimNode {

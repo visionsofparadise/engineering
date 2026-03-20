@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, ExecutionProvider, StreamContext } from "../../node";
+import type { StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
@@ -46,33 +46,23 @@ const FFT_BINS = BLOCK_LEN / 2 + 1; // 257
 const LSTM_UNITS = 128;
 
 export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProperties> {
-	private session1?: OnnxSession;
-	private session2?: OnnxSession;
+	private session1!: OnnxSession;
+	private session2!: OnnxSession;
 	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
-	private executionProviders: ReadonlyArray<ExecutionProvider> = [];
 
-	override setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
-		this.executionProviders = context.executionProviders;
+	override _setup(context: StreamContext): void {
+		const props = this.properties;
+		const onnxProviders = filterOnnxProviders(context.executionProviders);
+
+		this.session1 = createOnnxSession(props.onnxAddonPath, props.modelPath1, { executionProviders: onnxProviders });
+		this.session2 = createOnnxSession(props.onnxAddonPath, props.modelPath2, { executionProviders: onnxProviders });
 
 		const cpuProviders = context.executionProviders.filter((ep) => ep !== "gpu");
 		const fft = initFftBackend(cpuProviders.length > 0 ? cpuProviders : ["cpu"], this.properties);
 
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
-
-		return super.setup(input, context);
-	}
-
-	private ensureSessions(): { session1: OnnxSession; session2: OnnxSession } {
-		if (this.session1 && this.session2) return { session1: this.session1, session2: this.session2 };
-		const props = this.properties;
-		const onnxProviders = filterOnnxProviders(this.executionProviders);
-
-		this.session1 = createOnnxSession(props.onnxAddonPath, props.modelPath1, { executionProviders: onnxProviders });
-		this.session2 = createOnnxSession(props.onnxAddonPath, props.modelPath2, { executionProviders: onnxProviders });
-
-		return { session1: this.session1, session2: this.session2 };
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -119,7 +109,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 	}
 
 	private processDtln(signal: Float32Array): Float32Array {
-		const { session1, session2 } = this.ensureSessions();
+		const { session1, session2 } = this;
 
 		const originalLength = signal.length;
 

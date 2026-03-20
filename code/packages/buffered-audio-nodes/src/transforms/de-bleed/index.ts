@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
+import type { StreamContext } from "../../node";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { replaceChannel } from "../../utils/replace-channel";
 
@@ -14,25 +15,22 @@ export const schema = z.object({
 export interface DeBleedProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
-	private referenceSignal?: Float32Array;
+	private referenceSignal!: Float32Array;
 
-	private async ensureReference(): Promise<Float32Array> {
-		if (this.referenceSignal) return this.referenceSignal;
+	override async _setup(_context: StreamContext): Promise<void> {
 		const { buffer: refBuffer } = await readToBuffer(this.properties.referencePath);
 		const chunk = await refBuffer.read(0, refBuffer.frames);
 		const channel = chunk.samples[0];
 
 		this.referenceSignal = channel ? Float32Array.from(channel) : new Float32Array(0);
 		await refBuffer.close();
-
-		return this.referenceSignal;
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const frames = buffer.frames;
 		const channels = buffer.channels;
 		const { filterLength, stepSize } = this.properties;
-		const reference = await this.ensureReference();
+		const reference = this.referenceSignal;
 
 		const output = new Float32Array(frames);
 		const filterCoeffs = new Float32Array(filterLength);

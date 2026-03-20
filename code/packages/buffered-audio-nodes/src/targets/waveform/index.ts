@@ -1,7 +1,7 @@
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
 import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
-import type { AudioChunk } from "../../node";
+import type { AudioChunk, StreamContext } from "../../node";
 import { WHOLE_FILE } from "../../transforms";
 
 export const schema = z.object({
@@ -31,9 +31,19 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 
 	private initialized = false;
 
-	// FIX: Only properties requiring the chunk should be initialized here, otherwise use _setup()
-	private async initialize(chunk: AudioChunk): Promise<void> {
+	override async _setup(_context: StreamContext): Promise<void> {
+		this.writeBufferOffset = 0;
+		this.writeBufferFileOffset = HEADER_SIZE;
+		this.totalPoints = 0;
+		this.fileOffset = HEADER_SIZE;
+		this.samplesInCurrentWindow = 0;
+
+		this.fileHandle = await open(this.properties.outputPath, "w");
+	}
+
+	private initialize(chunk: AudioChunk): void {
 		if (this.initialized) return;
+
 		this.initialized = true;
 
 		this.channels = chunk.samples.length;
@@ -44,13 +54,10 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 		const pointByteSize = this.channels * 8;
 
 		this.writeBuffer = Buffer.alloc(this.WRITE_BATCH_POINTS * pointByteSize);
-		this.writeBufferOffset = 0;
-		this.writeBufferFileOffset = HEADER_SIZE;
-		this.totalPoints = 0;
-		this.fileOffset = HEADER_SIZE;
-		this.samplesInCurrentWindow = 0;
+	}
 
-		this.fileHandle = await open(this.properties.outputPath, "w");
+	private async writeHeader(chunk: AudioChunk): Promise<void> {
+		if (!this.fileHandle) return;
 
 		const header = Buffer.alloc(HEADER_SIZE);
 
@@ -58,11 +65,16 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 		header.writeUInt32LE(this.channels, 4);
 		header.writeUInt32LE(this.properties.resolution, 8);
 		header.writeUInt32LE(0, 12);
+
 		await this.fileHandle.write(header, 0, HEADER_SIZE, 0);
 	}
 
 	override async _write(chunk: AudioChunk): Promise<void> {
-		await this.initialize(chunk);
+		if (!this.initialized) {
+			this.initialize(chunk);
+
+			await this.writeHeader(chunk);
+		}
 
 		const frames = chunk.samples[0]?.length ?? 0;
 
@@ -95,6 +107,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 
 		if (this.writeBufferOffset > 0) {
 			await fh.write(this.writeBuffer, 0, this.writeBufferOffset, this.writeBufferFileOffset);
+
 			this.writeBufferOffset = 0;
 		}
 
@@ -104,6 +117,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 
 		await fh.write(header, 0, 4, 12);
 		await fh.close();
+
 		this.fileHandle = undefined;
 	}
 
@@ -133,6 +147,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 
 	private async flushWriteBuffer(): Promise<void> {
 		if (this.writeBufferOffset === 0 || !this.fileHandle) return;
+
 		await this.fileHandle.write(this.writeBuffer, 0, this.writeBufferOffset, this.writeBufferFileOffset);
 		this.writeBufferFileOffset += this.writeBufferOffset;
 		this.writeBufferOffset = 0;

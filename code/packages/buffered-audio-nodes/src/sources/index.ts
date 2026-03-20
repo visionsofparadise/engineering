@@ -102,7 +102,7 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 
 		this.streams.push(stream);
 		const readable = stream.setup(context);
-		const promises = setupPipeline(this, readable, context);
+		const promises = await setupPipeline(this, readable, context);
 
 		await Promise.all(promises);
 	}

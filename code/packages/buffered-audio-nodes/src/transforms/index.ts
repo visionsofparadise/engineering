@@ -1,4 +1,4 @@
-import { MemoryChunkBuffer, type ChunkBuffer } from "../buffer";
+import { FileChunkBuffer, type ChunkBuffer } from "../buffer";
 import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "../node";
 import { BufferedStream } from "../stream";
 
@@ -45,6 +45,10 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 		return this.streamChunkSize ?? this.inferredChunkSize ?? 44100;
 	}
 
+	_setup(_context: StreamContext): Promise<void> | void {
+		return;
+	}
+
 	_buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> | void {
 		return buffer.append(chunk.samples, chunk.sampleRate, chunk.bitDepth);
 	}
@@ -57,9 +61,11 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 		return chunk;
 	}
 
-	setup(input: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+	async setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		this.sourceTotalFrames = context.durationFrames;
 		this.memoryLimit = context.memoryLimit;
+
+		await this._setup(context);
 
 		return input.pipeThrough(this.createTransformStream());
 	}
@@ -84,7 +90,7 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 
 		const channels = chunk.samples.length;
 
-		this.chunkBuffer ??= new MemoryChunkBuffer(this.bufferSize, channels, this.memoryLimit);
+		this.chunkBuffer ??= new FileChunkBuffer(this.bufferSize, channels, this.memoryLimit);
 
 		const samplesIn = chunkFrames;
 		const start = performance.now();
@@ -199,7 +205,9 @@ export abstract class TransformNode<P extends TransformNodeProperties = Transfor
 
 	readonly children: Array<BufferedAudioNode> = [];
 
-	override getChildren(): ReadonlyArray<BufferedAudioNode> { return this.children; }
+	override getChildren(): ReadonlyArray<BufferedAudioNode> {
+		return this.children;
+	}
 
 	to<T extends BufferedAudioNode>(child: T): T {
 		this.children.push(child);
@@ -209,7 +217,8 @@ export abstract class TransformNode<P extends TransformNodeProperties = Transfor
 
 	abstract createStream(): BufferedTransformStream;
 
-	setup(readable: ReadableStream<AudioChunk>, context: StreamContext): ReadableStream<AudioChunk> {
+	// FIX: Don't we need to recurse here?
+	async setup(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		const stream = this.createStream();
 
 		this.streams.push(stream);
