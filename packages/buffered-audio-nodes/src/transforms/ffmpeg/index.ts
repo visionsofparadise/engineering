@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
+import { FileChunkBuffer } from "../../buffer/file";
 import type { StreamContext } from "../../node";
-import { runFfmpeg } from "./utils/process";
+import { runFfmpeg, runFfmpegWithFile } from "./utils/process";
 
 export const schema = z.object({
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
@@ -45,11 +46,16 @@ export class FfmpegStream<P extends FfmpegProperties = FfmpegProperties> extends
 		this._ffmpegChannels = buffer.channels;
 		const sr = this.sampleRate ?? 44100;
 		const channels = buffer.channels;
-		const inputArgs = ["-f", "f32le", "-ar", String(sr), "-ac", String(channels), "-i", "pipe:0"];
 		const filterArgs = this._buildArgs(this.streamContext);
 		const outputArgs = this._buildOutputArgs(this.streamContext);
 
-		const result = await runFfmpeg(this.properties.ffmpegPath, [...inputArgs, ...filterArgs, ...outputArgs], buffer, channels);
+		const filePath = buffer instanceof FileChunkBuffer ? buffer.filePath : undefined;
+
+		const inputArgs = ["-f", "f32le", "-ar", String(sr), "-ac", String(channels), "-i", filePath ?? "pipe:0"];
+
+		const result = filePath
+			? await runFfmpegWithFile(this.properties.ffmpegPath, [...inputArgs, ...filterArgs, ...outputArgs], channels)
+			: await runFfmpeg(this.properties.ffmpegPath, [...inputArgs, ...filterArgs, ...outputArgs], buffer, channels);
 
 		await buffer.truncate(0);
 

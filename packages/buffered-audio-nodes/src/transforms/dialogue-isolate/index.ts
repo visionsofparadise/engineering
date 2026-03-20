@@ -7,7 +7,7 @@ import { MixedRadixFft } from "../../utils/mixed-radix-fft";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { resampleDirect } from "../../utils/resample-direct";
-import { stft7680IntoTensor, istft7680FromTensor } from "./utils/stft";
+import { buildTransitionWindow, createSegmentWorkspace, normalizeOverlapAdd, processSegment } from "./utils/segment";
 
 export const schema = z.object({
 	modelPath: z
@@ -30,13 +30,11 @@ export interface DialogueIsolateProperties extends z.infer<typeof schema>, Trans
 const SAMPLE_RATE = 44100;
 const N_FFT = 7680;
 const HOP_SIZE = 1024;
-const DIM_F = 3072;
 const DIM_T = 256;
 const COMPENSATE = 1.009;
 const SEGMENT_SAMPLES = N_FFT + (DIM_T - 1) * HOP_SIZE; // 268800
 const OVERLAP = 0.25;
 const TRANSITION_POWER = 1.0;
-const CHANNEL_STRIDE = DIM_F * DIM_T;
 
 export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsolateProperties> {
 	private session!: OnnxSession;
@@ -76,88 +74,26 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 		const outputLeft = new Float32Array(samples44k);
 		const outputRight = new Float32Array(samples44k);
 		const sumWeight = new Float32Array(samples44k);
-
-		const weight = new Float32Array(SEGMENT_SAMPLES);
-		const half = SEGMENT_SAMPLES / 2;
-
-		for (let index = 0; index < half; index++) {
-			weight[index] = Math.pow((index + 1) / half, TRANSITION_POWER);
-		}
-
-		for (let index = 0; index < half; index++) {
-			weight[SEGMENT_SAMPLES - 1 - index] = weight[index] ?? 0;
-		}
-
-		const fft = this.fftInstance;
-		const segLeft = new Float32Array(SEGMENT_SAMPLES);
-		const segRight = new Float32Array(SEGMENT_SAMPLES);
-		const inputData = new Float32Array(4 * CHANNEL_STRIDE);
-		const segOutLeft = new Float32Array(SEGMENT_SAMPLES);
-		const segOutRight = new Float32Array(SEGMENT_SAMPLES);
-		const istftWindowSum = new Float32Array(SEGMENT_SAMPLES);
+		const weight = buildTransitionWindow(SEGMENT_SAMPLES, TRANSITION_POWER);
+		const workspace = createSegmentWorkspace(SEGMENT_SAMPLES);
 
 		for (let offset = 0; offset < samples44k; offset += stride) {
 			const chunkLen = Math.min(SEGMENT_SAMPLES, samples44k - offset);
+			const processed = processSegment(left44k, right44k, offset, chunkLen, isMono, workspace, this.fftInstance, this.session, COMPENSATE);
 
-			segLeft.fill(0);
-
-			for (let index = 0; index < chunkLen; index++) {
-				segLeft[index] = left44k[offset + index] ?? 0;
-			}
-
-			inputData.fill(0);
-			stft7680IntoTensor(fft, segLeft, inputData, 0 * CHANNEL_STRIDE, 2 * CHANNEL_STRIDE);
-
-			if (isMono) {
-				inputData.copyWithin(1 * CHANNEL_STRIDE, 0 * CHANNEL_STRIDE, 1 * CHANNEL_STRIDE);
-				inputData.copyWithin(3 * CHANNEL_STRIDE, 2 * CHANNEL_STRIDE, 3 * CHANNEL_STRIDE);
-			} else {
-				segRight.fill(0);
-
-				for (let index = 0; index < chunkLen; index++) {
-					segRight[index] = right44k[offset + index] ?? 0;
-				}
-
-				stft7680IntoTensor(fft, segRight, inputData, 1 * CHANNEL_STRIDE, 3 * CHANNEL_STRIDE);
-			}
-
-			const result = this.session.run({
-				input: { data: inputData, dims: [1, 4, DIM_F, DIM_T] },
-			});
-
-			const modelOutput = result.output;
-
-			if (!modelOutput) continue;
-
-			segOutLeft.fill(0);
-			istftWindowSum.fill(0);
-			istft7680FromTensor(fft, modelOutput.data, 0 * CHANNEL_STRIDE, 2 * CHANNEL_STRIDE, DIM_T, COMPENSATE, segOutLeft, istftWindowSum);
-
-			if (isMono) {
-				segOutRight.set(segOutLeft);
-			} else {
-				segOutRight.fill(0);
-				istftWindowSum.fill(0);
-				istft7680FromTensor(fft, modelOutput.data, 1 * CHANNEL_STRIDE, 3 * CHANNEL_STRIDE, DIM_T, COMPENSATE, segOutRight, istftWindowSum);
-			}
+			if (!processed) continue;
 
 			for (let index = 0; index < chunkLen; index++) {
 				const wt = weight[index] ?? 1;
 
-				outputLeft[offset + index] = (outputLeft[offset + index] ?? 0) + (segOutLeft[index] ?? 0) * wt;
-				outputRight[offset + index] = (outputRight[offset + index] ?? 0) + (segOutRight[index] ?? 0) * wt;
+				outputLeft[offset + index] = (outputLeft[offset + index] ?? 0) + (processed.left[index] ?? 0) * wt;
+				outputRight[offset + index] = (outputRight[offset + index] ?? 0) + (processed.right[index] ?? 0) * wt;
 				sumWeight[offset + index] = (sumWeight[offset + index] ?? 0) + wt;
 			}
 		}
 
-		for (let index = 0; index < samples44k; index++) {
-			const sw = sumWeight[index] ?? 1;
-
-			if (sw > 0) {
-				outputLeft[index] = (outputLeft[index] ?? 0) / sw;
-				outputRight[index] = (outputRight[index] ?? 0) / sw;
-			}
-		}
+		normalizeOverlapAdd(outputLeft, sumWeight, samples44k);
+		normalizeOverlapAdd(outputRight, sumWeight, samples44k);
 
 		let finalLeft: Float32Array = outputLeft;
 		let finalRight: Float32Array = outputRight;

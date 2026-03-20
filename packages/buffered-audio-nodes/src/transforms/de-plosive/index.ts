@@ -2,6 +2,7 @@ import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
 import type { AudioChunk } from "../../node";
+import { detectPlosive, removePlosive } from "./utils/plosive";
 
 export const schema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
@@ -34,48 +35,17 @@ export class DePlosiveStream extends BufferedTransformStream<DePlosiveProperties
 		}
 
 		const samples = chunk.samples.map((channel, ch) => {
-			const output = new Float32Array(channel.length);
-			let lpVal = this.lpState[ch] ?? 0;
+			const detection = detectPlosive(channel, cutoffCoeff, threshold, this.lpState[ch] ?? 0);
 
-			let lowEnergy = 0;
-			let totalEnergy = 0;
+			this.lpState[ch] = detection.lpState;
 
-			for (const sample of channel) {
-				lpVal = lpVal * cutoffCoeff + sample * (1 - cutoffCoeff);
-				lowEnergy += lpVal * lpVal;
-				totalEnergy += sample * sample;
-			}
-
-			this.lpState[ch] = lpVal;
-
-			const lowRatio = totalEnergy > 0 ? lowEnergy / totalEnergy : 0;
-			const isPlosive = lowRatio > 0.5 && Math.sqrt(lowEnergy / channel.length) > threshold;
-
-			if (isPlosive) {
+			if (detection.isPlosive) {
 				const fadeLength = Math.min(channel.length, Math.round(chunk.sampleRate * 0.005));
-				let removalLpState = lpVal;
 
-				for (let index = 0; index < channel.length; index++) {
-					const sample = channel[index] ?? 0;
-
-					removalLpState = removalLpState * cutoffCoeff + sample * (1 - cutoffCoeff);
-					const filtered = sample - removalLpState * 0.8;
-
-					let fade = 1;
-
-					if (index < fadeLength) {
-						fade = index / fadeLength;
-					} else if (index > channel.length - fadeLength) {
-						fade = (channel.length - index) / fadeLength;
-					}
-
-					output[index] = sample * (1 - fade) + filtered * fade;
-				}
-			} else {
-				output.set(channel);
+				return removePlosive(channel, cutoffCoeff, detection.lpState, fadeLength);
 			}
 
-			return output;
+			return Float32Array.from(channel);
 		});
 
 		return { samples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };

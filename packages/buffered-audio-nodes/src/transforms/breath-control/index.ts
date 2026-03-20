@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
-import { bandPassCoefficients, biquadFilter } from "../../utils/biquad";
-import { smoothEnvelope } from "../../utils/envelope";
+import { buildGainEnvelope, computeBreathEnvelopes, expandBreathRegions } from "./utils/envelope";
 import { findRegions } from "./utils/regions";
 
 export const schema = z.object({
@@ -28,108 +27,27 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 
 		if (!channel) return;
 
-		// Step 1: Compute sample-level envelope trackers
-		const envSmooth = Math.round(sampleRate * 0.01);
-		const widebandEnv = new Float32Array(frames);
-		const breathBandEnv = new Float32Array(frames);
+		const { wideband, breathBand } = computeBreathEnvelopes(channel, sampleRate, 1000, 6000);
 
-		for (let index = 0; index < frames; index++) {
-			const sample = channel[index] ?? 0;
-
-			widebandEnv[index] = sample * sample;
-		}
-
-		const centerFreq = Math.sqrt(1000 * 6000);
-		const quality = centerFreq / (6000 - 1000);
-		const { fb, fa } = bandPassCoefficients(sampleRate, centerFreq, quality);
-		const breathBandSignal = biquadFilter(channel, fb, fa);
-
-		for (let index = 0; index < frames; index++) {
-			breathBandEnv[index] = (breathBandSignal[index] ?? 0) * (breathBandSignal[index] ?? 0);
-		}
-
-		const smoothSource = new Float32Array(frames);
-
-		smoothEnvelope(widebandEnv, envSmooth, smoothSource);
-		smoothEnvelope(breathBandEnv, envSmooth, smoothSource);
-
-		for (let index = 0; index < frames; index++) {
-			widebandEnv[index] = Math.sqrt(widebandEnv[index] ?? 0);
-			breathBandEnv[index] = Math.sqrt(breathBandEnv[index] ?? 0);
-		}
-
-		// Step 2: Sample-level breath detection
 		const speechThreshold = 0.015 * (1 - sensitivity * 0.5);
 		const breathThreshold = 0.002 * sensitivity;
 		const isBreath = new Uint8Array(frames);
 
 		for (let index = 0; index < frames; index++) {
-			const isSpeechGap = (widebandEnv[index] ?? 0) < speechThreshold;
-			const isBreathy = (breathBandEnv[index] ?? 0) > breathThreshold;
+			const isSpeechGap = (wideband[index] ?? 0) < speechThreshold;
+			const isBreathy = (breathBand[index] ?? 0) > breathThreshold;
 
 			isBreath[index] = isSpeechGap && isBreathy ? 1 : 0;
 		}
 
-		// Step 3: Find contiguous breath regions with minimum duration
 		const minBreathDuration = Math.round(sampleRate * 0.08);
 		const regions = findRegions(isBreath, minBreathDuration, frames);
 
-		// Step 4: Extend each region to the true start/end of the breath
-		const noiseFloor = speechThreshold * 0.3;
+		expandBreathRegions(regions, wideband, speechThreshold);
 
-		for (const region of regions) {
-			while (region.start > 0 && (widebandEnv[region.start - 1] ?? 0) < speechThreshold) {
-				region.start--;
-			}
-
-			while (region.end < frames && (widebandEnv[region.end] ?? 0) < speechThreshold) {
-				region.end++;
-			}
-
-			while (region.start < region.end && (widebandEnv[region.start] ?? 0) < noiseFloor) {
-				region.start++;
-			}
-
-			while (region.end > region.start && (widebandEnv[region.end - 1] ?? 0) < noiseFloor) {
-				region.end--;
-			}
-		}
-
-		// Step 5: Build gain envelope with smooth crossfades
 		const fadeLength = Math.round(sampleRate * 0.015);
-		const gainEnvelope = new Float32Array(frames);
+		const gainEnvelope = buildGainEnvelope(regions, frames, fadeLength, fadeLength, gainLinear);
 
-		gainEnvelope.fill(1);
-
-		for (const region of regions) {
-			for (let index = region.start; index < region.end; index++) {
-				gainEnvelope[index] = gainLinear;
-			}
-
-			// Fade in at start
-			for (let index = 0; index < fadeLength; index++) {
-				const pos = region.start - fadeLength + index;
-
-				if (pos >= 0 && pos < frames) {
-					const fadeIn = (index + 1) / (fadeLength + 1);
-
-					gainEnvelope[pos] = 1 + (gainLinear - 1) * fadeIn;
-				}
-			}
-
-			// Fade out at end
-			for (let index = 0; index < fadeLength; index++) {
-				const pos = region.end + index;
-
-				if (pos >= 0 && pos < frames) {
-					const fadeOut = 1 - (index + 1) / (fadeLength + 1);
-
-					gainEnvelope[pos] = 1 + (gainLinear - 1) * fadeOut;
-				}
-			}
-		}
-
-		// Step 6: Apply gain envelope to all channels
 		for (let ch = 0; ch < channels; ch++) {
 			const chData = allAudio.samples[ch];
 

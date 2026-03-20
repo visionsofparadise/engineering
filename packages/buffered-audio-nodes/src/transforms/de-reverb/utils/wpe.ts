@@ -1,4 +1,74 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loops with bounds-checked typed array access */
+
+export function computeBinPowerAndEnergy(
+	realT: Float32Array,
+	imagT: Float32Array,
+	numBins: number,
+	numFrames: number,
+	powerT: Float32Array,
+	binEnergy: Float32Array,
+): void {
+	const usedSize = numBins * numFrames;
+
+	for (let pos = 0; pos < usedSize; pos++) {
+		powerT[pos] = Math.max(realT[pos]! * realT[pos]! + imagT[pos]! * imagT[pos]!, 1e-10);
+	}
+
+	for (let bin = 0; bin < numBins; bin++) {
+		const offset = bin * numFrames;
+		let energy = 0;
+
+		for (let frame = 0; frame < numFrames; frame++) {
+			energy += powerT[offset + frame]!;
+		}
+
+		binEnergy[bin] = energy;
+	}
+}
+
+export function applyWpePrediction(
+	realT: Float32Array,
+	imagT: Float32Array,
+	originalPowerT: Float32Array,
+	binOffset: number,
+	numFrames: number,
+	predictionDelay: number,
+	filterLen: number,
+	filterReal: Float32Array,
+	filterImag: Float32Array,
+): void {
+	for (let frame = predictionDelay + filterLen; frame < numFrames; frame++) {
+		let predR = 0;
+		let predI = 0;
+
+		for (let tap = 0; tap < filterLen; tap++) {
+			const pastOffset = binOffset + frame - predictionDelay - tap - 1;
+			const pR = realT[pastOffset]!;
+			const pI = imagT[pastOffset]!;
+
+			predR += filterReal[tap]! * pR - filterImag[tap]! * pI;
+			predI += filterReal[tap]! * pI + filterImag[tap]! * pR;
+		}
+
+		const pos = binOffset + frame;
+		const newR = realT[pos]! - predR;
+		const newI = imagT[pos]! - predI;
+
+		const newPow = newR * newR + newI * newI;
+		const origPow = originalPowerT[pos]!;
+
+		if (newPow > origPow) {
+			const scale = Math.sqrt(origPow / newPow);
+
+			realT[pos] = newR * scale;
+			imagT[pos] = newI * scale;
+		} else {
+			realT[pos] = newR;
+			imagT[pos] = newI;
+		}
+	}
+}
+
 /**
  * Solve WPE filter for a single bin using transposed (bin-major) flat arrays.
  * binOffset is the starting index into the flat arrays for this bin.

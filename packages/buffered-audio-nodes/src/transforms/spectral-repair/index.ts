@@ -7,7 +7,6 @@ import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
 import { interpolateTfRegion, type SpectralRegion } from "./utils/interpolation";
 
-export type { SpectralRegion } from "./utils/interpolation";
 
 export const schema = z.object({
 	method: z.enum(["ar", "nmf"]).default("ar").describe("Method"),

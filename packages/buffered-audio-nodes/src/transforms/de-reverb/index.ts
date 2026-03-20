@@ -6,7 +6,8 @@ import type { StreamContext } from "../../node";
 import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
 import { replaceChannel } from "../../utils/replace-channel";
 import { istft, stft } from "../../utils/stft";
-import { solveWpeFilter } from "./utils/wpe";
+import { transposeToBinMajor, transposeToFrameMajor } from "./utils/transpose";
+import { applyWpePrediction, computeBinPowerAndEnergy, solveWpeFilter } from "./utils/wpe";
 
 export const schema = z.object({
 	predictionDelay: z.number().min(1).max(10).multipleOf(1).default(4).describe("Prediction Delay"),
@@ -104,41 +105,13 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 			const stftResult = stft(channel, fftSize, hopSize, stftOutput, this.fftBackend, this.fftAddonOptions);
 			const numFrames = stftResult.frames;
 
-			// Transpose to bin-major layout: flat array indexed as [bin * numFrames + frame]
-			// This makes the per-bin frame iteration sequential in memory
-			for (let frame = 0; frame < numFrames; frame++) {
-				const re = stftResult.real[frame];
-				const im = stftResult.imag[frame];
-
-				if (!re || !im) continue;
-
-				for (let bin = 0; bin < numBins; bin++) {
-					realT[bin * numFrames + frame] = re[bin]!;
-					imagT[bin * numFrames + frame] = im[bin]!;
-				}
-			}
-
-			// Original power per bin (bin-major), used as upper bound for clamping
-			const usedSize = numBins * numFrames;
-
-			for (let ci = 0; ci < usedSize; ci++) {
-				originalPowerT[ci] = Math.max(realT[ci]! * realT[ci]! + imagT[ci]! * imagT[ci]!, 1e-10);
-			}
-
-			// Compute per-bin energy to skip silent bins
-			for (let bin = 0; bin < numBins; bin++) {
-				const offset = bin * numFrames;
-				let energy = 0;
-
-				for (let frame = 0; frame < numFrames; frame++) {
-					energy += originalPowerT[offset + frame]!;
-				}
-
-				binEnergy[bin] = energy;
-			}
+			transposeToBinMajor(stftResult.real, stftResult.imag, numFrames, numBins, realT, imagT);
+			computeBinPowerAndEnergy(realT, imagT, numBins, numFrames, originalPowerT, binEnergy);
 
 			const meanEnergy = binEnergy.reduce((sum, sample) => sum + sample, 0) / numBins;
 			const energyThreshold = meanEnergy * 1e-4;
+
+			const usedSize = numBins * numFrames;
 
 			for (let iter = 0; iter < iterations; iter++) {
 				let powerT: Float32Array;
@@ -156,60 +129,17 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 				for (let bin = 0; bin < numBins; bin++) {
 					if (binEnergy[bin]! < energyThreshold) continue;
 
-					const bo = bin * numFrames; // bin offset into flat arrays
+					const bo = bin * numFrames;
 
 					filterReal.fill(0);
 					filterImag.fill(0);
 
 					solveWpeFilter(realT, imagT, powerT, bo, numFrames, predictionDelay, filterLen, filterReal, filterImag, corrReal, corrImag, crossReal, crossImag, arWork, aiWork, brWork, biWork);
-
-					// Apply prediction filter and subtract reverb estimate
-					for (let frame = predictionDelay + filterLen; frame < numFrames; frame++) {
-						let predR = 0;
-						let predI = 0;
-
-						for (let tap = 0; tap < filterLen; tap++) {
-							const pastOffset = bo + frame - predictionDelay - tap - 1;
-							const pR = realT[pastOffset]!;
-							const pI = imagT[pastOffset]!;
-
-							predR += filterReal[tap]! * pR - filterImag[tap]! * pI;
-							predI += filterReal[tap]! * pI + filterImag[tap]! * pR;
-						}
-
-						const pos = bo + frame;
-						const newR = realT[pos]! - predR;
-						const newI = imagT[pos]! - predI;
-
-						// Clamp: output power must not exceed original power
-						const newPow = newR * newR + newI * newI;
-						const origPow = originalPowerT[pos]!;
-
-						if (newPow > origPow) {
-							const scale = Math.sqrt(origPow / newPow);
-
-							realT[pos] = newR * scale;
-							imagT[pos] = newI * scale;
-						} else {
-							realT[pos] = newR;
-							imagT[pos] = newI;
-						}
-					}
+					applyWpePrediction(realT, imagT, originalPowerT, bo, numFrames, predictionDelay, filterLen, filterReal, filterImag);
 				}
 			}
 
-			// Transpose back to frame-major for iSTFT
-			for (let frame = 0; frame < numFrames; frame++) {
-				const re = stftResult.real[frame];
-				const im = stftResult.imag[frame];
-
-				if (!re || !im) continue;
-
-				for (let bin = 0; bin < numBins; bin++) {
-					re[bin] = realT[bin * numFrames + frame]!;
-					im[bin] = imagT[bin * numFrames + frame]!;
-				}
-			}
+			transposeToFrameMajor(realT, imagT, stftResult.real, stftResult.imag, numFrames, numBins);
 
 			const dereverberated = istft(stftResult, hopSize, paddedLength, this.fftBackend, this.fftAddonOptions).subarray(0, frames);
 

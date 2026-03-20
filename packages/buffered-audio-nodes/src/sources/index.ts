@@ -30,6 +30,7 @@ export abstract class BufferedSourceStream<P extends SourceNodeProperties = Sour
 		let done = false;
 
 		this.framesRead = 0;
+
 		const { signal, durationFrames: sourceTotalFrames, highWaterMark } = context;
 
 		return new ReadableStream<AudioChunk>(

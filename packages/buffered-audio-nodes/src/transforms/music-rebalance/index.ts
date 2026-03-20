@@ -6,7 +6,8 @@ import { applyBandpass } from "../../utils/apply-bandpass";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { resampleDirect } from "../../utils/resample-direct";
-import { computeIstftScaled, computeStftScaled, reflectPad } from "./utils/dsp";
+import { computeStftScaled, reflectPad } from "./utils/dsp";
+import { buildModelInput, extractStems, mixStems, normalizeAudio, type StftWorkspace } from "./utils/stems";
 
 export interface StemGains {
 	readonly vocals: number;
@@ -66,35 +67,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 
 		const frames = left.length;
 
-		const stereo = new Float32Array(2 * frames);
-
-		stereo.set(left, 0);
-		stereo.set(right, frames);
-
-		let sum = 0;
-
-		for (const sample of stereo) {
-			sum += sample;
-		}
-
-		const mean = sum / stereo.length;
-		let variance = 0;
-
-		for (const sample of stereo) {
-			const diff = sample - mean;
-
-			variance += diff * diff;
-		}
-
-		const std = Math.sqrt(variance / stereo.length) || 1;
-
-		const normalizedLeft = new Float32Array(frames);
-		const normalizedRight = new Float32Array(frames);
-
-		for (let index = 0; index < frames; index++) {
-			normalizedLeft[index] = ((left[index] ?? 0) - mean) / std;
-			normalizedRight[index] = ((right[index] ?? 0) - mean) / std;
-		}
+		const { normalizedLeft, normalizedRight, stats } = normalizeAudio(left, right, frames);
 
 		const stridesamples = Math.round((1 - OVERLAP) * SEGMENT_SAMPLES);
 		const stemOutputs = new Array<Float32Array>(4 * 2);
@@ -129,8 +102,6 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 
 		const segLeft = new Float32Array(SEGMENT_SAMPLES);
 		const segRight = new Float32Array(SEGMENT_SAMPLES);
-		const inputData = new Float32Array(2 * SEGMENT_SAMPLES);
-		const xData = new Float32Array(4 * xBinsConst * xFramesConst);
 
 		const freqRealBuffers: Array<Float32Array> = [];
 		const freqImagBuffers: Array<Float32Array> = [];
@@ -139,6 +110,17 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 			freqRealBuffers.push(new Float32Array(nbBinsConst));
 			freqImagBuffers.push(new Float32Array(nbBinsConst));
 		}
+
+		const workspace: StftWorkspace = {
+			freqRealBuffers,
+			freqImagBuffers,
+			nbFrames: nbFramesConst,
+			stftLen: stftLenConst,
+			stftPad: stftPadConst,
+			pad,
+			xBins: xBinsConst,
+			xFrames: xFramesConst,
+		};
 
 		for (let segmentOffset = 0; segmentOffset < frames; segmentOffset += stridesamples) {
 			const chunkLength = Math.min(SEGMENT_SAMPLES, frames - segmentOffset);
@@ -159,25 +141,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 			const stftLeft = computeStftScaled(stftInputLeft);
 			const stftRight = computeStftScaled(stftInputRight);
 
-			xData.fill(0);
-
-			for (let ch = 0; ch < 2; ch++) {
-				const stftCh = ch === 0 ? stftLeft : stftRight;
-
-				for (let freq = 0; freq < xBinsConst; freq++) {
-					for (let frame = 0; frame < xFramesConst; frame++) {
-						const realIdx = 2 * ch * xBinsConst * xFramesConst + freq * xFramesConst + frame;
-						const imagIdx = (2 * ch + 1) * xBinsConst * xFramesConst + freq * xFramesConst + frame;
-						const srcFrame = frame + 2;
-
-						xData[realIdx] = stftCh.real[srcFrame]?.[freq] ?? 0;
-						xData[imagIdx] = stftCh.imag[srcFrame]?.[freq] ?? 0;
-					}
-				}
-			}
-
-			inputData.set(segLeft, 0);
-			inputData.set(segRight, SEGMENT_SAMPLES);
+			const { inputData, xData } = buildModelInput(segLeft, segRight, stftLeft, stftRight, SEGMENT_SAMPLES, xBinsConst, xFramesConst);
 
 			const result = this.session.run({
 				input: { data: inputData, dims: [1, 2, SEGMENT_SAMPLES] },
@@ -185,57 +149,9 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 			});
 
 			const xtOut = result.add_67 ?? result[Object.keys(result).pop() ?? ""];
-
 			const xOut = result.output ?? result[Object.keys(result)[0] ?? ""];
 
-			for (let source = 0; source < 4; source++) {
-				for (let ch = 0; ch < 2; ch++) {
-					const xtIndex = source * 2 * SEGMENT_SAMPLES + ch * SEGMENT_SAMPLES;
-
-					for (let frame = 0; frame < nbFramesConst; frame++) {
-						freqRealBuffers[frame]?.fill(0);
-						freqImagBuffers[frame]?.fill(0);
-					}
-
-					if (xOut) {
-						const srcCh = ch;
-						const baseOffset = source * 4 * xBinsConst * xFramesConst;
-
-						for (let freq = 0; freq < xBinsConst; freq++) {
-							for (let frame = 0; frame < xFramesConst; frame++) {
-								const realIdx = baseOffset + 2 * srcCh * xBinsConst * xFramesConst + freq * xFramesConst + frame;
-								const imagIdx = baseOffset + (2 * srcCh + 1) * xBinsConst * xFramesConst + freq * xFramesConst + frame;
-								const destFrame = frame + 2;
-								const realArr = freqRealBuffers[destFrame];
-								const imagArr = freqImagBuffers[destFrame];
-
-								if (realArr && imagArr) {
-									realArr[freq] = xOut.data[realIdx] ?? 0;
-									imagArr[freq] = xOut.data[imagIdx] ?? 0;
-								}
-							}
-						}
-					}
-
-					const freqWaveform = computeIstftScaled(freqRealBuffers, freqImagBuffers, stftLenConst);
-
-					const freqOffset = stftPadConst + pad;
-
-					for (let index = 0; index < chunkLength; index++) {
-						const timeVal = xtOut ? (xtOut.data[xtIndex + index] ?? 0) : 0;
-						const freqVal = freqWaveform[freqOffset + index] ?? 0;
-						const combined = timeVal + freqVal;
-						const wt = weight[index] ?? 1;
-
-						const outIdx = source * 2 + ch;
-						const arr = stemOutputs[outIdx];
-
-						if (arr) {
-							arr[segmentOffset + index] = (arr[segmentOffset + index] ?? 0) + combined * wt;
-						}
-					}
-				}
-			}
+			extractStems(xtOut, xOut, workspace, stemOutputs, weight, segmentOffset, chunkLength, SEGMENT_SAMPLES);
 
 			for (let index = 0; index < chunkLength; index++) {
 				sumWeight[segmentOffset + index] = (sumWeight[segmentOffset + index] ?? 0) + (weight[index] ?? 0);
@@ -244,31 +160,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 
 		const { stems } = this.properties;
 		const stemGains = [stems.drums, stems.bass, stems.other, stems.vocals];
-		const outputChannels: Array<Float32Array> = [];
-
-		for (let ch = 0; ch < channels; ch++) {
-			const output = new Float32Array(frames);
-			const srcCh = Math.min(ch, 1);
-
-			for (let index = 0; index < frames; index++) {
-				const sw = sumWeight[index] ?? 1;
-				let normalizedSum = 0;
-
-				for (let source = 0; source < 4; source++) {
-					const gain = stemGains[source] ?? 1;
-
-					if (gain === 0) continue;
-
-					const arr = stemOutputs[source * 2 + srcCh];
-
-					normalizedSum += (arr ? (arr[index] ?? 0) / sw : 0) * gain;
-				}
-
-				output[index] = normalizedSum * std + mean;
-			}
-
-			outputChannels.push(output);
-		}
+		const outputChannels = mixStems(stemOutputs, sumWeight, stemGains, stats, frames, channels);
 
 		applyBandpass(outputChannels, HTDEMUCS_SAMPLE_RATE, this.properties.highPass, this.properties.lowPass);
 

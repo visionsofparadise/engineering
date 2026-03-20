@@ -2,6 +2,7 @@ import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
 import type { ChunkBuffer } from "../../buffer";
 import type { AudioChunk } from "../../node";
+import { computeRms, computeTargetGain } from "./utils/rms";
 
 export const schema = z.object({
 	target: z.number().min(-60).max(0).multipleOf(1).default(-20).describe("Target"),
@@ -42,27 +43,10 @@ export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
 
 		const { target, speed, maxGain, maxCut } = this.properties;
 
-		let rms = 0;
-		let sampleCount = 0;
+		const rms = computeRms(chunk.samples);
+		const targetGainDb = computeTargetGain(rms, target, maxGain, maxCut);
 
-		for (const channel of chunk.samples) {
-			for (const sample of channel) {
-				rms += sample * sample;
-				sampleCount++;
-			}
-		}
-
-		rms = sampleCount > 0 ? Math.sqrt(rms / sampleCount) : 0;
-
-		const rmsDb = 20 * Math.log10(Math.max(rms, 1e-10));
-
-		const GATE_THRESHOLD_DB = -60;
-
-		if (rmsDb > GATE_THRESHOLD_DB) {
-			let targetGainDb = target - rmsDb;
-
-			targetGainDb = Math.max(-maxCut, Math.min(maxGain, targetGainDb));
-
+		if (targetGainDb !== undefined) {
 			const alpha = 1 - Math.exp(-1 / (speed * (this.windowSamples / this.windowSeconds)));
 
 			this.currentGainDb += alpha * (targetGainDb - this.currentGainDb);
