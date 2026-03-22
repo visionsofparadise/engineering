@@ -71,6 +71,7 @@ export class Transient<V> {
 					_this._transient.set(undefined);
 					_this.isDirty = false;
 				}
+
 				_this.notify();
 			},
 		});
@@ -91,6 +92,7 @@ export class Transient<V> {
 	watch(listener: Transient.Listener<V>): () => void {
 		listener(this.value);
 		this._listeners.current.add(listener);
+
 		return () => this._listeners.current.delete(listener);
 	}
 
@@ -109,13 +111,16 @@ export class Transient<V> {
 			if (typeof value === "number" && typeof this.minimum === "number" && typeof this.maximum === "number") {
 				return Math.max(this.minimum, Math.min(this.maximum, value)) as unknown as V;
 			}
+
 			if (typeof value === "number" && typeof this.minimum === "number") {
 				return Math.max(this.minimum, value) as unknown as V;
 			}
+
 			if (typeof value === "number" && typeof this.maximum === "number") {
 				return Math.min(this.maximum, value) as unknown as V;
 			}
 		}
+
 		return value;
 	}
 

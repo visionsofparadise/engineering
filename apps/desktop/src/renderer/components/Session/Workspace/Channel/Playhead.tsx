@@ -14,6 +14,7 @@ export const Playhead: React.FC<PlayheadProps> = ({ context }) => {
 	useTransients([workspace.pixelsPerSecond, workspace.scrollX, playback.currentMs], () => {
 		if (!playheadRef.current) return;
 		const xPosition = msToPixels(playback.currentMs.value, workspace.pixelsPerSecond.value) - workspace.scrollX.value;
+
 		playheadRef.current.style.transform = `translateX(${xPosition}px)`;
 	});
 

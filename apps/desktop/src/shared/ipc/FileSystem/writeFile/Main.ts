@@ -7,6 +7,7 @@ export class WriteFileMainIpc extends AsyncMainIpc<WriteFileIpcParameters, Write
 
 	async handler(filePath: string, content: string, _dependencies: IpcHandlerDependencies): Promise<WriteFileIpcReturn> {
 		const tmpPath = `${filePath}.tmp`;
+
 		await fs.writeFile(tmpPath, content, "utf-8");
 		try {
 			await fs.rename(tmpPath, filePath);
@@ -14,6 +15,7 @@ export class WriteFileMainIpc extends AsyncMainIpc<WriteFileIpcParameters, Write
 			await fs.rm(tmpPath, { force: true }).catch(() => {});
 			throw error;
 		}
+
 		return undefined;
 	}
 }

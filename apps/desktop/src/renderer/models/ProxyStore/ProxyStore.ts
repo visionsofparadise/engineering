@@ -17,6 +17,7 @@ export class ProxyStore {
 
 		if (!proxy) {
 			if (import.meta.env.DEV) console.warn("ProxyStore.mutate: proxy not found for key", snapshot._key);
+
 			return;
 		}
 

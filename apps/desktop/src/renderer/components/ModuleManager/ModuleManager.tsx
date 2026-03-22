@@ -25,7 +25,9 @@ interface PackageUpdateState {
 
 function formatModuleCount(packageState: ModulePackageState): string {
 	const count = packageState.modules.length;
+
 	if (count === 0) return "No modules";
+
 	return `${count} module${count === 1 ? "" : "s"}`;
 }
 
@@ -38,6 +40,7 @@ export const ModuleManager: React.FC<ModuleManagerProps> = resnapshot(({ context
 
 	const handleInstall = async () => {
 		const trimmed = url.trim();
+
 		if (!trimmed) return;
 		setInstalling(true);
 		try {

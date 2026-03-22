@@ -15,6 +15,7 @@ export function useWorkspaceResize(context: SessionContext): (node: HTMLDivEleme
 			if (!node) return;
 
 			const rect = node.getBoundingClientRect();
+
 			sessionStore.mutate(workspace, (proxy) => {
 				proxy.viewportWidth.committed.value = rect.width;
 				proxy.viewportHeight.committed.value = rect.height;
@@ -22,6 +23,7 @@ export function useWorkspaceResize(context: SessionContext): (node: HTMLDivEleme
 
 			const observer = new ResizeObserver((entries) => {
 				const entry = entries[0];
+
 				if (!entry) return;
 
 				sessionStore.mutate(workspace, (proxy) => {

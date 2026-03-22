@@ -8,6 +8,7 @@ export interface WindowState {
 
 export interface AudioProgressEvent {
 	readonly jobId: string;
+	readonly nodeId?: string;
 	readonly moduleIndex: number;
 	readonly moduleName: string;
 	readonly framesProcessed: number;

@@ -37,6 +37,7 @@ export function useAutosave(app: Snapshot<AppState>, store: ProxyStore, main: Ma
 				clearTimeout(debounceRef.current);
 				debounceRef.current = null;
 				const json = JSON.stringify(proxy, null, 2);
+
 				void main.writeFile(statePath, json).catch(() => {});
 			}
 		};
@@ -53,6 +54,7 @@ export function useAutosave(app: Snapshot<AppState>, store: ProxyStore, main: Ma
 
 				// Flush pending save
 				const json = JSON.stringify(proxy, null, 2);
+
 				void main.writeFile(statePath, json).catch(() => {});
 			}
 		};

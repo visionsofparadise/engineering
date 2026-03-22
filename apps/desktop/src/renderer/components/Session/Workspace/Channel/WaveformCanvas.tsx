@@ -66,11 +66,13 @@ function drawSlice(
 			for (let pi = pStart; pi < pEnd; pi++) {
 				const mn = slice.data[pi * 2] ?? 0;
 				const mx = slice.data[pi * 2 + 1] ?? 0;
+
 				if (mn < pxMin) pxMin = mn;
 				if (mx > pxMax) pxMax = mx;
 			}
 
 			const x = drawX + px;
+
 			canvasContext.moveTo(x, centerY - pxMin * centerY);
 			canvasContext.lineTo(x, centerY - pxMax * centerY);
 		}
@@ -82,6 +84,7 @@ function drawSlice(
 			const min = slice.data[dataIndex * 2] ?? 0;
 			const max = slice.data[dataIndex * 2 + 1] ?? 0;
 			const x = drawX + index * pixelsPerPoint;
+
 			canvasContext.moveTo(x, centerY - min * centerY);
 			canvasContext.lineTo(x, centerY - max * centerY);
 		}
@@ -91,6 +94,7 @@ function drawSlice(
 
 	if (pixelsPerSample >= SAMPLE_MARKER_THRESHOLD && pointsPerPixel <= 1) {
 		const pixelsPerPoint = drawW / srcCount;
+
 		canvasContext.fillStyle = color;
 		const radius = Math.min(3, pixelsPerSample / 3);
 
@@ -127,12 +131,14 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({ channelIndex, co
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
+
 		if (!canvas || width <= 0 || height <= 0) return;
 
 		canvas.width = width;
 		canvas.height = height;
 
 		const canvasContext = canvas.getContext("2d");
+
 		if (!canvasContext) return;
 		canvasContext.clearRect(0, 0, width, height);
 

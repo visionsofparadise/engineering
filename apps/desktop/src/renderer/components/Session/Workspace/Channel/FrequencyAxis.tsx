@@ -14,12 +14,16 @@ interface FrequencyAxisProps {
 function formatFrequency(hz: number): string {
 	if (hz >= 10000) {
 		const kHz = hz / 1000;
+
 		return kHz === Math.floor(kHz) ? `${kHz}k` : `${kHz.toFixed(1)}k`;
 	}
+
 	if (hz >= 1000) {
 		const kHz = hz / 1000;
+
 		return kHz === Math.floor(kHz) ? `${kHz}k` : `${kHz.toFixed(1)}k`;
 	}
+
 	return String(Math.round(hz));
 }
 
@@ -72,11 +76,13 @@ function getScaleFunctions(scale: FrequencyScale): ScaleFunctions {
 function niceRound(value: number): number {
 	const sigFigs = value >= 10000 ? 2 : 1;
 	const magnitude = Math.pow(10, Math.floor(Math.log10(value)) - (sigFigs - 1));
+
 	return Math.round(value / magnitude) * magnitude;
 }
 
 function generateMarkers(min: number, max: number, height: number, scale: ScaleFunctions): Array<number> {
 	const count = Math.floor(height / MIN_PIXEL_GAP);
+
 	if (count < 1) return [];
 
 	const step = 1 / (count + 1);
@@ -87,6 +93,7 @@ function generateMarkers(min: number, max: number, height: number, scale: ScaleF
 	for (let index = 1; index <= count; index++) {
 		const freq = scale.fromNormalized(index * step, min, max);
 		const nice = niceRound(freq);
+
 		if (nice > min && nice < max && nice !== prev) {
 			markers.push(nice);
 			prev = nice;
@@ -108,11 +115,14 @@ export const FrequencyAxis: React.FC<FrequencyAxisProps> = ({ height, minFrequen
 
 	const visible: typeof positioned = [];
 	let lastLabel = "";
+
 	for (const marker of positioned) {
 		if (marker.y < 10 || marker.y > height - 4) continue;
 		const last = visible[visible.length - 1];
+
 		if (last && Math.abs(marker.y - last.y) < MIN_PIXEL_GAP) continue;
 		const label = formatFrequency(marker.freq);
+
 		if (label === lastLabel) continue;
 		lastLabel = label;
 		visible.push(marker);

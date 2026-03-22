@@ -38,8 +38,10 @@ export function useJobsState(store: ProxyStore, jobs: JobsState) {
 					for (const mod of job.modules) {
 						if (mod.activeJobId !== data.jobId) continue;
 						const progress = data.sourceTotalFrames ? data.framesProcessed / data.sourceTotalFrames : 0;
+
 						mod.status = "running";
 						mod.progress = Math.min(1, progress);
+
 						return;
 					}
 				}
@@ -89,9 +91,11 @@ export function useJobsState(store: ProxyStore, jobs: JobsState) {
 
 			store.mutate(jobs, (proxy) => {
 				const job = proxy.jobs.get(chainJobId);
+
 				if (!job) return;
 
 				const mod = job.modules[moduleIndex];
+
 				if (!mod) return;
 
 				mod.status = "running";
@@ -105,9 +109,11 @@ export function useJobsState(store: ProxyStore, jobs: JobsState) {
 		(chainJobId: string, moduleIndex: number) => {
 			store.mutate(jobs, (proxy) => {
 				const job = proxy.jobs.get(chainJobId);
+
 				if (!job) return;
 
 				const mod = job.modules[moduleIndex];
+
 				if (!mod) return;
 
 				mod.status = "completed";
@@ -121,6 +127,7 @@ export function useJobsState(store: ProxyStore, jobs: JobsState) {
 		(chainJobId: string, status: "completed" | "aborted") => {
 			store.mutate(jobs, (proxy) => {
 				const job = proxy.jobs.get(chainJobId);
+
 				if (!job) return;
 
 				job.status = status;

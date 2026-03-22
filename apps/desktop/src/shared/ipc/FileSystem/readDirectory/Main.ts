@@ -12,6 +12,7 @@ export class ReadDirectoryMainIpc extends AsyncMainIpc<ReadDirectoryIpcParameter
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
 				return [] as Array<string>;
 			}
+
 			throw error;
 		}
 	}

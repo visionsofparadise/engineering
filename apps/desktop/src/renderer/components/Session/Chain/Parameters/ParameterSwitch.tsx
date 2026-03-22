@@ -30,6 +30,7 @@ export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, prop
 			/>
 		);
 	}
+
 	if (property.type === "number") {
 		return (
 			<NumberParameter
@@ -42,6 +43,7 @@ export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, prop
 			/>
 		);
 	}
+
 	if (property.type === "boolean") {
 		return (
 			<BooleanParameter
@@ -53,6 +55,7 @@ export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, prop
 			/>
 		);
 	}
+
 	if (property.type === "string" && property.enum) {
 		return (
 			<EnumParameter
@@ -65,6 +68,7 @@ export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, prop
 			/>
 		);
 	}
+
 	if (property.type === "string") {
 		return (
 			<StringParameter
@@ -76,5 +80,6 @@ export const ParameterSwitch: React.FC<ParameterSwitchProps> = ({ fieldKey, prop
 			/>
 		);
 	}
+
 	return null;
 };

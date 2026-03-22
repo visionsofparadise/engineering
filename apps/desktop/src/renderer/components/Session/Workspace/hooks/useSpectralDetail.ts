@@ -36,6 +36,7 @@ export function useSpectralDetail(
 
 		// Use the ref for coverage checks to avoid depending on data state
 		const currentData = dataRef.current;
+
 		if (currentData.length !== channels && overviewData.length !== channels) return;
 
 		const specRange = computeVisibleFrameRange(scrollX, viewportWidth, pixelsPerSecond, spectrogramHeader);
@@ -46,11 +47,13 @@ export function useSpectralDetail(
 
 		for (let ch = 0; ch < channels; ch++) {
 			const channel = currentData[ch];
+
 			if (!channel) {
 				needsSpecDetail = true;
 				needsWaveDetail = true;
 				break;
 			}
+
 			if (!isViewportCovered(channel.spectrogramDetail, specRange.startFrame, specRange.endFrame)) needsSpecDetail = true;
 			if (!isViewportCovered(channel.waveformDetail, waveRange.startPoint, waveRange.endPoint)) needsWaveDetail = true;
 		}

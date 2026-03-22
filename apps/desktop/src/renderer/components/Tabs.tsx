@@ -13,6 +13,7 @@ function getTabDisplayName(tab: TabEntry): string {
 	if (GUID_PREFIX.test(tab.id)) {
 		return tab.id.replace(GUID_PREFIX, "");
 	}
+
 	return tab.label || tab.id;
 }
 
@@ -21,7 +22,7 @@ interface TabsProps {
 }
 
 export const Tabs: React.FC<TabsProps> = ({ context }) => {
-	const { app, appStore, main } = context;
+	const { app, appStore } = context;
 
 	const sessionTabs = app.tabs;
 
@@ -36,19 +37,10 @@ export const Tabs: React.FC<TabsProps> = ({ context }) => {
 
 	const handleTabClick = useCallback(
 		(tabId: string) => {
-			appStore.mutate(app, (proxy) => {
-				proxy.batchActive = false;
-			});
 			setActiveTab(tabId, { appStore, app });
 		},
 		[appStore, app],
 	);
-
-	const handleBatchToggle = useCallback(() => {
-		appStore.mutate(app, (proxy) => {
-			proxy.batchActive = !proxy.batchActive;
-		});
-	}, [appStore, app]);
 
 	return (
 		<div className="flex h-9 shrink-0 border-b border-border bg-[var(--surface-panel-header)]">
@@ -71,7 +63,7 @@ export const Tabs: React.FC<TabsProps> = ({ context }) => {
 												onClick={() => handleTabClick(tab.id)}
 												className={cn(
 													"group flex cursor-pointer items-center gap-1 border-r border-border px-5 text-xs transition-colors",
-													!app.batchActive && app.activeTabId === tab.id ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground",
+													app.activeTabId === tab.id ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground",
 													snapshot.isDragging && "opacity-50",
 												)}
 											>
@@ -79,7 +71,7 @@ export const Tabs: React.FC<TabsProps> = ({ context }) => {
 												<button
 													onClick={(ev) => {
 														ev.stopPropagation();
-														removeTab(tab.id, { appStore, app, main });
+														removeTab(tab.id, { appStore, app });
 													}}
 													className="ml-1 hidden rounded-sm p-0.5 hover:bg-accent group-hover:block"
 												>
@@ -96,16 +88,6 @@ export const Tabs: React.FC<TabsProps> = ({ context }) => {
 				</DragDropContext>
 				<ScrollBar orientation="horizontal" />
 			</ScrollArea>
-
-			<div
-				onClick={handleBatchToggle}
-				className={cn(
-					"flex cursor-pointer items-center border-l border-border px-5 text-xs transition-colors",
-					app.batchActive ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground",
-				)}
-			>
-				<span>Batch</span>
-			</div>
 		</div>
 	);
 };

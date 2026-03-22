@@ -8,6 +8,7 @@ export class StatMainIpc extends AsyncMainIpc<StatIpcParameters, StatIpcReturn> 
 	async handler(filePath: string, _dependencies: IpcHandlerDependencies): Promise<StatIpcReturn> {
 		try {
 			const stats = await fs.stat(filePath);
+
 			return {
 				size: stats.size,
 				modifiedAt: stats.mtimeMs,
@@ -16,6 +17,7 @@ export class StatMainIpc extends AsyncMainIpc<StatIpcParameters, StatIpcReturn> 
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
 				return null;
 			}
+
 			throw error;
 		}
 	}

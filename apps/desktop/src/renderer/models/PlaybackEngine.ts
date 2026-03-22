@@ -28,6 +28,7 @@ export class PlaybackEngine {
 
 			if (playback.isLooping) {
 				const bounds = this.getLoopBounds(this._selectionRef.current, this._sampleRate);
+
 				this._audio.currentTime = bounds.startMs / 1000;
 
 				void this._audio.play();
@@ -92,6 +93,7 @@ export class PlaybackEngine {
 
 	seek(ms: number): void {
 		const clamped = Math.max(0, Math.min(ms, this._durationMs));
+
 		this._audio.currentTime = clamped / 1000;
 
 		this._store.mutate(this._playbackRef.current, (proxy) => {
@@ -121,6 +123,7 @@ export class PlaybackEngine {
 
 	setVolume(value: number): void {
 		const clamped = Math.max(0, Math.min(1, value));
+
 		this._audio.volume = clamped;
 
 		this._store.mutate(this._playbackRef.current, (proxy) => {
@@ -130,6 +133,7 @@ export class PlaybackEngine {
 
 	setPlaybackRate(rate: number): void {
 		const clamped = Math.max(0.25, Math.min(4, rate));
+
 		this._audio.playbackRate = clamped;
 
 		this._store.mutate(this._playbackRef.current, (proxy) => {
@@ -165,6 +169,10 @@ export class PlaybackEngine {
 		return this._durationMs;
 	}
 
+	get sampleRate(): number {
+		return this._sampleRate;
+	}
+
 	dispose(): void {
 		this._stopRafLoop();
 
@@ -178,12 +186,14 @@ export class PlaybackEngine {
 
 		const tick = (): void => {
 			const currentMs = this._audio.currentTime * 1000;
+
 			this._store.mutate(this._playbackRef.current, (proxy) => {
 				proxy.currentMs.transient.value = currentMs;
 			});
 
 			if (this._playbackRef.current.isLooping) {
 				const bounds = this.getLoopBounds(this._selectionRef.current, this._sampleRate);
+
 				if (currentMs >= bounds.endMs && bounds.endMs > 0) {
 					this._audio.currentTime = bounds.startMs / 1000;
 				}

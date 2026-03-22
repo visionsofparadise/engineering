@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useTransients } from "../../../../hooks/useTransients";
 import type { SessionContext } from "../../../../models/Context";
 import { msToPixels, sampleFrameToMs } from "../../../../utils/time";
-import { useActiveSnapshotPath } from "../../hooks/useActiveSnapshotPath";
+import { useMonitoredSnapshotPath } from "../../hooks/useMonitoredSnapshotPath";
 import { useWaveformHeader } from "../hooks/useWaveformHeader";
 
 interface SelectionOverlayProps {
@@ -12,17 +12,19 @@ interface SelectionOverlayProps {
 
 export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ laneHeight, context }) => {
 	const { workspace, selection } = context;
-	const activeSnapshotPath = useActiveSnapshotPath(context);
+	const activeSnapshotPath = useMonitoredSnapshotPath(context);
 	const waveformHeader = useWaveformHeader(activeSnapshotPath);
 	const sampleRate = waveformHeader?.sampleRate ?? 44100;
 	const overlayRef = useRef<HTMLDivElement>(null);
 
 	useTransients([selection.startFrame, selection.endFrame, workspace.pixelsPerSecond, workspace.scrollX], () => {
 		const container = overlayRef.current;
+
 		if (!container) return;
 
 		if (!selection.active) {
 			container.style.display = "none";
+
 			return;
 		}
 
@@ -39,8 +41,10 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ laneHeight, 
 		const widthPx = msToPixels(maxMs - minMs, pps);
 
 		const channels = selection.channels;
+
 		if (channels.length === 0) {
 			container.style.display = "none";
+
 			return;
 		}
 

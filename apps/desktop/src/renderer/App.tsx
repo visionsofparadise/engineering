@@ -21,7 +21,9 @@ import { Logger } from "../shared/models/Logger/Logger";
 export const App: React.FC = () => {
 	const logger = useMemo(() => {
 		const logger = new Logger("renderer");
+
 		Logger.level = "debug";
+
 		return logger;
 	}, []);
 
@@ -127,6 +129,7 @@ const AppInner: React.FC<AppInnerProps> = ({ initialState, appStore, main: mainW
 	const handleRetryPackage = useCallback(
 		(index: number) => {
 			const config = context.app.packageUrls[index];
+
 			if (!config) return;
 			void initializePackage(config, index, context);
 		},

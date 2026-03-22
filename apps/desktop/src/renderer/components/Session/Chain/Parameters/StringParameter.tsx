@@ -11,6 +11,7 @@ interface StringParameterProps {
 
 export const StringParameter: React.FC<StringParameterProps> = ({ label, initialValue, onCommit, disabled }) => {
 	const [value, setValue] = useState(initialValue);
+
 	useEffect(() => setValue(initialValue), [initialValue]);
 
 	return (

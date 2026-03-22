@@ -1,4 +1,4 @@
-import { Cpu, Download, FileAudio, Flame, FolderOpen, Menu, Monitor, Moon, Package, Palette, Save, Sun, X } from "lucide-react";
+import { Cpu, FileAudio, Flame, FolderOpen, Menu, Monitor, Moon, Package, Palette, Save, Sun, X } from "lucide-react";
 import type { SpectralTheme } from "../models/State/App";
 import { useImportFile } from "../hooks/useImportFile";
 import type { AppContext } from "../models/Context";
@@ -27,21 +27,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context, onManagePackages, onM
 
 		const defaultName = activeTab.label.replace(/\.[^.]+$/, "");
 
-		const targetPath = await context.main.showSaveDialog({
+		const filePath = await context.main.showSaveDialog({
 			title: "Save Session",
-			defaultPath: `${defaultName}.eng`,
-			filters: [{ name: "Engineering Session", extensions: ["eng"] }],
+			defaultPath: `${defaultName}.bag`,
+			filters: [{ name: "BAG Session", extensions: ["bag"] }],
 		});
 
-		if (!targetPath) return;
+		if (!filePath) return;
 
-		await context.main.sessionSave({ sessionPath: activeTab.workingDir, targetPath });
+		// TODO: pass actual graphDefinition from editor state
+		await context.main.sessionSave({ filePath, graphDefinition: {} as never });
 	};
 
 	const handleOpenSession = async (): Promise<void> => {
 		const paths = await context.main.showOpenDialog({
 			title: "Open Session",
-			filters: [{ name: "Engineering Session", extensions: ["eng"] }],
+			filters: [{ name: "BAG Session", extensions: ["bag"] }],
 			properties: ["openFile"],
 		});
 
@@ -53,11 +54,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context, onManagePackages, onM
 
 		addTab(
 			{
-				id: result.sessionId,
+				id: crypto.randomUUID(),
 				label: result.label,
 				filePath,
-				workingDir: result.sessionPath,
-				activeSnapshotFolder: undefined,
 			},
 			{ app: context.app, appStore: context.appStore },
 		);
@@ -71,6 +70,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context, onManagePackages, onM
 		});
 
 		const filePath = paths?.[0];
+
 		if (filePath) {
 			importFile.mutate(filePath);
 		}
@@ -106,13 +106,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ context, onManagePackages, onM
 					>
 						<Save className="h-4 w-4" />
 						Save Session
-					</DropdownMenuItem>
-					<DropdownMenuItem
-						disabled={!context.app.activeTabId}
-						onClick={() => window.dispatchEvent(new Event("open-export-modal"))}
-					>
-						<Download className="h-4 w-4" />
-						Export
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem onClick={onManagePackages}>

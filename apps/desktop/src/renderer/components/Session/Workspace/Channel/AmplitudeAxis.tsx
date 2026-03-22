@@ -9,6 +9,7 @@ interface AmplitudeAxisProps {
 /** Convert dB to linear amplitude (0..1) */
 function dbToAmplitude(db: number): number {
 	if (db <= -96) return 0;
+
 	return Math.pow(10, db / 20);
 }
 

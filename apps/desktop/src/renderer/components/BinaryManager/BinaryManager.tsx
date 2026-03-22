@@ -19,6 +19,7 @@ function deriveBinaryEntries(context: AppContext): ReadonlyArray<BinaryEntry> {
 	for (const bundle of context.app.packages) {
 		for (const mod of bundle.modules) {
 			const properties = getProperties(mod.schema);
+
 			if (!properties) continue;
 
 			for (const prop of Object.values(properties)) {
@@ -60,6 +61,7 @@ export const BinaryManager: React.FC<BinaryManagerProps> = resnapshot(({ context
 		});
 
 		const selected = paths?.[0];
+
 		if (!selected) return;
 
 		context.appStore.mutate(context.app, (proxy) => {

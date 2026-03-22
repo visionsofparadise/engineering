@@ -1,8 +1,9 @@
+import type { GraphDefinition } from "buffered-audio-nodes";
 import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 
 export interface SaveSessionInput {
-	readonly sessionPath: string;
-	readonly targetPath: string;
+	readonly filePath: string;
+	readonly graphDefinition: GraphDefinition;
 }
 
 export type SaveSessionIpcParameters = [input: SaveSessionInput];

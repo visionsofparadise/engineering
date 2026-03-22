@@ -1,4 +1,4 @@
-import type { IdentifiedChain } from "../../../hooks/useChain";
+import type { IdentifiedChain } from "../../../models/Chain";
 import type { AppContext } from "../../../models/Context";
 import type { JobState } from "../../../models/State/Jobs";
 import { Button } from "../../ui/button";

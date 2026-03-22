@@ -1,6 +1,5 @@
 import { useImportFile } from "../hooks/useImportFile";
 import type { AppContext } from "../models/Context";
-import { Batch } from "./Batch";
 import { Session } from "./Session";
 import { EmptyState } from "./Session/EmptyState";
 
@@ -22,6 +21,7 @@ export const ActiveTab: React.FC<ActiveTabProps> = ({ context }: { context: AppC
 		});
 
 		const filePath = paths?.[0];
+
 		if (filePath) {
 			importFile.mutate(filePath);
 		}
@@ -33,10 +33,6 @@ export const ActiveTab: React.FC<ActiveTabProps> = ({ context }: { context: AppC
 				<span className="animate-pulse text-sm text-muted-foreground">Importing audio file...</span>
 			</div>
 		);
-	}
-
-	if (app.batchActive) {
-		return <Batch context={context} />;
 	}
 
 	const activeTab = app.tabs.find((tab) => tab.id === app.activeTabId);

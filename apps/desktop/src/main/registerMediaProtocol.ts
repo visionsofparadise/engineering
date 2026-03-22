@@ -70,6 +70,7 @@ export function registerMediaProtocol(): void {
 			const { start, end } = range;
 			const chunkSize = end - start + 1;
 			const handle = await open(filePath, "r");
+
 			try {
 				const buffer = Buffer.alloc(chunkSize);
 				const { bytesRead } = await handle.read(buffer, 0, chunkSize, start);

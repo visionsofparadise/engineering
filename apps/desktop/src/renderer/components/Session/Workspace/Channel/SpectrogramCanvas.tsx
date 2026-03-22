@@ -52,6 +52,7 @@ function renderSlice(
 	if (srcFrameCount <= 0) return;
 
 	const srcData = slice.data.subarray(srcStartFrame * numBins, srcEndFrame * numBins);
+
 	renderer.render(srcData, srcFrameCount, numBins, DB_RANGE, canvas, drawX, drawW, canvasHeight);
 }
 
@@ -79,6 +80,7 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = ({ channelInd
 	useEffect(() => {
 		rendererRef.current = new SpectrogramRenderer();
 		lastThemeRef.current = null;
+
 		return () => {
 			rendererRef.current?.dispose();
 			rendererRef.current = null;
@@ -88,12 +90,14 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = ({ channelInd
 	useEffect(() => {
 		const canvas = canvasRef.current;
 		const renderer = rendererRef.current;
+
 		if (!canvas || !renderer || width <= 0 || height <= 0) return;
 
 		canvas.width = width;
 		canvas.height = height;
 
 		const canvasContext = canvas.getContext("2d");
+
 		if (!canvasContext) return;
 		canvasContext.clearRect(0, 0, width, height);
 

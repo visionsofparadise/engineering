@@ -43,11 +43,13 @@ function flattenModules(app: Snapshot<AppState>): ReadonlyArray<FlatModule> {
 function fuzzyMatch(text: string, query: string): boolean {
 	const lower = text.toLowerCase();
 	const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+
 	return terms.every((term) => lower.includes(term));
 }
 
 function filterModules(modules: ReadonlyArray<FlatModule>, search: string): ReadonlyArray<FlatModule> {
 	if (!search) return modules;
+
 	return modules.filter((mod) => fuzzyMatch(mod.moduleName, search) || fuzzyMatch(mod.moduleDescription, search));
 }
 

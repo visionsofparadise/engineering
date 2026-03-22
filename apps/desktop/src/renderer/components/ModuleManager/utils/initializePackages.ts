@@ -56,6 +56,7 @@ export async function initializePackage(config: ModulePackageConfig, index: numb
 			description = packageJson.description;
 		} catch {
 			mutatePackage(appStore, app, index, { status: "error", error: "Failed to read package.json", modules: [...modules] });
+
 			return;
 		}
 

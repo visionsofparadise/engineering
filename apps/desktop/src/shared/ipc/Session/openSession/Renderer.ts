@@ -1,3 +1,4 @@
+import type { GraphDefinition } from "buffered-audio-nodes";
 import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 
 export interface OpenSessionInput {
@@ -5,8 +6,7 @@ export interface OpenSessionInput {
 }
 
 export interface OpenSessionResult {
-	readonly sessionId: string;
-	readonly sessionPath: string;
+	readonly graphDefinition: GraphDefinition;
 	readonly label: string;
 }
 

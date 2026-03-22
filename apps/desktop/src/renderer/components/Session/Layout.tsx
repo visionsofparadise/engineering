@@ -1,7 +1,5 @@
-import { Group, Panel, Separator } from "react-resizable-panels";
 import type { SessionContext } from "../../models/Context";
-import { ChainPanel } from "./Chain";
-import { History } from "./History";
+import { GraphEditor } from "./Graph";
 import { Transport } from "./Transport";
 import { Workspace } from "./Workspace";
 
@@ -15,22 +13,8 @@ export const SessionLayout: React.FC<SessionLayoutProps> = ({ context }) => (
 			<div className="min-w-0 flex-1">
 				<Workspace context={context} />
 			</div>
-			<div className="flex w-72 shrink-0 flex-col border-l border-border">
-				<Group orientation="vertical">
-					<Panel
-						defaultSize={60}
-						minSize={20}
-					>
-						<ChainPanel context={context} />
-					</Panel>
-					<Separator className="h-px bg-border hover:bg-ring transition-colors" />
-					<Panel
-						defaultSize={40}
-						minSize={15}
-					>
-						<History context={context} />
-					</Panel>
-				</Group>
+			<div className="flex w-[480px] shrink-0 flex-col border-l border-border">
+				<GraphEditor context={context} />
 			</div>
 		</div>
 		<Transport context={context} />

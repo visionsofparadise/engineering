@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { SessionContext, WorkspaceContext } from "../../../models/Context";
 import { resnapshot } from "../../../models/ProxyStore/resnapshot";
 import { clampPixelsPerSecond, getMinPixelsPerSecond, msToPixels } from "../../../utils/time";
-import { useActiveSnapshotPath } from "../hooks/useActiveSnapshotPath";
+import { useMonitoredSnapshotPath } from "../hooks/useMonitoredSnapshotPath";
 import { AMPLITUDE_AXIS_WIDTH, AmplitudeAxis } from "./Channel/AmplitudeAxis";
 import { CursorIndicator } from "./Channel/CursorIndicator";
 import { FREQUENCY_AXIS_WIDTH, FrequencyAxis } from "./Channel/FrequencyAxis";
@@ -24,7 +24,7 @@ interface WorkspaceProps {
 export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 	const { workspace, sessionStore } = context;
 
-	const activeSnapshotPath = useActiveSnapshotPath(context);
+	const activeSnapshotPath = useMonitoredSnapshotPath(context);
 	const waveformHeader = useWaveformHeader(activeSnapshotPath);
 	const spectrogramHeader = useSpectrogramHeader(activeSnapshotPath);
 	const durationMs = waveformHeader ? (waveformHeader.totalPoints / waveformHeader.resolution) * 1000 : 0;
@@ -61,6 +61,7 @@ export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 		if (!initialZoomApplied.current) return;
 
 		const viewportWidth = workspace.viewportWidth.value;
+
 		if (viewportWidth <= 0 || durationMs <= 0) return;
 
 		const currentPps = workspace.pixelsPerSecond.value;
@@ -112,7 +113,9 @@ export const Workspace: React.FC<WorkspaceProps> = resnapshot(({ context }) => {
 	if (!workspaceContext) {
 		return (
 			<div className="flex h-full items-center justify-center bg-background">
-				<p className="text-sm text-muted-foreground">Loading...</p>
+				<p className="text-sm text-muted-foreground">
+					{activeSnapshotPath ? "Loading..." : "No monitored node"}
+				</p>
 			</div>
 		);
 	}

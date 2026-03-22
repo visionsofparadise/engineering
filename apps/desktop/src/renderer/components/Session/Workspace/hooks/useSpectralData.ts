@@ -29,12 +29,14 @@ export function emptyChannel(): ChannelSpectralData {
 
 export function isViewportCovered(detail: SpectralSlice | null, visibleStart: number, visibleEnd: number): boolean {
 	if (!detail) return false;
+
 	return detail.startIndex <= visibleStart && detail.endIndex >= visibleEnd;
 }
 
 export function expandRange(start: number, end: number, max: number): { start: number; end: number } {
 	const range = end - start;
 	const padding = Math.floor(range * 0.25);
+
 	return {
 		start: Math.max(0, start - padding),
 		end: Math.min(max, end + padding),
@@ -111,10 +113,13 @@ export async function loadWaveformSlice(
 
 function useDebounce<T>(value: T, delayMs: number): T {
 	const [debounced, setDebounced] = useState(value);
+
 	useEffect(() => {
 		const timer = setTimeout(() => setDebounced(value), delayMs);
+
 		return () => clearTimeout(timer);
 	}, [value, delayMs]);
+
 	return debounced;
 }
 

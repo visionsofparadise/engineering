@@ -47,6 +47,7 @@ export function useSpectrogramHeader(snapshotPath: string): SpectrogramHeader | 
 	const query = useQuery({
 		queryKey: ["spectrogramHeader", snapshotPath],
 		queryFn: () => loadSpectrogramHeader(`${snapshotPath}/spectrogram.bin`),
+		enabled: !!snapshotPath,
 	});
 
 	return query.data;

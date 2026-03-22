@@ -23,6 +23,7 @@ export function viridisColor(normalized: number): readonly [number, number, numb
 
 	const lo = CONTROL_POINTS[index];
 	const hi = CONTROL_POINTS[index + 1];
+
 	if (!lo || !hi) return [0, 0, 0];
 
 	return [

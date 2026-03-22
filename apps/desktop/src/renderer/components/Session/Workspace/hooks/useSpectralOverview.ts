@@ -37,9 +37,11 @@ export function useSpectralOverview(
 				if (generationRef.current !== generation) return;
 
 				const spectrogramOverview = await loadSpectrogramSlice(specPath, ch, spectrogramHeader, 0, spectrogramHeader.numFrames, specStride);
+
 				if (generationRef.current !== generation) return;
 
 				const waveformOverview = await loadWaveformSlice(wavePath, ch, waveformHeader, 0, waveformHeader.totalPoints, waveStride);
+
 				if (generationRef.current !== generation) return;
 
 				result.push({ spectrogramOverview, spectrogramDetail: null, waveformOverview, waveformDetail: null });
