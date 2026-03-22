@@ -4,6 +4,7 @@ import { createWindow } from "./createWindow";
 import { registerMediaProtocol, registerMediaScheme } from "./registerMediaProtocol";
 
 const logger = new Logger("main");
+
 Logger.level = "debug";
 
 registerMediaScheme();

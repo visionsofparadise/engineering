@@ -15,11 +15,14 @@ export const CursorIndicator: React.FC<CursorIndicatorProps> = ({ context }) => 
 
 	useTransients([workspace.cursorX, workspace.scrollX, workspace.pixelsPerSecond], () => {
 		const indicator = indicatorRef.current;
+
 		if (!indicator) return;
 
 		const cursorX = workspace.cursorX.value;
+
 		if (cursorX < 0) {
 			indicator.style.opacity = "0";
+
 			return;
 		}
 
@@ -28,6 +31,7 @@ export const CursorIndicator: React.FC<CursorIndicatorProps> = ({ context }) => 
 
 		if (labelRef.current) {
 			const ms = pixelsToMs(cursorX + workspace.scrollX.value, workspace.pixelsPerSecond.value);
+
 			labelRef.current.textContent = formatTime(Math.max(0, ms));
 		}
 	});

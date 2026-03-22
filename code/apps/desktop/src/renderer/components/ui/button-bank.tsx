@@ -15,6 +15,7 @@ const ButtonBank = React.forwardRef<HTMLDivElement, ButtonBankProps>(
 		<div ref={ref} className={cn("flex flex-wrap gap-1.5", className)}>
 			{options.map((option) => {
 				const isActive = option === value;
+
 				return (
 					<button
 						key={option}
@@ -50,6 +51,7 @@ const ButtonBank = React.forwardRef<HTMLDivElement, ButtonBankProps>(
 		</div>
 	),
 );
+
 ButtonBank.displayName = "ButtonBank";
 
 export { ButtonBank };

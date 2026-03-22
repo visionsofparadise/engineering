@@ -9,41 +9,11 @@ import type { ProxyStore } from "../ProxyStore/ProxyStore";
 // Schemas
 // ---------------------------------------------------------------------------
 
-const ChainModuleReferenceSchema = z.object({
-	package: z.string().min(1),
-	module: z.string().min(1),
-	label: z.string().optional(),
-	options: z.record(z.string(), z.unknown()).optional(),
-	bypass: z.boolean().optional(),
-});
-
-const BatchTargetSchema = z.object({
-	outputDir: z.string(),
-	template: z.string(),
-	format: z.enum(["wav", "flac", "mp3", "aac"]),
-	bitDepth: z.enum(["16", "24", "32", "32f"]).optional(),
-	bitrate: z.string().optional(),
-	vbr: z.number().optional(),
-});
-
-const BatchFileSchema = z.object({
-	path: z.string(),
-	jobId: z.string().optional(),
-});
-
-const BatchConfigSchema = z.object({
-	transforms: z.array(ChainModuleReferenceSchema).readonly(),
-	target: BatchTargetSchema,
-	concurrency: z.number(),
-	files: z.array(BatchFileSchema).readonly(),
-});
 
 const TabEntrySchema = z.object({
 	id: z.string(),
 	label: z.string(),
 	filePath: z.string(),
-	workingDir: z.string(),
-	activeSnapshotFolder: z.string().optional(),
 });
 
 const ModulePackageConfigSchema = z.object({
@@ -76,12 +46,10 @@ const WindowStateSchema = z.object({
 
 export const AppStateSchema = z.object({
 	activeTabId: z.string().optional(),
-	batchActive: z.boolean(),
 	tabs: z.array(TabEntrySchema).readonly(),
 	theme: z.enum(["light", "dark", "system"]),
 	spectralTheme: z.enum(["lava", "viridis"]),
 	windowState: WindowStateSchema.optional(),
-	batch: BatchConfigSchema,
 	binaries: z.record(z.string(), z.string()),
 	packageUrls: z.array(ModulePackageConfigSchema).readonly(),
 	packages: z.array(ModulePackageStateSchema).readonly(),
@@ -93,9 +61,6 @@ export const AppStateSchema = z.object({
 
 export type Theme = z.infer<typeof AppStateSchema>["theme"];
 export type SpectralTheme = z.infer<typeof AppStateSchema>["spectralTheme"];
-export type BatchTarget = z.infer<typeof BatchTargetSchema>;
-export type BatchFile = z.infer<typeof BatchFileSchema>;
-export type BatchConfig = z.infer<typeof BatchConfigSchema>;
 export type TabEntry = z.infer<typeof TabEntrySchema>;
 export type ModulePackageConfig = z.infer<typeof ModulePackageConfigSchema>;
 export type LoadedModuleInfo = z.infer<typeof LoadedModuleInfoSchema>;
@@ -106,34 +71,29 @@ async function deriveTabsFromSessions(main: MainWithEvents, userDataPath: string
 	const sessionsDir = `${userDataPath}/sessions`;
 
 	try {
-		const folders = await main.readDirectory(sessionsDir);
+		const entries = await main.readDirectory(sessionsDir);
 		const tabs: Array<TabEntry> = [];
 
-		for (const folder of folders) {
-			const sessionPath = `${sessionsDir}/${folder}`;
-			const entries = await main.readDirectory(sessionPath);
-			const snapshots = entries.filter((entry) => entry !== "chain.json").sort();
+		for (const entry of entries) {
+			if (!entry.endsWith(".bag")) continue;
 
-			if (snapshots.length === 0) continue;
+			const filePath = `${sessionsDir}/${entry}`;
 
-			// Extract filename from guid-filename folder format
-			const guidPrefix = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/;
-			let label = guidPrefix.test(folder) ? folder.replace(guidPrefix, "") : folder;
+			let label = entry.replace(/\.bag$/, "");
 
 			try {
-				const chainContent = await main.readFile(`${sessionPath}/chain.json`);
-				const chain = JSON.parse(chainContent) as { label?: string };
-				if (chain.label) label = chain.label;
+				const content = await main.readFile(filePath);
+				const parsed = JSON.parse(content) as { name?: string };
+
+				if (parsed.name) label = parsed.name;
 			} catch {
-				// no chain.json
+				// could not read .bag file
 			}
 
 			tabs.push({
-				id: folder,
+				id: entry,
 				label,
-				filePath: "",
-				workingDir: sessionPath,
-				activeSnapshotFolder: undefined,
+				filePath,
 			});
 		}
 
@@ -202,8 +162,8 @@ const SavedStateSchema = AppStateSchema.pick({
 	theme: true,
 	spectralTheme: true,
 	activeTabId: true,
+	tabs: true,
 	windowState: true,
-	batch: true,
 	binaries: true,
 	packageUrls: true,
 }).partial();
@@ -214,9 +174,11 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 	const path = `${userDataPath}/state.json`;
 
 	let saved: z.infer<typeof SavedStateSchema> = {};
+
 	try {
 		const content = await main.readFile(path);
 		const result = SavedStateSchema.safeParse(JSON.parse(content));
+
 		if (result.success) {
 			saved = result.data;
 		}
@@ -224,7 +186,27 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 		// no saved state
 	}
 
-	const tabs = await deriveTabsFromSessions(main, userDataPath);
+	let tabs: ReadonlyArray<TabEntry>;
+
+	if (saved.tabs && saved.tabs.length > 0) {
+		// Restore persisted tabs, filtering out any whose .bag file no longer exists
+		const validTabs: Array<TabEntry> = [];
+
+		for (const tab of saved.tabs) {
+			try {
+				await main.stat(tab.filePath);
+				validTabs.push(tab);
+			} catch {
+				// .bag file no longer exists — skip this tab
+			}
+		}
+
+		tabs = validTabs;
+	} else {
+		// No saved tabs — derive from filesystem (migration / first launch)
+		tabs = await deriveTabsFromSessions(main, userDataPath);
+	}
+
 	const activeTabId = tabs.some((tab) => tab.id === saved.activeTabId)
 		? saved.activeTabId
 		: tabs[0]?.id;
@@ -236,9 +218,7 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 		spectralTheme: saved.spectralTheme ?? "lava",
 		tabs,
 		activeTabId,
-		batchActive: false,
 		windowState: saved.windowState,
-		batch: saved.batch ?? defaultBatchConfig(),
 		binaries,
 		packageUrls: saved.packageUrls ?? CORE_PACKAGE_URLS,
 		packages: [],
@@ -249,20 +229,6 @@ const CORE_PACKAGE_URLS: ReadonlyArray<ModulePackageConfig> = [
 	{ url: "https://github.com/visionsofparadise/buffered-audio-nodes.git", directory: "buffered-audio-nodes" },
 ];
 
-function defaultBatchConfig(): BatchConfig {
-	return {
-		transforms: [],
-		target: {
-			outputDir: "",
-			template: "{name}",
-			format: "wav",
-			bitDepth: "24",
-		},
-		concurrency: navigator.hardwareConcurrency || 4,
-		files: [],
-	};
-}
-
 export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snapshot<AppState> {
 	return useCreateState<AppState>(
 		{
@@ -270,8 +236,6 @@ export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snap
 			spectralTheme: "lava",
 			tabs: [],
 			activeTabId: undefined,
-			batchActive: false,
-			batch: defaultBatchConfig(),
 			binaries: {},
 			packageUrls: CORE_PACKAGE_URLS,
 			packages: [],

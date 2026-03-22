@@ -10,6 +10,7 @@ export class GitCloneMainIpc extends AsyncMainIpc<GitCloneIpcParameters, GitClon
 
 	async handler(input: GitCloneInput, _dependencies: IpcHandlerDependencies): Promise<GitCloneIpcReturn> {
 		await execFileAsync("git", ["clone", "--depth", "1", "--single-branch", input.url, input.directory]);
+
 		return undefined;
 	}
 }

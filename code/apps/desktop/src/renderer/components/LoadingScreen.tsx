@@ -104,6 +104,7 @@ function useElapsed(stopped: boolean) {
 	useEffect(() => {
 		if (stopped) {
 			frozen.current ??= Math.floor((Date.now() - start.current) / 1000);
+
 			return;
 		}
 

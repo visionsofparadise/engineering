@@ -100,24 +100,28 @@ export class Logger {
 	debug(message: string, context?: Logger.EntryContext): void {
 		if (!Logger.shouldLog("debug")) return;
 		const entry = this.createLogEntry("debug", message, context);
+
 		this.baseLogger.debug(this.toLogData(entry));
 	}
 
 	info(message: string, context?: Logger.EntryContext): void {
 		if (!Logger.shouldLog("info")) return;
 		const entry = this.createLogEntry("info", message, context);
+
 		this.baseLogger.info(this.toLogData(entry));
 	}
 
 	warn(message: string, context?: Logger.EntryContext): void {
 		if (!Logger.shouldLog("warn")) return;
 		const entry = this.createLogEntry("warn", message, context);
+
 		this.baseLogger.warn(this.toLogData(entry));
 	}
 
 	error(message: string, error?: Error, context?: Logger.EntryContext): void {
 		if (!Logger.shouldLog("error")) return;
 		const entry = this.createLogEntry("error", message, context, error);
+
 		this.baseLogger.error(this.toLogData(entry));
 	}
 

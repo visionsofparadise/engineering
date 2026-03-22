@@ -27,6 +27,7 @@ export function useSelectionState(store: ProxyStore): Snapshot<SelectionState> {
 export function selectionDurationMs(selection: Snapshot<SelectionState>, sampleRate: number): number {
 	const startMs = sampleFrameToMs(selection.startFrame.committed.value, sampleRate);
 	const endMs = sampleFrameToMs(selection.endFrame.committed.value, sampleRate);
+
 	return Math.abs(endMs - startMs);
 }
 
@@ -40,6 +41,7 @@ export function selectionToMs(
 ): { readonly startMs: number; readonly endMs: number } {
 	const rawStart = sampleFrameToMs(selection.startFrame.committed.value, sampleRate);
 	const rawEnd = sampleFrameToMs(selection.endFrame.committed.value, sampleRate);
+
 	return {
 		startMs: Math.min(rawStart, rawEnd),
 		endMs: Math.max(rawStart, rawEnd),

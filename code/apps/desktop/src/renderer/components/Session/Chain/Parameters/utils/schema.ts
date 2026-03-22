@@ -20,6 +20,8 @@ export interface JsonSchema {
 
 export function getProperties(schema: unknown): Record<string, JsonSchemaProperty> | undefined {
 	const js = schema as JsonSchema | undefined;
+
 	if (js?.type === "object" && js.properties) return js.properties;
+
 	return undefined;
 }

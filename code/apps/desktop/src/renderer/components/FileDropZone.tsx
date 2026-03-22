@@ -44,9 +44,11 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({ context, children })
 			if (!event.dataTransfer.files.length) return;
 
 			const file = event.dataTransfer.files[0];
+
 			if (!file) return;
 
 			const filePath = window.main.getPathForFile(file);
+
 			importFile.mutate(filePath);
 		},
 		[importFile],

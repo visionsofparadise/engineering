@@ -32,6 +32,7 @@ export const FileParameter: React.FC<FileParameterProps> = ({ label, initialValu
 				title: label,
 				filters,
 			});
+
 			if (path) {
 				setDisplayValue(path);
 				onCommit(path);
@@ -44,6 +45,7 @@ export const FileParameter: React.FC<FileParameterProps> = ({ label, initialValu
 				properties: dialogProps,
 			});
 			const selected = paths?.[0];
+
 			if (selected) {
 				setDisplayValue(selected);
 				onCommit(selected);

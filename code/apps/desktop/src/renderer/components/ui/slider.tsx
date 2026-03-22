@@ -74,6 +74,7 @@ const Slider = React.forwardRef<
       <div className="absolute bottom-0 left-2.5 right-2.5 h-2">
         {tickMarks.map((frac, tickIndex) => {
           const isMajor = tickIndex === 0 || tickIndex === ticks || tickIndex === Math.round(ticks / 2)
+
           return (
             <div
               key={tickIndex}
@@ -89,6 +90,7 @@ const Slider = React.forwardRef<
     </div>
   )
 })
+
 Slider.displayName = SliderPrimitive.Root.displayName
 
 export { Slider }

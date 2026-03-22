@@ -1,7 +1,7 @@
 import type { IpcHandlerAction, IpcHandlerParameters, IpcHandlerReturn } from "../models/AsyncRendererIpc";
 import { AbortJobRendererIpc } from "./Audio/abortJob/Renderer";
-import { ValidateChainRendererIpc } from "./Chain/validateChain/Renderer";
 import { ApplyRendererIpc } from "./Audio/apply/Renderer";
+import { RenderGraphRendererIpc } from "./Audio/renderGraph/Renderer";
 import { ShowOpenDialogRendererIpc } from "./Dialog/showOpenDialog/Renderer";
 import { ShowSaveDialogRendererIpc } from "./Dialog/showSaveDialog/Renderer";
 import { DeleteFileRendererIpc } from "./FileSystem/deleteFile/Renderer";
@@ -30,6 +30,7 @@ import { SetBoundsRendererIpc } from "./System/setBounds/Renderer";
 export const ASYNC_RENDERER_IPCS = [
 	AbortJobRendererIpc,
 	ApplyRendererIpc,
+	RenderGraphRendererIpc,
 	BundlePackageRendererIpc,
 	DeleteFileRendererIpc,
 	EnsureDirectoryRendererIpc,
@@ -54,7 +55,6 @@ export const ASYNC_RENDERER_IPCS = [
 	GetWindowIdRendererIpc,
 	GetAppVersionRendererIpc,
 	SetBoundsRendererIpc,
-	ValidateChainRendererIpc,
 ];
 
 export type AsyncIpcAction = IpcHandlerAction<InstanceType<(typeof ASYNC_RENDERER_IPCS)[number]>>;

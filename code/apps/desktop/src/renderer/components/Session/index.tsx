@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useChain } from "../../hooks/useChain";
+import { useGraph } from "../../hooks/useGraph";
 import { useSessionKeyboard } from "./hooks/useSessionKeyboard";
-import { useUndoRedo } from "./hooks/useUndoRedo";
 import type { AppContext, SessionContext } from "../../models/Context";
 import { PlaybackEngine } from "../../models/PlaybackEngine";
 import { ProxyStore } from "../../models/ProxyStore/ProxyStore";
@@ -18,65 +16,60 @@ interface SessionProps {
 }
 
 export const Session: React.FC<SessionProps> = ({ tab, context }) => {
-	const sessionPath = tab.workingDir;
+	const bagPath = tab.filePath;
 	const sessionStore = useMemo(() => new ProxyStore(), []);
 
-	const snapshots = useQuery({
-		queryKey: ["snapshots", sessionPath],
-		queryFn: async () => {
-			const entries = await window.main.readDirectory(sessionPath);
-			return entries.filter((entry) => entry !== "chain.json").sort();
-		},
-	});
-
-	const { chain, save: saveChain } = useChain(sessionPath);
+	const graph = useGraph(bagPath, context.userDataPath, context.app.packages);
 
 	const workspace = useWorkspaceState(sessionStore);
 	const selection = useSelectionState(sessionStore);
 	const playback = usePlaybackState(sessionStore);
 
 	const playbackRef = useRef(playback);
+
 	playbackRef.current = playback;
 	const selectionRef = useRef(selection);
+
 	selectionRef.current = selection;
 
 	const playbackEngineRef = useRef<PlaybackEngine | null>(null);
+
 	playbackEngineRef.current ??= new PlaybackEngine(sessionStore, playbackRef, selectionRef);
 	const playbackEngine = playbackEngineRef.current;
 
 	useEffect(() => () => playbackEngine.dispose(), [playbackEngine]);
 
 	const sessionContext = useMemo((): SessionContext | undefined => {
-		if (!chain || !snapshots.data?.length) return undefined;
+		if (!graph.graphDefinition) return undefined;
 
 		return {
 			...context,
-			sessionPath,
-			chain,
-			saveChain,
+			bagPath,
+			graph,
 			sessionStore,
 			workspace,
 			selection,
 			playback,
 			playbackEngine,
 		};
-	}, [context, sessionPath, chain, saveChain, snapshots.data, sessionStore, workspace, selection, playback, playbackEngine]);
-
-	const snapshotList = snapshots.data ?? [];
-	const activeSnapshotFolder = tab.activeSnapshotFolder ?? snapshotList[snapshotList.length - 1];
+	}, [context, bagPath, graph, sessionStore, workspace, selection, playback, playbackEngine]);
 
 	useEffect(() => {
-		if (activeSnapshotFolder) {
-			playbackEngine.load(`${sessionPath}/${activeSnapshotFolder}/audio.wav`);
+		const monitoredNodeId = graph.sessionState.monitoredNodeId;
+
+		if (!monitoredNodeId) {
+			playbackEngine.stop();
+			return;
 		}
-	}, [activeSnapshotFolder, sessionPath, playbackEngine]);
 
-	const { undo, redo } = useUndoRedo(
-		sessionContext ?? { ...context, sessionPath, chain: { transforms: [] }, saveChain, sessionStore, workspace, selection, playback, playbackEngine },
-		snapshotList,
-	);
+		const paths = graph.getNodeSnapshotPaths(monitoredNodeId);
 
-	useSessionKeyboard({ undo, redo, isPlaying: playback.isPlaying, playbackEngine });
+		if (paths) {
+			playbackEngine.load(paths.audio);
+		}
+	}, [graph.sessionState.monitoredNodeId, graph.getNodeSnapshotPaths, playbackEngine]);
+
+	useSessionKeyboard({ undo: graph.undo, redo: graph.redo, isPlaying: playback.isPlaying, playbackEngine, graph, selection });
 
 	if (!sessionContext) {
 		return <div className="flex h-full items-center justify-center text-muted-foreground">Loading...</div>;

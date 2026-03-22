@@ -33,6 +33,7 @@ export function useWaveformHeader(snapshotPath: string): WaveformHeader | undefi
 	const query = useQuery({
 		queryKey: ["waveformHeader", snapshotPath],
 		queryFn: () => loadWaveformHeader(`${snapshotPath}/waveform.bin`),
+		enabled: !!snapshotPath,
 	});
 
 	return query.data;

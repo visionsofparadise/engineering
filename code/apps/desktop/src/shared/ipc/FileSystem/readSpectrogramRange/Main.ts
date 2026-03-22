@@ -27,6 +27,7 @@ export class ReadSpectrogramRangeMainIpc extends AsyncMainIpc<ReadSpectrogramRan
 			const totalBytes = totalFrames * frameSize;
 			const buffer = Buffer.alloc(totalBytes);
 			const fileOffset = HEADER_SIZE + startFrame * frameSize;
+
 			await handle.read(buffer, 0, totalBytes, fileOffset);
 
 			const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
@@ -36,6 +37,7 @@ export class ReadSpectrogramRangeMainIpc extends AsyncMainIpc<ReadSpectrogramRan
 
 				for (let fi = 0; fi < totalFrames; fi++) {
 					const offset = fi * frameSize + channelOffset;
+
 					for (let bin = 0; bin < numBins; bin++) {
 						result[fi * numBins + bin] = view.getFloat32(offset + bin * 4, true);
 					}
@@ -57,6 +59,7 @@ export class ReadSpectrogramRangeMainIpc extends AsyncMainIpc<ReadSpectrogramRan
 
 					for (let fi = windowStart; fi < windowEnd; fi++) {
 						const mag = view.getFloat32(fi * frameSize + channelOffset + bin * 4, true);
+
 						if (mag > maxMag) maxMag = mag;
 					}
 

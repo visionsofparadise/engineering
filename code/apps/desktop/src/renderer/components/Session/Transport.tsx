@@ -1,5 +1,5 @@
-import { Download, FastForward, Loader2, Pause, Play, Repeat, Rewind, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { FastForward, Pause, Play, Repeat, Rewind, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useTransients } from "../../hooks/useTransients";
 import type { SessionContext } from "../../models/Context";
 import { resnapshot } from "../../models/ProxyStore/resnapshot";
@@ -7,8 +7,6 @@ import { formatTime } from "../../utils/time";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Slider } from "../ui/slider";
-import { ExportModal, type ExportSettings } from "./Export/ExportModal";
-import { useExport } from "./Export/hooks/useExport";
 
 interface TransportProps {
 	readonly context: SessionContext;
@@ -19,20 +17,14 @@ const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.5, 2, 4] as const;
 export const Transport: React.FC<TransportProps> = resnapshot(({ context }) => {
 	const { playback, playbackEngine } = context;
 	const [prevVolume, setPrevVolume] = useState(1);
-	const [exportOpen, setExportOpen] = useState(false);
-	const { exporting, progress, startExport } = useExport(context);
-	const timeRef = useRef<HTMLSpanElement>(null);
-
-	useEffect(() => {
-		const handleOpenExport = () => setExportOpen(true);
-		window.addEventListener("open-export-modal", handleOpenExport);
-
-		return () => window.removeEventListener("open-export-modal", handleOpenExport);
+	const timeRef = useCallback((node: HTMLSpanElement | null) => {
+		if (node) node.textContent = formatTime(0);
 	}, []);
 
 	useTransients([playback.currentMs], () => {
-		if (timeRef.current) {
-			timeRef.current.textContent = formatTime(playback.currentMs.value);
+		const el = document.querySelector("[data-transport-time]") as HTMLSpanElement | null;
+		if (el) {
+			el.textContent = formatTime(playback.currentMs.value);
 		}
 	});
 
@@ -87,15 +79,6 @@ export const Transport: React.FC<TransportProps> = resnapshot(({ context }) => {
 		playbackEngine.setIsLooping(!playback.isLooping);
 	}, [playback.isLooping, playbackEngine]);
 
-	const handleExportSettings = useCallback(
-		(settings: ExportSettings) => {
-			setExportOpen(false);
-
-			void startExport(settings);
-		},
-		[startExport],
-	);
-
 	const durationMs = playbackEngine.durationMs;
 
 	const volumePercent = Math.round(playback.volume * 100);
@@ -104,7 +87,7 @@ export const Transport: React.FC<TransportProps> = resnapshot(({ context }) => {
 		<div className="flex h-14 items-center border-t border-border bg-[var(--surface-panel-header)] px-6">
 			<div className="flex flex-1 items-center gap-8">
 				<span className="font-mono text-xs tabular-nums text-muted-foreground">
-					<span ref={timeRef}>{formatTime(0)}</span>
+					<span data-transport-time ref={timeRef}>{formatTime(0)}</span>
 					{" / "}
 					{formatTime(durationMs)}
 				</span>
@@ -168,21 +151,7 @@ export const Transport: React.FC<TransportProps> = resnapshot(({ context }) => {
 					</div>
 					<span className="w-8 text-right font-mono text-[10px] tabular-nums text-muted-foreground">{volumePercent}%</span>
 				</div>
-				<Button
-					className="surface-primary gap-2"
-					disabled={exporting}
-					onClick={() => setExportOpen(true)}
-				>
-					{exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-					{exporting ? `${Math.round(progress * 100)}%` : "Export"}
-				</Button>
 			</div>
-
-			<ExportModal
-				open={exportOpen}
-				onOpenChange={setExportOpen}
-				onExport={handleExportSettings}
-			/>
 		</div>
 	);
 });

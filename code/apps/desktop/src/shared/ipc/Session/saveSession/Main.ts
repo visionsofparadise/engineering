@@ -1,5 +1,5 @@
-import fs from "node:fs";
-import archiver from "archiver";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import { SAVE_SESSION_ACTION, type SaveSessionIpcParameters, type SaveSessionIpcReturn, type SaveSessionInput } from "./Renderer";
 
@@ -11,27 +11,15 @@ export class SaveSessionMainIpc extends AsyncMainIpc<SaveSessionIpcParameters, S
 
 		logger.info("Saving session", {
 			namespace: "app",
-			sessionPath: input.sessionPath,
-			targetPath: input.targetPath,
+			filePath: input.filePath,
 		});
 
-		const output = fs.createWriteStream(input.targetPath);
-		const archive = archiver("zip", { store: true });
-
-		const done = new Promise<void>((resolve, reject) => {
-			output.on("close", resolve);
-			output.on("error", reject);
-			archive.on("error", reject);
-		});
-
-		archive.pipe(output);
-		archive.directory(input.sessionPath, false);
-		await archive.finalize();
-		await done;
+		await fs.mkdir(path.dirname(input.filePath), { recursive: true });
+		await fs.writeFile(input.filePath, JSON.stringify(input.graphDefinition, null, 2));
 
 		logger.info("Session saved", {
 			namespace: "app",
-			targetPath: input.targetPath,
+			filePath: input.filePath,
 		});
 
 		return undefined;

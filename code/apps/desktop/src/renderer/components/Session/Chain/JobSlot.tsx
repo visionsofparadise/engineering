@@ -1,4 +1,4 @@
-import type { IdentifiedChain } from "../../../hooks/useChain";
+import type { IdentifiedChain } from "../../../models/Chain";
 import { Check, Loader2 } from "lucide-react";
 import type { AppContext } from "../../../models/Context";
 import type { ModuleJobState } from "../../../models/State/Jobs";

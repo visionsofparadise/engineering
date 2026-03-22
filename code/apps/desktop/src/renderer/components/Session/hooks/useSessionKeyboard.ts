@@ -1,14 +1,19 @@
 import { useEffect } from "react";
+import type { Snapshot } from "valtio/vanilla";
+import type { useGraph } from "../../../hooks/useGraph";
 import type { PlaybackEngine } from "../../../models/PlaybackEngine";
+import type { SelectionState } from "../../../models/State/Selection";
 
 interface UseSessionKeyboardParams {
 	readonly undo: () => void;
 	readonly redo: () => void;
 	readonly isPlaying: boolean;
 	readonly playbackEngine: PlaybackEngine;
+	readonly graph: ReturnType<typeof useGraph>;
+	readonly selection: Snapshot<SelectionState>;
 }
 
-export function useSessionKeyboard({ undo, redo, isPlaying, playbackEngine }: UseSessionKeyboardParams): void {
+export function useSessionKeyboard({ undo, redo, isPlaying, playbackEngine, graph, selection }: UseSessionKeyboardParams): void {
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if ((event.ctrlKey || event.metaKey) && event.key === "z") {
@@ -18,6 +23,7 @@ export function useSessionKeyboard({ undo, redo, isPlaying, playbackEngine }: Us
 				} else {
 					undo();
 				}
+
 				return;
 			}
 
@@ -31,6 +37,7 @@ export function useSessionKeyboard({ undo, redo, isPlaying, playbackEngine }: Us
 					} else {
 						void playbackEngine.play();
 					}
+
 					break;
 				case "Home":
 					event.preventDefault();
@@ -48,10 +55,37 @@ export function useSessionKeyboard({ undo, redo, isPlaying, playbackEngine }: Us
 					event.preventDefault();
 					playbackEngine.skipForward(5000);
 					break;
+				case "Delete":
+				case "Backspace": {
+					const monitoredNodeId = graph.sessionState.monitoredNodeId;
+
+					if (!monitoredNodeId) break;
+					if (!selection.active) break;
+
+					const sampleRate = playbackEngine.sampleRate;
+
+					if (sampleRate <= 0) break;
+
+					const startSec = selection.startFrame.committed.value / sampleRate;
+					const endSec = selection.endFrame.committed.value / sampleRate;
+
+					const cutNode = {
+						id: crypto.randomUUID(),
+						package: "buffered-audio-nodes",
+						node: "Cut",
+						options: { regions: [{ start: Math.min(startSec, endSec), end: Math.max(startSec, endSec) }] },
+					};
+
+					event.preventDefault();
+					graph.insertNodeAfter(monitoredNodeId, cutNode);
+					graph.setMonitor(cutNode.id);
+					break;
+				}
 			}
 		};
 
 		window.addEventListener("keydown", handleKeyDown);
+
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [undo, redo, isPlaying, playbackEngine]);
+	}, [undo, redo, isPlaying, playbackEngine, graph, selection]);
 }

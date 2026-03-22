@@ -25,11 +25,13 @@ export function formatTime(ms: number): string {
 
 export function getMinPixelsPerSecond(viewportWidth: number, durationMs: number): number {
 	if (durationMs <= 0 || viewportWidth <= 0) return MIN_PIXELS_PER_SECOND;
+
 	return (viewportWidth * 1000) / durationMs;
 }
 
 export function clampPixelsPerSecond(pps: number, viewportWidth: number, durationMs: number): number {
 	const minPps = getMinPixelsPerSecond(viewportWidth, durationMs);
+
 	return Math.max(minPps, Math.min(MAX_PIXELS_PER_SECOND, pps));
 }
 

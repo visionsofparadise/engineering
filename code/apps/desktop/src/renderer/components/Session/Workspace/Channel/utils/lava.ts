@@ -26,6 +26,7 @@ export function lavaColor(normalized: number): readonly [number, number, number]
 
 	const lo = CONTROL_POINTS[index];
 	const hi = CONTROL_POINTS[index + 1];
+
 	if (!lo || !hi) return [0, 0, 0];
 
 	return [

@@ -7,6 +7,7 @@ export class ReadFileBufferMainIpc extends AsyncMainIpc<ReadFileBufferIpcParamet
 
 	async handler(filePath: string, _dependencies: IpcHandlerDependencies): Promise<ReadFileBufferIpcReturn> {
 		const buffer = await fs.readFile(filePath);
+
 		return new Uint8Array(buffer);
 	}
 }

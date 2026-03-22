@@ -26,6 +26,7 @@ export class ReadWaveformRangeMainIpc extends AsyncMainIpc<ReadWaveformRangeIpcP
 			const totalBytes = totalPoints * pointSize;
 			const buffer = Buffer.alloc(totalBytes);
 			const fileOffset = HEADER_SIZE + startPoint * pointSize;
+
 			await handle.read(buffer, 0, totalBytes, fileOffset);
 
 			const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
@@ -35,6 +36,7 @@ export class ReadWaveformRangeMainIpc extends AsyncMainIpc<ReadWaveformRangeIpcP
 
 				for (let pi = 0; pi < totalPoints; pi++) {
 					const offset = pi * pointSize + channelOffset;
+
 					result[pi * 2] = view.getFloat32(offset, true);
 					result[pi * 2 + 1] = view.getFloat32(offset + 4, true);
 				}
@@ -56,6 +58,7 @@ export class ReadWaveformRangeMainIpc extends AsyncMainIpc<ReadWaveformRangeIpcP
 					const offset = pi * pointSize + channelOffset;
 					const pointMin = view.getFloat32(offset, true);
 					const pointMax = view.getFloat32(offset + 4, true);
+
 					if (pointMin < windowMin) windowMin = pointMin;
 					if (pointMax > windowMax) windowMax = pointMax;
 				}

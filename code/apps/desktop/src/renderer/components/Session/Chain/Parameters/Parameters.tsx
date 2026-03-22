@@ -1,5 +1,5 @@
 import { resnapshot } from "../../../../models/ProxyStore/resnapshot";
-import type { IdentifiedChain } from "../../../../hooks/useChain";
+import type { IdentifiedChain } from "../../../../models/Chain";
 import { useCallback, type ReactNode } from "react";
 import type { AppContext } from "../../../../models/Context";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../ui/popover";
@@ -54,6 +54,7 @@ export const Parameters: React.FC<ParametersProps> = resnapshot(({ packageName, 
 				{entries.map(([key, property]) => {
 					const label = property.description ?? key;
 					const initialValue = options?.[key] ?? property.default;
+
 					return (
 						<ParameterSwitch
 							key={key}

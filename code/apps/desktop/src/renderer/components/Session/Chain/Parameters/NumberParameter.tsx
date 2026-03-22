@@ -14,6 +14,7 @@ interface NumberParameterProps {
 
 export const NumberParameter: React.FC<NumberParameterProps> = ({ label, initialValue, property, onCommit, disabled }) => {
 	const [value, setValue] = useState(initialValue);
+
 	useEffect(() => setValue(initialValue), [initialValue]);
 
 	const min = property.minimum;

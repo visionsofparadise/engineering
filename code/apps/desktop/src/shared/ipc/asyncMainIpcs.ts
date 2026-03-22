@@ -1,6 +1,6 @@
 import { AbortJobMainIpc } from "./Audio/abortJob/Main";
-import { ValidateChainMainIpc } from "./Chain/validateChain/Main";
 import { ApplyMainIpc } from "./Audio/apply/Main";
+import { RenderGraphMainIpc } from "./Audio/renderGraph/Main";
 import { ShowOpenDialogMainIpc } from "./Dialog/showOpenDialog/Main";
 import { ShowSaveDialogMainIpc } from "./Dialog/showSaveDialog/Main";
 import { DeleteFileMainIpc } from "./FileSystem/deleteFile/Main";
@@ -29,6 +29,7 @@ import { SetBoundsMainIpc } from "./System/setBounds/Main";
 export const ASYNC_MAIN_IPCS = [
 	AbortJobMainIpc,
 	ApplyMainIpc,
+	RenderGraphMainIpc,
 	BundlePackageMainIpc,
 	DeleteFileMainIpc,
 	EnsureDirectoryMainIpc,
@@ -53,5 +54,4 @@ export const ASYNC_MAIN_IPCS = [
 	GetWindowIdMainIpc,
 	GetAppVersionMainIpc,
 	SetBoundsMainIpc,
-	ValidateChainMainIpc,
 ];
