@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "spectral-display": ["./src/index.ts"]
+    },
+    "types": ["@webgpu/types"]
+  },
+  "include": ["showcase"]
+}

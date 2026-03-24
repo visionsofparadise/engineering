@@ -1,4 +1,4 @@
-import { Handle, Position } from "@xyflow/react";
+import { Handle, type Position } from "@xyflow/react";
 
 export function Port({ type, position }: { type: "source" | "target"; position: Position }) {
 	return (

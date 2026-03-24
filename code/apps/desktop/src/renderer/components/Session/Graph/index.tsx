@@ -48,6 +48,7 @@ const edgeTypes: EdgeTypes = {
 function getNodeType(node: GNode): "source" | "transform" | "target" {
 	if (SOURCE_MODULES.has(node.node)) return "source";
 	if (TARGET_MODULES.has(node.node)) return "target";
+
 	return "transform";
 }
 
@@ -56,12 +57,14 @@ function autoLayout(
 	edges: ReadonlyArray<GEdge>,
 ): Record<string, { x: number; y: number }> {
 	const g = new dagre.graphlib.Graph();
+
 	g.setDefaultEdgeLabel(() => ({}));
 	g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 120 });
 
 	for (const node of nodes) {
 		g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
 	}
+
 	for (const edge of edges) {
 		g.setEdge(edge.from, edge.to);
 	}
@@ -69,12 +72,15 @@ function autoLayout(
 	dagre.layout(g);
 
 	const positions: Record<string, { x: number; y: number }> = {};
+
 	for (const node of nodes) {
 		const pos = g.node(node.id);
+
 		if (pos) {
 			positions[node.id] = { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 };
 		}
 	}
+
 	return positions;
 }
 
@@ -93,6 +99,7 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 		if (!graphDefinition) return;
 
 		const packageVersions: Record<string, string> = {};
+
 		for (const pkg of app.packages) {
 			if (pkg.name && pkg.version) {
 				packageVersions[pkg.name] = pkg.version;
@@ -131,7 +138,9 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 			if (nodeStates.get(node.id) !== "stale") return false;
 
 			const parentEdge = graphDefinition.edges.find((e) => e.to === node.id);
+
 			if (!parentEdge) return false;
+
 			return nodeStates.get(parentEdge.from) === "applied";
 		});
 
@@ -144,12 +153,13 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 		if (!graphDefinition) return {};
 
 		const hasPositions = Object.keys(sessionState.positions).length > 0;
+
 		if (hasPositions) return sessionState.positions;
 
 		return autoLayout(graphDefinition.nodes, graphDefinition.edges);
 	}, [graphDefinition, sessionState.positions]);
 
-	const initialNodes = useMemo<Node[]>(() => {
+	const initialNodes = useMemo<Array<Node>>(() => {
 		if (!graphDefinition) return [];
 
 		return graphDefinition.nodes.map((node) => {
@@ -206,7 +216,7 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 		});
 	}, [graphDefinition, nodeStates, sessionState.monitoredNodeId, positions, graph]);
 
-	const initialEdges = useMemo<Edge[]>(() => {
+	const initialEdges = useMemo<Array<Edge>>(() => {
 		if (!graphDefinition) return [];
 
 		return graphDefinition.edges.map((edge) => ({
@@ -223,7 +233,7 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 	}, [graphDefinition]);
 
 	const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+	const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
 	useEffect(() => {
 		setNodes(initialNodes);
@@ -323,9 +333,11 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 				<MiniMap
 					nodeColor={(node) => {
 						const state = (node.data as { state?: string }).state;
+
 						if (state === "applied") return "var(--primary)";
 						if (state === "processing") return "var(--color-status-processing)";
 						if (state === "bypassed") return "var(--muted-foreground)";
+
 						return "var(--border)";
 					}}
 					maskColor="hsl(var(--background) / 0.7)"

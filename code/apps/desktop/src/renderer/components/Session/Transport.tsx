@@ -22,7 +22,8 @@ export const Transport: React.FC<TransportProps> = resnapshot(({ context }) => {
 	}, []);
 
 	useTransients([playback.currentMs], () => {
-		const el = document.querySelector("[data-transport-time]") as HTMLSpanElement | null;
+		const el = document.querySelector("[data-transport-time]");
+
 		if (el) {
 			el.textContent = formatTime(playback.currentMs.value);
 		}
