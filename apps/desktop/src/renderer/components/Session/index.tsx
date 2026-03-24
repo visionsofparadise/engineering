@@ -59,6 +59,7 @@ export const Session: React.FC<SessionProps> = ({ tab, context }) => {
 
 		if (!monitoredNodeId) {
 			playbackEngine.stop();
+
 			return;
 		}
 

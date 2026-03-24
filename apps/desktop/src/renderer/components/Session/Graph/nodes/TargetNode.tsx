@@ -36,6 +36,7 @@ function hasSnapshot(state: NodeRenderState) {
 function formatIcon(format?: string) {
 	if (format === "loudness-stats") return BarChart3;
 	if (format === "waveform") return AudioWaveform;
+
 	return Download;
 }
 

@@ -27,10 +27,12 @@ function topologicalSort(nodes: ReadonlyArray<GraphNode>, edges: ReadonlyArray<G
 
 	while (queue.length > 0) {
 		const id = queue.shift()!;
+
 		result.push(nodeMap.get(id)!);
 
 		for (const neighbor of adjacency.get(id) ?? []) {
 			const deg = (inDegree.get(neighbor) ?? 1) - 1;
+
 			inDegree.set(neighbor, deg);
 			if (deg === 0) queue.push(neighbor);
 		}
@@ -41,6 +43,7 @@ function topologicalSort(nodes: ReadonlyArray<GraphNode>, edges: ReadonlyArray<G
 
 function getParentNodeId(nodeId: string, edges: ReadonlyArray<GraphEdge>): string | undefined {
 	const edge = edges.find((e) => e.to === nodeId);
+
 	return edge?.from;
 }
 
@@ -79,7 +82,7 @@ function computeNodeHashes(
 }
 
 function resolveSourceFilePath(node: GraphNode): string {
-	const path = node.options?.["path"];
+	const path = node.options?.path;
 
 	if (typeof path !== "string" || path.length === 0) {
 		throw new Error(`Source node "${node.id}" is missing a valid "path" option`);
@@ -171,11 +174,12 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 
 					const source = new ReadNode({
 						path: sourceFilePath,
-						ffmpegPath: binaries["ffmpeg"] ?? "",
-						ffprobePath: binaries["ffprobe"] ?? "",
+						ffmpegPath: binaries.ffmpeg ?? "",
+						ffprobePath: binaries.ffprobe ?? "",
 					});
 
 					const targets = createAnalysisTargets(audioPath, waveformPath, spectrogramPath, binaries);
+
 					source.to(targets.write);
 					source.to(targets.waveform);
 					source.to(targets.spectrogram);
@@ -188,7 +192,7 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 					if (!parentHash) throw new Error(`Target node "${node.id}" has no parent with a computed hash`);
 
 					const parentAudioPath = join(snapshotsDir, parentHash, "audio.wav");
-					const outputPath = node.options?.["path"];
+					const outputPath = node.options?.path;
 
 					if (typeof outputPath !== "string" || outputPath.length === 0) {
 						throw new Error(`Target node "${node.id}" is missing a valid "path" option`);
@@ -196,8 +200,8 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 
 					const source = new ReadNode({
 						path: parentAudioPath,
-						ffmpegPath: binaries["ffmpeg"] ?? "",
-						ffprobePath: binaries["ffprobe"] ?? "",
+						ffmpegPath: binaries.ffmpeg ?? "",
+						ffprobePath: binaries.ffprobe ?? "",
 					});
 
 					source.to(new WriteNode({ path: outputPath, bitDepth: "32f" }));
@@ -213,13 +217,14 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 
 					const source = new ReadNode({
 						path: parentAudioPath,
-						ffmpegPath: binaries["ffmpeg"] ?? "",
-						ffprobePath: binaries["ffprobe"] ?? "",
+						ffmpegPath: binaries.ffmpeg ?? "",
+						ffprobePath: binaries.ffprobe ?? "",
 					});
 
 					const transform = resolveTransform(node, moduleRegistry);
 
 					const targets = createAnalysisTargets(audioPath, waveformPath, spectrogramPath, binaries);
+
 					source.to(transform);
 					transform.to(targets.write);
 					transform.to(targets.waveform);

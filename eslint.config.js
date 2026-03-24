@@ -261,5 +261,23 @@ export default tseslint.config(
       "barrel-files/avoid-namespace-import": "off",
       "barrel-files/avoid-re-export-all": "off",
     },
+  },
+
+  // Spectral display — heavy typed array arithmetic
+  {
+    files: ["packages/spectral-display/**/*.ts", "packages/spectral-display/**/*.tsx"],
+    rules: {
+      "@typescript-eslint/no-non-null-assertion": "off",
+    },
+  },
+
+  // Spectral display showcase — uses path alias that eslint can't resolve
+  {
+    files: ["packages/spectral-display/showcase/**/*.ts", "packages/spectral-display/showcase/**/*.tsx"],
+    rules: {
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+    },
   }
 );

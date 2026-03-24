@@ -11,6 +11,7 @@ export function MonitorToggle({
 	onToggle?: () => void;
 }) {
 	if (!visible) return null;
+
 	return (
 		<button
 			onClick={(ev) => {

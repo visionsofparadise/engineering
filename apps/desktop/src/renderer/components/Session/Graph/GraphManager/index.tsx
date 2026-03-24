@@ -40,9 +40,11 @@ export const GraphManager: React.FC<GraphManagerProps> = ({ context }) => {
 			const graphs = await Promise.all(
 				bagFiles.map(async (fileName) => {
 					const path = `${graphsDir}/${fileName}`;
+
 					try {
 						const content = await window.main.readFile(path);
 						const definition = validateGraphDefinition(JSON.parse(content));
+
 						return { fileName, name: definition.name, path };
 					} catch {
 						return { fileName, name: fileName.replace(/\.bag$/, ""), path };
@@ -62,12 +64,15 @@ export const GraphManager: React.FC<GraphManagerProps> = ({ context }) => {
 
 	const handleSave = async () => {
 		const trimmed = saveName.trim();
+
 		if (!trimmed) return;
 
 		const { graphDefinition } = context.graph;
+
 		if (!graphDefinition) return;
 
 		const sanitized = sanitizeName(trimmed);
+
 		if (!sanitized) return;
 
 		const toSave: GraphDefinition = { ...graphDefinition, name: trimmed };
@@ -87,6 +92,7 @@ export const GraphManager: React.FC<GraphManagerProps> = ({ context }) => {
 		try {
 			const content = await window.main.readFile(graph.path);
 			const definition = validateGraphDefinition(JSON.parse(content));
+
 			await loadGraph(definition);
 			setOpen(false);
 		} catch {
@@ -102,11 +108,13 @@ export const GraphManager: React.FC<GraphManagerProps> = ({ context }) => {
 		});
 
 		const importPath = paths?.[0];
+
 		if (!importPath) return;
 
 		try {
 			const content = await window.main.readFile(importPath);
 			const definition = validateGraphDefinition(JSON.parse(content));
+
 			await loadGraph(definition);
 			setOpen(false);
 		} catch {
@@ -116,6 +124,7 @@ export const GraphManager: React.FC<GraphManagerProps> = ({ context }) => {
 
 	const handleExport = async () => {
 		const { graphDefinition } = context.graph;
+
 		if (!graphDefinition) return;
 
 		const defaultName = sanitizeName(graphDefinition.name || "untitled");
@@ -132,6 +141,7 @@ export const GraphManager: React.FC<GraphManagerProps> = ({ context }) => {
 
 	const handleClear = async () => {
 		const cleared: GraphDefinition = { name: "Untitled", nodes: [], edges: [] };
+
 		await loadGraph(cleared);
 		setOpen(false);
 	};
