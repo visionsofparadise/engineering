@@ -108,7 +108,7 @@ export class SpectralEngine {
 
 		const isLinear = frequencyScale === "linear";
 		const numBands = isLinear ? fftSize / 2 + 1 : DEFAULT_NON_LINEAR_BANDS;
-		const hopOverlap = config.hopOverlap ?? HOP_OVERLAP_FACTOR;
+		const hopOverlap = config.hopOverlap;
 		const hopSize = Math.max(1, Math.floor(fftSize / hopOverlap));
 		const totalFrames = Math.floor((sampleCount - fftSize) / hopSize) + 1;
 		const bandMappingData = computeBandMappings(frequencyScale, numBands, sampleRate, fftSize);
