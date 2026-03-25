@@ -3,30 +3,38 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./css/tokens.css": "./src/css/tokens.css",
+    "./css/base.css": "./src/css/base.css",
+    "./css/utilities.css": "./src/css/utilities.css",
+    "./styles.css": "./dist/styles.css"
+  },
   "scripts": {
-    "start": "vite",
-    "build": "vite build",
-    "check": "concurrently \"eslint . --fix --cache --format ../../agent-eslint.js\" \"tsc --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\" \"tsc -p tsconfig.showcase.json --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\""
+    "build": "tsup && npx @tailwindcss/cli -i src/styles.css -o dist/styles.css --minify",
+    "check": "concurrently \"eslint . --fix --cache --format ../../agent-eslint.js\" \"tsc --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\""
   },
   "dependencies": {
-    "@fontsource-variable/bricolage-grotesque": "^5.2.10",
-    "@fontsource-variable/jetbrains-mono": "^5.2.8",
-    "@fontsource-variable/outfit": "^5.2.8",
     "@iconify/react": "^6.0.2",
     "@xyflow/react": "*",
+    "clsx": "^2.1.1",
     "lucide-react": "*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "spectral-display": "*"
+    "spectral-display": "*",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.0.0",
+    "@tailwindcss/cli": "^4.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.0.0",
     "concurrently": "*",
     "tailwindcss": "^4.0.0",
-    "typescript": "*",
-    "vite": "^6.0.0"
+    "tsup": "^8.0.0",
+    "typescript": "*"
   }
 }
