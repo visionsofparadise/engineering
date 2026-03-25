@@ -20,6 +20,8 @@ export interface SpectralConfig {
 	spectrogram: boolean;
 	loudness: boolean;
 	truePeak: boolean;
+	/** Hop overlap factor — higher = more time resolution. Default 4. */
+	hopOverlap: number;
 }
 
 export interface SpectralResult extends Dimensions {
@@ -78,6 +80,7 @@ export function resolveConfig(config: RequiredProperties<SpectralConfig, "device
 		spectrogram: config.spectrogram ?? true,
 		loudness: config.loudness ?? true,
 		truePeak: config.truePeak ?? true,
+		hopOverlap: config.hopOverlap ?? HOP_OVERLAP_FACTOR,
 	};
 }
 
@@ -105,7 +108,8 @@ export class SpectralEngine {
 
 		const isLinear = frequencyScale === "linear";
 		const numBands = isLinear ? fftSize / 2 + 1 : DEFAULT_NON_LINEAR_BANDS;
-		const hopSize = Math.max(1, Math.floor(fftSize / HOP_OVERLAP_FACTOR));
+		const hopOverlap = config.hopOverlap ?? HOP_OVERLAP_FACTOR;
+		const hopSize = Math.max(1, Math.floor(fftSize / hopOverlap));
 		const totalFrames = Math.floor((sampleCount - fftSize) / hopSize) + 1;
 		const bandMappingData = computeBandMappings(frequencyScale, numBands, sampleRate, fftSize);
 		const resolvedColormap = typeof config.colormap === "string" ? resolveColormap(config.colormap) : config.colormap;

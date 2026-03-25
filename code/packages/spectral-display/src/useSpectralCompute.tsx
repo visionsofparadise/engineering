@@ -37,7 +37,7 @@ export function useSpectralCompute(options: SpectralOptions): ComputeResult {
 	const { startMs, endMs, width, height } = query;
 
 	const providedDevice = config?.device;
-	let signal = config?.signal;
+	const providedSignal = config?.signal;
 
 	const deviceReference = useRef<GPUDevice | null>(null);
 	const engineReference = useRef<SpectralEngine | null>(null);
@@ -60,7 +60,7 @@ export function useSpectralCompute(options: SpectralOptions): ComputeResult {
 
 		abortControllerReference.current = controller;
 
-		signal ??= controller.signal;
+		const signal = providedSignal ?? controller.signal;
 
 		if (signal.aborted) {
 			controller.abort();

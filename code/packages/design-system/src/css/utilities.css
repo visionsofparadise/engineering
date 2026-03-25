@@ -1,0 +1,16 @@
+.showcase-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.showcase-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-chrome-border);
+}
+
+.showcase-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-chrome-text-dim);
+}
+
+.showcase-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-chrome-text-dim) var(--color-chrome-border);
+}
