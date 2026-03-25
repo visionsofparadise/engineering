@@ -16,9 +16,8 @@
   "author": "Matt Cavender",
   "license": "ISC",
   "scripts": {
-    "start": "vite",
-    "check": "concurrently \"eslint . --fix --cache --format ../../agent-eslint.js\" \"tsc --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\" \"tsc -p tsconfig.showcase.json --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\"",
-    "check:verbose": "concurrently \"eslint .\" \"tsc --noEmit\" \"tsc -p tsconfig.showcase.json --noEmit\"",
+    "check": "concurrently \"eslint . --fix --cache --format ../../agent-eslint.js\" \"tsc --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\"",
+    "check:verbose": "concurrently \"eslint .\" \"tsc --noEmit\"",
     "lint": "eslint . --fix --cache --format ../../agent-eslint.js",
     "lint:verbose": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -29,13 +28,11 @@
     "@webgpu/types": "^0.1.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.0.0",
     "concurrently": "*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.0.0",
     "typescript": "*",
-    "vite": "^6.0.0",
     "vitest": "^3.0.0"
   },
   "peerDependencies": {

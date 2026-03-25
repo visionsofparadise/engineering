@@ -1,8 +1,17 @@
 /* eslint-disable no-console */
-import { resolveConfig, SpectralEngine } from "../src/engine/SpectralEngine";
-import { getDevice } from "../src/engine/device";
-import { computeIntegratedLufs, computeMomentaryLufs, computeRunningIntegratedLufs, meanSquareToLufs } from "../src/engine/loudness";
-import { createScanContext, finalizeScan, scanSamples } from "../src/engine/sample-scan";
+import {
+  BlitRenderer,
+  computeIntegratedLufs,
+  computeMomentaryLufs,
+  computeRunningIntegratedLufs,
+  createScanContext,
+  finalizeScan,
+  getDevice,
+  meanSquareToLufs,
+  resolveConfig,
+  scanSamples,
+  SpectralEngine,
+} from "spectral-display";
 import { loadAudio } from "./audio-loader";
 
 const WAVEFORM_POINTS_PER_SECOND = 500;
@@ -156,7 +165,6 @@ async function main() {
 	canvas.height = HEIGHT;
 	container.appendChild(canvas);
 
-	const { BlitRenderer } = await import("../src/engine/blit");
 	const blit = new BlitRenderer(device, canvas);
 
 	container.innerHTML = "<pre style='font-family:monospace;padding:24px'>Running benchmarks...</pre>";
