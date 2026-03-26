@@ -24,7 +24,7 @@ export function Input({
   return (
     <div className={`flex flex-col gap-1${className ? ` ${className}` : ""}`}>
       {label && (
-        <label className="font-technical uppercase tracking-[0.08em] text-chrome-text-secondary text-xs">
+        <label className="font-technical uppercase tracking-[0.06em] text-chrome-text-secondary text-xs">
           {label}
         </label>
       )}

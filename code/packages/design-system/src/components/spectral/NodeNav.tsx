@@ -20,7 +20,7 @@ export function NodeNav({ currentNode, prevNode, nextNode }: NodeNavProps) {
       <div className="ml-3 flex items-center gap-2">
         <button
           type="button"
-          className="flex h-8 items-center gap-1 font-technical text-[length:var(--text-sm)] uppercase tracking-[0.06em] text-chrome-text-secondary hover:text-chrome-text"
+          className="flex h-8 items-center gap-1 font-body text-[length:var(--text-sm)] text-chrome-text-secondary hover:text-chrome-text"
           aria-label={`Go to ${prevNode}`}
         >
           <Icon icon="lucide:chevron-left" width={14} height={14} />
@@ -33,7 +33,7 @@ export function NodeNav({ currentNode, prevNode, nextNode }: NodeNavProps) {
 
         <button
           type="button"
-          className="flex h-8 items-center gap-1 font-technical text-[length:var(--text-sm)] uppercase tracking-[0.06em] text-chrome-text-secondary hover:text-chrome-text"
+          className="flex h-8 items-center gap-1 font-body text-[length:var(--text-sm)] text-chrome-text-secondary hover:text-chrome-text"
           aria-label={`Go to ${nextNode}`}
         >
           <span>{nextNode}</span>

@@ -50,7 +50,7 @@ export function DropdownButton({ trigger, items, align = "left", className }: Dr
       <div onClick={() => setOpen(!open)}>{trigger}</div>
       {open && (
         <div
-          className={`absolute top-full z-50 mt-1 flex min-w-56 flex-col bg-chrome-raised py-1 ${align === "right" ? "right-0" : "left-0"}`}
+          className={`absolute top-full z-50 mt-1 flex min-w-72 flex-col bg-chrome-raised py-1 ${align === "right" ? "right-0" : "left-0"}`}
         >
           {items.map((item, index) => {
             if (item.kind === "separator") {
@@ -67,7 +67,7 @@ export function DropdownButton({ trigger, items, align = "left", className }: Dr
                   item.onClick?.();
                   setOpen(false);
                 }}
-                className={`flex items-center gap-2 px-3 py-1.5 text-left font-technical uppercase tracking-[0.06em] text-sm hover:bg-interactive-hover ${item.color ?? "text-chrome-text"}`}
+                className={`flex items-center gap-2 mx-2 my-0.5 text-left font-technical uppercase tracking-[0.06em] text-sm hover:bg-interactive-hover ${item.color ?? "text-chrome-text"}`}
               >
                 {item.icon && <Icon icon={item.icon} width={12} height={12} className="shrink-0" />}
                 <span className="flex-1">{item.label}</span>
