@@ -28,7 +28,7 @@ const MENU_ITEMS: ReadonlyArray<ContextMenuItem> = [
   { kind: "separator" },
   { kind: "action", label: "Bypass / Enable", action: "bypass" },
   { kind: "separator" },
-  { kind: "action", label: "Render From Here", action: "render" },
+  { kind: "action", label: "Render", action: "render" },
 ];
 
 export function NodeContextMenu({ position, onClose }: NodeContextMenuProps) {
@@ -77,7 +77,7 @@ export function NodeContextMenu({ position, onClose }: NodeContextMenuProps) {
             key={item.action}
             type="button"
             onClick={onClose}
-            className="mx-2 my-0.5 text-left font-technical text-[length:var(--text-sm)] uppercase tracking-[0.06em] text-chrome-text hover:bg-interactive-hover"
+            className="mx-2 my-0.5 block w-[calc(100%-1rem)] text-left font-technical text-[length:var(--text-sm)] uppercase tracking-[0.06em] text-chrome-text hover:bg-interactive-hover"
           >
             {item.label}
           </button>
