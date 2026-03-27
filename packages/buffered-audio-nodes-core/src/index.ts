@@ -12,6 +12,7 @@ export { BufferedSourceStream, SourceNode, type RenderTiming, type SourceMetadat
 export { BufferedStream, type StreamEventMap } from "./stream";
 export { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "./target";
 export { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "./transform";
+export { CompositeNode } from "./composite";
 
 // Graph format (BAG)
 export { graphDefinitionToNodes, renderGraph, validateGraphDefinition, type GraphDefinition, type GraphEdge, type GraphNode, type NodeRegistry } from "./graph-format";

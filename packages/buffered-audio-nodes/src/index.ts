@@ -43,3 +43,7 @@ export { spectralRepair, SpectralRepairNode, SpectralRepairStream, type Spectral
 export type { SpectralRegion } from "./transforms/spectral-repair/utils/interpolation";
 export { timeStretch, TimeStretchNode, type TimeStretchProperties } from "./transforms/time-stretch";
 export { voiceDenoise, VoiceDenoiseNode, VoiceDenoiseStream, type VoiceDenoiseProperties } from "./transforms/voice-denoise";
+
+// Composites
+export { chain, ChainNode } from "./composites/chain";
+export { CompositeNode } from "buffered-audio-nodes-core";

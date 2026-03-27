@@ -82,10 +82,8 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 		return BufferedAudioNode.is(value) && value.type[1] === "source";
 	}
 
-	to<T extends BufferedAudioNode>(child: T): T {
+	to(child: BufferedAudioNode): void {
 		this.properties = { ...this.properties, children: [...(this.properties.children ?? []), child] } as P;
-
-		return child;
 	}
 
 	private renderTimingData?: RenderTiming;

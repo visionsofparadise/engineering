@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "buffered-audio-nodes-core";
-import { applyBandpass, MixedRadixFft, resampleDirect } from "buffered-audio-nodes-utils";
+import { bandpass, MixedRadixFft, resampleDirect } from "buffered-audio-nodes-utils";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { buildTransitionWindow, createSegmentWorkspace, normalizeOverlapAdd, processSegment } from "./utils/segment";
@@ -114,7 +114,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 			outputChannels.push(out);
 		}
 
-		applyBandpass(outputChannels, this.sampleRate ?? 44100, this.properties.highPass, this.properties.lowPass);
+		bandpass(outputChannels, this.sampleRate ?? 44100, this.properties.highPass, this.properties.lowPass);
 
 		await buffer.write(0, outputChannels);
 	}

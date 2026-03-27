@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "buffered-audio-nodes-core";
-import { applyBandpass, resampleDirect } from "buffered-audio-nodes-utils";
+import { bandpass, resampleDirect } from "buffered-audio-nodes-utils";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { computeStftScaled, reflectPad } from "./utils/dsp";
@@ -161,7 +161,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 		const stemGains = [stems.drums, stems.bass, stems.other, stems.vocals];
 		const outputChannels = mixStems(stemOutputs, sumWeight, stemGains, stats, frames, channels);
 
-		applyBandpass(outputChannels, HTDEMUCS_SAMPLE_RATE, this.properties.highPass, this.properties.lowPass);
+		bandpass(outputChannels, HTDEMUCS_SAMPLE_RATE, this.properties.highPass, this.properties.lowPass);
 
 		if ((this.sampleRate ?? 44100) !== HTDEMUCS_SAMPLE_RATE) {
 			const resampled = await resampleDirect(this.properties.ffmpegPath, outputChannels, HTDEMUCS_SAMPLE_RATE, this.sampleRate ?? 44100);

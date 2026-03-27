@@ -35,7 +35,9 @@ describe("Pipeline integration", () => {
 
 		try {
 			const source = read(inputPath);
-			source.to(normalize({ ceiling: 1.0 })).to(write(outputPath));
+			const norm = normalize({ ceiling: 1.0 });
+			source.to(norm);
+			norm.to(write(outputPath));
 			await source.render();
 
 			const outputData = await readFile(outputPath);

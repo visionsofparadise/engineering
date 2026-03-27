@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { ChunkBuffer } from "./buffer";
 import { validateGraphDefinition } from "./graph-format";
 import type { AudioChunk } from "./node";
-import type { SourceMetadata } from "./sources";
-import { BufferedSourceStream, SourceNode } from "./sources";
-import { BufferedTargetStream, TargetNode } from "./targets";
-import { BufferedTransformStream, TransformNode } from "./transforms";
+import type { SourceMetadata } from "./source";
+import { BufferedSourceStream, SourceNode } from "./source";
+import { BufferedTargetStream, TargetNode } from "./target";
+import { BufferedTransformStream, TransformNode } from "./transform";
 
 class MockSourceStream extends BufferedSourceStream {
 	override async getMetadata(): Promise<SourceMetadata> {
@@ -120,7 +120,8 @@ describe("Graph executor", () => {
 		const transform = new MockTransform();
 		const target = new MockTarget();
 
-		source.to(transform).to(target);
+		source.to(transform);
+		transform.to(target);
 		await source.render();
 
 		expect(transform.processedChunks).toHaveLength(1);
@@ -151,9 +152,9 @@ describe("Graph executor", () => {
 		const target1 = new MockTarget();
 		const target2 = new MockTarget();
 
-		const t = source.to(transform);
-		t.to(target1);
-		t.to(target2);
+		source.to(transform);
+		transform.to(target1);
+		transform.to(target2);
 		await source.render();
 
 		expect(transform.processedChunks).toHaveLength(1);

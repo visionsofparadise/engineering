@@ -154,7 +154,8 @@ describe("Composite stream via _setup()", () => {
 			const composite = new CompositeTransform();
 			const target = write(tempOut, { bitDepth: "32f" });
 
-			source.to(composite).to(target);
+			source.to(composite);
+			composite.to(target);
 			await source.render();
 
 			const result = await readWavSamples(tempOut);

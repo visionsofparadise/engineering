@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ChunkBuffer } from "./buffer";
 import type { AudioChunk } from "./node";
-import type { SourceMetadata } from "./sources";
+import type { SourceMetadata } from "./source";
 import { BufferedAudioNode } from "./node";
-import { BufferedSourceStream, SourceNode } from "./sources";
+import { BufferedSourceStream, SourceNode } from "./source";
 import { BufferedStream } from "./stream";
-import { BufferedTargetStream, TargetNode } from "./targets";
-import { BufferedTransformStream, TransformNode } from "./transforms";
+import { BufferedTargetStream, TargetNode } from "./target";
+import { BufferedTransformStream, TransformNode } from "./transform";
 
 class MockSourceStream extends BufferedSourceStream {
 	override async getMetadata(): Promise<SourceMetadata> {
@@ -158,13 +158,12 @@ describe("BufferedAudioNode", () => {
 		expect(TargetNode.is(source)).toBe(false);
 	});
 
-	it("to() appends child and returns target", () => {
+	it("to() appends child", () => {
 		const source = new MockSource();
 		const target = new MockTarget();
 
-		const result = source.to(target);
+		source.to(target);
 		expect(source.children).toContain(target);
-		expect(result).toBe(target);
 	});
 
 	it("teardown() iterates streams and recurses to children", async () => {

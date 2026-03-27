@@ -205,10 +205,8 @@ export abstract class TransformNode<P extends TransformNodeProperties = Transfor
 		return BufferedAudioNode.is(value) && value.type[1] === "transform";
 	}
 
-	to<T extends BufferedAudioNode>(child: T): T {
+	to(child: BufferedAudioNode): void {
 		this.properties = { ...this.properties, children: [...(this.properties.children ?? []), child] } as P;
-
-		return child;
 	}
 
 	abstract createStream(): BufferedTransformStream;
