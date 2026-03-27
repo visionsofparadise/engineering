@@ -1,6 +1,6 @@
 import { highPassCoefficients, lowPassCoefficients, zeroPhaseBiquadFilter } from "./biquad";
 
-export function applyBandpass(channels: Array<Float32Array>, sampleRate: number, highPass?: number, lowPass?: number): void {
+export function bandpass(channels: Array<Float32Array>, sampleRate: number, highPass?: number, lowPass?: number): void {
 	if (!highPass && !lowPass) return;
 
 	for (const channel of channels) {

@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stft, istft } from "./stft";
-import type { FftBackend } from "./fft-backend";
+import { stft, istft, type FftBackend } from "buffered-audio-nodes-utils";
 import { binaries } from "./test-binaries";
 
 function maxError(a: Float32Array, b: Float32Array): number {

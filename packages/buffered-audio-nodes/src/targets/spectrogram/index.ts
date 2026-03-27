@@ -1,11 +1,8 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
-import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
-import type { AudioChunk, StreamContext } from "../../node";
-import { WHOLE_FILE } from "../../transforms";
-import { detectFftBackend, getFftAddon } from "../../utils/fft-backend";
-import { createFftWorkspace, hanningWindow, type FftWorkspace } from "../../utils/stft";
+import { BufferedTargetStream, TargetNode, WHOLE_FILE, type AudioChunk, type StreamContext, type TargetNodeProperties } from "buffered-audio-nodes-core";
+import { detectFftBackend, getFftAddon, createFftWorkspace, hanningWindow, type FftWorkspace } from "buffered-audio-nodes-utils";
 import { computeSpectrogramFrames } from "./utils/frames";
 import { FREQUENCY_SCALE_BYTE, computeMelBandMappings, computeErbBandMappings, computeLogBandMappings } from "./utils/frequency";
 

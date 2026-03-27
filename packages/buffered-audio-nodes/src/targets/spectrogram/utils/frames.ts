@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { fft, type FftWorkspace } from "../../../utils/stft";
+import { fft, type FftWorkspace } from "buffered-audio-nodes-utils";
 
 interface BandMapping {
 	readonly binStart: number;

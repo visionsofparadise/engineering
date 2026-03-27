@@ -1,8 +1,6 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
-import type { ChunkBuffer } from "../../buffer";
-import type { BufferedAudioNodeInput } from "../../node";
-import { lowPassCoefficients, zeroPhaseBiquadFilter } from "../../utils/biquad";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type BufferedAudioNodeInput, type ChunkBuffer, type TransformNodeProperties } from "buffered-audio-nodes-core";
+import { lowPassCoefficients, zeroPhaseBiquadFilter } from "buffered-audio-nodes-utils";
 import { detectClickMask, buildBlendEnvelope } from "./utils/click-detection";
 
 export const schema = z.object({

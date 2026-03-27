@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { runBenchmark } from "./test-benchmark";
 import { spectralRepair } from "../transforms/spectral-repair";
 import { deReverb } from "../transforms/de-reverb";
-import { ExecutionProvider } from "../node";
+import { ExecutionProvider } from "buffered-audio-nodes-core";
 
 const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "test-voice.wav");
 

@@ -1,5 +1,4 @@
-import type { MixedRadixFft } from "../../../utils/mixed-radix-fft";
-import { hanningWindow } from "../../../utils/stft";
+import { hanningWindow, type MixedRadixFft } from "buffered-audio-nodes-utils";
 
 const N_FFT = 7680;
 const HOP_SIZE = 1024;

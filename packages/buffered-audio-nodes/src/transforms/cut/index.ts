@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
-import type { AudioChunk } from "../../node";
+import { BufferedTransformStream, TransformNode, type AudioChunk, type TransformNodeProperties } from "buffered-audio-nodes-core";
 
 const cutRegionSchema = z.object({
 	start: z.number().min(0).describe("Start (seconds)"),

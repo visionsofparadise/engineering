@@ -1,8 +1,8 @@
-import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type ExecutionProvider, type RenderOptions, type StreamContext } from "../node";
-import { BufferedStream } from "../stream";
-import { TargetNode } from "../targets";
-import { TransformNode } from "../transforms";
-import { teeReadable } from "../utils/tee-readable";
+import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type ExecutionProvider, type RenderOptions, type StreamContext } from "./node";
+import { BufferedStream } from "./stream";
+import { TargetNode } from "./target";
+import { TransformNode } from "./transform";
+import { teeReadable } from "./utils/tee-readable";
 
 export interface SourceMetadata {
 	readonly sampleRate: number;

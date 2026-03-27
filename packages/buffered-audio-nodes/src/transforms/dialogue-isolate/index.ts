@@ -1,12 +1,8 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
-import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, StreamContext } from "../../node";
-import { applyBandpass } from "../../utils/apply-bandpass";
-import { MixedRadixFft } from "../../utils/mixed-radix-fft";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "buffered-audio-nodes-core";
+import { applyBandpass, MixedRadixFft, resampleDirect } from "buffered-audio-nodes-utils";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
-import { resampleDirect } from "../../utils/resample-direct";
 import { buildTransitionWindow, createSegmentWorkspace, normalizeOverlapAdd, processSegment } from "./utils/segment";
 
 export const schema = z.object({

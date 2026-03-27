@@ -1,4 +1,4 @@
-import { smoothEnvelope } from "../../../utils/envelope";
+import { smoothEnvelope } from "buffered-audio-nodes-utils";
 
 export function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: number, maxClickDuration: number): Uint8Array {
 	const mask = new Uint8Array(signal.length);

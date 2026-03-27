@@ -1,8 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { z } from "zod";
-import { BufferedSourceStream, SourceNode, type SourceMetadata, type SourceNodeProperties } from "../..";
-import type { AudioChunk } from "../../../node";
-import { deinterleaveBuffer } from "../../../utils/interleave";
+import { BufferedSourceStream, SourceNode, type AudioChunk, type SourceMetadata, type SourceNodeProperties } from "buffered-audio-nodes-core";
+import { deinterleaveBuffer } from "buffered-audio-nodes-utils";
 
 export const ffmpegSchema = z.object({
 	path: z.string().default("").meta({ input: "file", mode: "open" }),

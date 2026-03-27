@@ -1,8 +1,5 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
-import type { ChunkBuffer } from "../../buffer";
-import { FileChunkBuffer } from "../../buffer/file";
-import type { AudioChunk, StreamContext } from "../../node";
+import { BufferedTransformStream, FileChunkBuffer, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "buffered-audio-nodes-core";
 import { runFfmpeg, runFfmpegWithFile } from "./utils/process";
 
 export const schema = z.object({

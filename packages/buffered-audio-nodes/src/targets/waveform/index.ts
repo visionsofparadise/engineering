@@ -1,8 +1,6 @@
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
-import { BufferedTargetStream, TargetNode, type TargetNodeProperties } from "..";
-import type { AudioChunk, StreamContext } from "../../node";
-import { WHOLE_FILE } from "../../transforms";
+import { BufferedTargetStream, TargetNode, WHOLE_FILE, type AudioChunk, type StreamContext, type TargetNodeProperties } from "buffered-audio-nodes-core";
 import { updateMinMax, writeMinMaxPoint } from "./utils/minmax";
 
 export const schema = z.object({

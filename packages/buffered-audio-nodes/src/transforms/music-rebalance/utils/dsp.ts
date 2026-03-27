@@ -1,4 +1,4 @@
-import { istft, stft } from "../../../utils/stft";
+import { istft, stft } from "buffered-audio-nodes-utils";
 
 const FFT_SIZE = 4096;
 const HOP_SIZE = 1024;

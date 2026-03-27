@@ -1,6 +1,5 @@
-import type { FftBackend } from "../../../utils/fft-backend";
+import { istft, stft, type FftBackend } from "buffered-audio-nodes-utils";
 import type { OnnxSession } from "../../../utils/onnx-runtime";
-import { istft, stft } from "../../../utils/stft";
 
 const BLOCK_LEN = 512;
 const BLOCK_SHIFT = 128;

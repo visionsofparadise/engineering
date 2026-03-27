@@ -1,5 +1,4 @@
-import { bandPassCoefficients, biquadFilter } from "../../../utils/biquad";
-import { smoothEnvelope } from "../../../utils/envelope";
+import { bandPassCoefficients, biquadFilter, smoothEnvelope } from "buffered-audio-nodes-utils";
 import type { Region } from "./regions";
 
 export interface BreathEnvelopes {

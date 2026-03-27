@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DeClickNode, type DeClickProperties } from ".";
-import type { BufferedAudioNodeInput } from "../../node";
+import type { BufferedAudioNodeInput } from "buffered-audio-nodes-core";
 
 export const schema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),

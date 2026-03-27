@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
-import type { AudioChunk } from "../../node";
+import { BufferedTransformStream, TransformNode, type AudioChunk, type TransformNodeProperties } from "buffered-audio-nodes-core";
 
 export const schema = z.object({
 	invert: z.boolean().default(true).describe("Invert"),

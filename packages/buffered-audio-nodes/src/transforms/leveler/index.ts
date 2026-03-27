@@ -1,7 +1,5 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, type TransformNodeProperties } from "..";
-import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk } from "../../node";
+import { BufferedTransformStream, TransformNode, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "buffered-audio-nodes-core";
 import { computeRms, computeTargetGain } from "./utils/rms";
 
 export const schema = z.object({

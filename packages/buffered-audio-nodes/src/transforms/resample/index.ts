@@ -1,6 +1,5 @@
 import { z } from "zod";
-import type { ChunkBuffer } from "../../buffer";
-import type { StreamContext } from "../../node";
+import type { ChunkBuffer, StreamContext } from "buffered-audio-nodes-core";
 import { FfmpegNode, FfmpegStream, type FfmpegProperties } from "../ffmpeg";
 
 export const schema = z.object({

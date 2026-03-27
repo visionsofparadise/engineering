@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { validateGraphDefinition, type GraphDefinition } from "buffered-audio-nodes";
+import { validateGraphDefinition, type GraphDefinition } from "buffered-audio-nodes-core";
 import type { SessionContext } from "../../../../models/Context";
 import { Button } from "../../../ui/button";
 import { Input } from "../../../ui/input";

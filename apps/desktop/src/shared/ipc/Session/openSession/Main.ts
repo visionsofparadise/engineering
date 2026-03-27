@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { validateGraphDefinition } from "buffered-audio-nodes";
+import { validateGraphDefinition } from "buffered-audio-nodes-core";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import { OPEN_SESSION_ACTION, type OpenSessionIpcParameters, type OpenSessionIpcReturn, type OpenSessionInput } from "./Renderer";
 

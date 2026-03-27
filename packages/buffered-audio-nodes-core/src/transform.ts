@@ -1,9 +1,9 @@
-import type { ChunkBuffer } from "../buffer";
-import { FileChunkBuffer } from "../buffer/file";
-import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "../node";
-import { BufferedStream } from "../stream";
-import { TargetNode } from "../targets";
-import { teeReadable } from "../utils/tee-readable";
+import type { ChunkBuffer } from "./buffer";
+import { FileChunkBuffer } from "./buffer/file";
+import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "./node";
+import { BufferedStream } from "./stream";
+import { TargetNode } from "./target";
+import { teeReadable } from "./utils/tee-readable";
 
 export const WHOLE_FILE = Infinity;
 

@@ -1,8 +1,7 @@
 import { z } from "zod";
-import type { RenderOptions } from "./node";
-import type { BufferedAudioNode } from "./node";
-import { SourceNode } from "./sources";
-import { TransformNode } from "./transforms";
+import type { BufferedAudioNode, RenderOptions } from "./node";
+import { SourceNode } from "./source";
+import { TransformNode } from "./transform";
 
 const graphNodeSchema = z.object({
 	id: z.string().min(1),

@@ -1,5 +1,5 @@
-import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "../node";
-import { BufferedStream } from "../stream";
+import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "./node";
+import { BufferedStream } from "./stream";
 
 export interface TargetNodeProperties extends BufferedAudioNodeProperties {}
 

@@ -1,8 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { WaveFile } from "wavefile";
-import type { ChunkBuffer } from "../buffer";
-import { FileChunkBuffer } from "../buffer/file";
-import type { SourceMetadata } from "../sources";
+import { FileChunkBuffer, type ChunkBuffer, type SourceMetadata } from "buffered-audio-nodes-core";
 
 export interface WavSamples {
 	readonly samples: Array<Float32Array>;

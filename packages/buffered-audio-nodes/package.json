@@ -42,6 +42,8 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "buffered-audio-nodes-core": "*",
+    "buffered-audio-nodes-utils": "*",
     "bufferfy": "^4.0.3",
     "commander": "^14.0.3",
     "tsx": "^4.21.0",

@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
-import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, StreamContext } from "../../node";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "buffered-audio-nodes-core";
+import { replaceChannel } from "buffered-audio-nodes-utils";
 import { readToBuffer } from "../../utils/read-to-buffer";
-import { replaceChannel } from "../../utils/replace-channel";
 import { nlmsAdaptiveFilter } from "./utils/nlms";
 
 export const schema = z.object({

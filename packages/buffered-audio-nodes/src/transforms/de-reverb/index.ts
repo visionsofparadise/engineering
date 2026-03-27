@@ -1,11 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loops with bounds-checked typed array access */
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "..";
-import type { ChunkBuffer } from "../../buffer";
-import type { AudioChunk, StreamContext } from "../../node";
-import { initFftBackend, type FftBackend } from "../../utils/fft-backend";
-import { replaceChannel } from "../../utils/replace-channel";
-import { istft, stft } from "../../utils/stft";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "buffered-audio-nodes-core";
+import { initFftBackend, istft, replaceChannel, stft, type FftBackend } from "buffered-audio-nodes-utils";
 import { transposeToBinMajor, transposeToFrameMajor } from "./utils/transpose";
 import { applyWpePrediction, computeBinPowerAndEnergy, solveWpeFilter } from "./utils/wpe";
 

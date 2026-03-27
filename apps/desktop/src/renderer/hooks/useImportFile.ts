@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import type { GraphDefinition } from "buffered-audio-nodes";
+import type { GraphDefinition } from "buffered-audio-nodes-core";
 import type { AppContext } from "../models/Context";
 import { addTab } from "../utils/tabs";
 

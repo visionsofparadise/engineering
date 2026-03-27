@@ -2,11 +2,9 @@ import { randomBytes } from "node:crypto";
 import { appendFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import type { RenderOptions } from "../node";
-import type { SourceNode } from "../sources";
+import type { RenderOptions, SourceNode, TransformNode } from "buffered-audio-nodes-core";
 import { read } from "../sources/read";
 import { write } from "../targets/write";
-import type { TransformNode } from "../transforms";
 
 export interface BenchmarkResult {
 	readonly name: string;
