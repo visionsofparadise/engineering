@@ -73,6 +73,7 @@ export class DeClickStream extends BufferedTransformStream<DeClickProperties> {
  */
 export class DeClickNode<P extends DeClickProperties = DeClickProperties> extends TransformNode<P> {
 	static override readonly moduleName: string = "De-Click";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Remove clicks, pops, and impulse artifacts";
 	static override readonly schema: z.ZodType = schema;
 

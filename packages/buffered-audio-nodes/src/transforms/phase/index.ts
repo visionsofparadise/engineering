@@ -70,6 +70,7 @@ export class PhaseStream extends BufferedTransformStream<PhaseProperties> {
 
 export class PhaseNode extends TransformNode<PhaseProperties> {
 	static override readonly moduleName = "Phase";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Invert or rotate signal phase";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is PhaseNode {

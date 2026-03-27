@@ -46,8 +46,8 @@ const edgeTypes: EdgeTypes = {
 };
 
 function getNodeType(node: GNode): "source" | "transform" | "target" {
-	if (SOURCE_MODULES.has(node.node)) return "source";
-	if (TARGET_MODULES.has(node.node)) return "target";
+	if (SOURCE_MODULES.has(node.nodeName)) return "source";
+	if (TARGET_MODULES.has(node.nodeName)) return "target";
 
 	return "transform";
 }
@@ -134,7 +134,7 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 		if (!graphDefinition || isRendering) return;
 
 		const autoApplyNodes = graphDefinition.nodes.filter((node) => {
-			if (!CHEAP_MODULES.has(node.node)) return false;
+			if (!CHEAP_MODULES.has(node.nodeName)) return false;
 			if (nodeStates.get(node.id) !== "stale") return false;
 
 			const parentEdge = graphDefinition.edges.find((e) => e.to === node.id);
@@ -178,8 +178,8 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 				return {
 					...base,
 					data: {
-						label: node.node,
-						fileName: (node.options?.path as string) ?? "",
+						label: node.nodeName,
+						fileName: (node.parameters?.path as string) ?? "",
 						state,
 						monitored,
 						onMonitor: () => graph.setMonitor(node.id),
@@ -191,11 +191,11 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 				return {
 					...base,
 					data: {
-						label: node.node,
+						label: node.nodeName,
 						state,
 						monitored,
-						outputPath: node.options?.path as string | undefined,
-						format: node.node.toLowerCase(),
+						outputPath: node.parameters?.path as string | undefined,
+						format: node.nodeName.toLowerCase(),
 						onMonitor: () => graph.setMonitor(node.id),
 					} satisfies TargetNodeData,
 				};
@@ -204,10 +204,10 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 			return {
 				...base,
 				data: {
-					label: node.node,
+					label: node.nodeName,
 					state,
 					monitored,
-					bypassed: node.bypass ?? false,
+					bypassed: node.options?.bypass ?? false,
 					onMonitor: () => graph.setMonitor(node.id),
 					onBypassToggle: () => graph.toggleBypass(node.id),
 					onClick: () => setSelectedNodeId(node.id),
@@ -288,8 +288,8 @@ export const GraphEditor: React.FC<GraphEditorProps> = ({ context }) => {
 		(fromId: string, toId: string, selection: ModuleSelection) => {
 			const newNode: GNode = {
 				id: crypto.randomUUID(),
-				package: selection.packageName,
-				node: selection.moduleName,
+				packageName: selection.packageName,
+				nodeName: selection.moduleName,
 			};
 
 			graph.addNode(newNode);

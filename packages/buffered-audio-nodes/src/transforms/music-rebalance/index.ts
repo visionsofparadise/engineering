@@ -184,6 +184,7 @@ export class MusicRebalanceStream extends BufferedTransformStream<MusicRebalance
 
 export class MusicRebalanceNode extends TransformNode<MusicRebalanceProperties> {
 	static override readonly moduleName = "Music Rebalance";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Rebalance stem volumes using HTDemucs source separation";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is MusicRebalanceNode {

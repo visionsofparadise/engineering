@@ -1,10 +1,10 @@
 import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 
 export interface ChainModuleReference {
-	readonly package: string;
-	readonly module: string;
+	readonly packageName: string;
+	readonly moduleName: string;
 	readonly label?: string;
-	readonly options?: Record<string, unknown>;
+	readonly parameters?: Record<string, unknown>;
 	readonly bypass?: boolean;
 }
 

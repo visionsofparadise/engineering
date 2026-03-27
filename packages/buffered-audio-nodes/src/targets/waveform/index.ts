@@ -144,6 +144,7 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 
 export class WaveformNode extends TargetNode<WaveformProperties> {
 	static override readonly moduleName = "Waveform";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Generate waveform visualization data";
 	static override readonly schema = schema;
 

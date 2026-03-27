@@ -118,6 +118,7 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 
 export class EqMatchNode extends TransformNode<EqMatchProperties> {
 	static override readonly moduleName = "EQ Match";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Match frequency response to a reference profile";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is EqMatchNode {

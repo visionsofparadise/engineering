@@ -20,9 +20,9 @@ export function useImportFile(context: AppContext) {
 				nodes: [
 					{
 						id: crypto.randomUUID(),
-						package: "buffered-audio-nodes",
-						node: "Read",
-						options: { path: filePath },
+						packageName: "buffered-audio-nodes",
+						nodeName: "Read",
+						parameters: { path: filePath },
 					},
 				],
 				edges: [],

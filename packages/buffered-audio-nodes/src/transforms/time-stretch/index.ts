@@ -21,6 +21,7 @@ export class TimeStretchStream extends FfmpegStream<TimeStretchProperties> {
 
 export class TimeStretchNode extends FfmpegNode<TimeStretchProperties> {
 	static override readonly moduleName = "Time Stretch";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Change duration without affecting pitch";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is TimeStretchNode {

@@ -104,6 +104,7 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 
 export class VoiceDenoiseNode extends TransformNode<VoiceDenoiseProperties> {
 	static override readonly moduleName = "Voice Denoise";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Remove background noise from speech using DTLN neural network";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is VoiceDenoiseNode {

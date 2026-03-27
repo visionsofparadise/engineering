@@ -68,6 +68,7 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 
 export class LoudnessNode extends FfmpegNode<LoudnessProperties> {
 	static override readonly moduleName = "Loudness";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Measure integrated, short-term, and momentary loudness";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is LoudnessNode {

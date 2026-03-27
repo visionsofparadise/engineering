@@ -12,6 +12,7 @@ const testVoice = join(import.meta.dirname, "../utils/test-voice.wav");
 
 class PassthroughTransform extends TransformNode {
 	static override readonly moduleName = "Passthrough";
+	static override readonly packageName = "test";
 	override readonly type = ["buffered-audio-node", "transform", "passthrough"] as const;
 	get bufferSize(): number { return 0; }
 	get latency(): number { return 0; }
@@ -33,6 +34,7 @@ class ErrorStream extends BufferedTransformStream {
 
 class ErrorTransform extends TransformNode {
 	static override readonly moduleName = "Error";
+	static override readonly packageName = "test";
 	override readonly type = ["buffered-audio-node", "transform", "error"] as const;
 	get bufferSize(): number { return WHOLE_FILE; }
 	get latency(): number { return 0; }
@@ -76,6 +78,7 @@ class CompositeStream extends BufferedTransformStream {
 
 class CompositeTransform extends TransformNode {
 	static override readonly moduleName = "Composite";
+	static override readonly packageName = "test";
 	override readonly type = ["buffered-audio-node", "transform", "composite"] as const;
 	get bufferSize(): number { return 0; }
 	get latency(): number { return 0; }

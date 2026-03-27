@@ -88,6 +88,7 @@ export class LoudnessStatsStream extends BufferedTargetStream {
 
 export class LoudnessStatsNode extends TargetNode {
 	static override readonly moduleName = "Loudness Stats";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Measure integrated loudness, true peak, loudness range, and short-term/momentary loudness per EBU R128";
 	static override readonly schema = schema;
 

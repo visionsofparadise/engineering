@@ -5,15 +5,15 @@ import type { ModuleRegistryMap } from "../../../models/ModuleRegistry";
 import { APPLY_ACTION, type ApplyInput, type ApplyIpcParameters, type ApplyIpcReturn, type ChainModuleReference } from "./Renderer";
 
 function resolveModule(ref: ChainModuleReference, registry: ModuleRegistryMap): TransformNode {
-	const packageModules = registry.get(ref.package);
+	const packageModules = registry.get(ref.packageName);
 
-	if (!packageModules) throw new Error(`Unknown package: "${ref.package}"`);
+	if (!packageModules) throw new Error(`Unknown package: "${ref.packageName}"`);
 
-	const Module = packageModules.get(ref.module);
+	const Module = packageModules.get(ref.moduleName);
 
-	if (!Module) throw new Error(`Unknown module: "${ref.module}" in package "${ref.package}"`);
+	if (!Module) throw new Error(`Unknown module: "${ref.moduleName}" in package "${ref.packageName}"`);
 
-	const instance = new Module(ref.options);
+	const instance = new Module(ref.parameters);
 
 	return instance as unknown as TransformNode;
 }
@@ -66,7 +66,7 @@ export class ApplyMainIpc extends AsyncMainIpc<ApplyIpcParameters, ApplyIpcRetur
 		browserWindow.webContents.send("audio:progress", {
 			jobId,
 			moduleIndex: 0,
-			moduleName: input.transforms[0]?.module ?? "apply",
+			moduleName: input.transforms[0]?.moduleName ?? "apply",
 			framesProcessed: 0,
 			sourceTotalFrames: 0,
 		});

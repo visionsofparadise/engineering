@@ -52,6 +52,7 @@ export class DePlosiveStream extends BufferedTransformStream<DePlosiveProperties
 
 export class DePlosiveNode extends TransformNode<DePlosiveProperties> {
 	static override readonly moduleName = "De-Plosive";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Reduce plosive bursts (p, b, t, d sounds)";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DePlosiveNode {

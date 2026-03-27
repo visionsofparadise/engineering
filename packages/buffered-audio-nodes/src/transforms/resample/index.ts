@@ -33,6 +33,7 @@ export class ResampleStream extends FfmpegStream<ResampleProperties> {
 
 export class ResampleNode extends FfmpegNode<ResampleProperties> {
 	static override readonly moduleName = "Resample";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Change sample rate";
 	static override readonly schema = schema;
 

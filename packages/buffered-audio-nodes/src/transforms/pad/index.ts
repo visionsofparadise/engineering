@@ -48,6 +48,7 @@ export class PadStream extends BufferedTransformStream<PadProperties> {
 
 export class PadNode extends TransformNode<PadProperties> {
 	static override readonly moduleName = "Pad";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Add silence to start or end of audio";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is PadNode {

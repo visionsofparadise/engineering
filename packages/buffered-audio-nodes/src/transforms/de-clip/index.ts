@@ -49,6 +49,7 @@ export class DeClipStream extends BufferedTransformStream<DeClipProperties> {
 
 export class DeClipNode extends TransformNode<DeClipProperties> {
 	static override readonly moduleName = "De-Clip";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Restore clipped audio peaks";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DeClipNode {

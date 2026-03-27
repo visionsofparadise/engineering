@@ -55,6 +55,7 @@ export class ReverseStream extends BufferedTransformStream {
 
 export class ReverseNode extends TransformNode {
 	static override readonly moduleName = "Reverse";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Reverse audio playback direction";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is ReverseNode {

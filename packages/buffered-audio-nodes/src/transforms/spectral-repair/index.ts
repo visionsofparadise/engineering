@@ -92,6 +92,7 @@ export class SpectralRepairStream extends BufferedTransformStream<SpectralRepair
 
 export class SpectralRepairNode extends TransformNode<SpectralRepairProperties> {
 	static override readonly moduleName = "Spectral Repair";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Repair spectral artifacts by interpolating from surrounding content";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is SpectralRepairNode {

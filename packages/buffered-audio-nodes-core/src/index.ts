@@ -15,7 +15,7 @@ export { BufferedTransformStream, TransformNode, WHOLE_FILE, type TransformNodeP
 export { CompositeNode } from "./composite";
 
 // Graph format (BAG)
-export { graphDefinitionToNodes, renderGraph, validateGraphDefinition, type GraphDefinition, type GraphEdge, type GraphNode, type NodeRegistry } from "./graph-format";
+export { pack, renderGraph, unpack, validateGraphDefinition, type GraphDefinition, type GraphEdge, type GraphNode, type NodeRegistry } from "./graph-format";
 
 // Utilities
 export { teeReadable } from "./utils/tee-readable";

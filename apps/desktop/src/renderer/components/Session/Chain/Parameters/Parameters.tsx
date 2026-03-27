@@ -19,19 +19,19 @@ interface ParametersProps {
 
 export const Parameters: React.FC<ParametersProps> = resnapshot(({ packageName, module, index, context, chain, setChain, disabled, children }) => {
 	const app = context.app;
-	const packageState = app.packages.find((ps) => ps.directory === packageName);
+	const packageState = app.packages.find((ps) => ps.name === packageName);
 	const mod = packageState?.modules.find((mi) => mi.moduleName === module);
 	const properties = mod ? getProperties(mod.schema) : undefined;
 	const entries = properties ? Object.entries(properties) : [];
 
-	const options = chain.transforms[index]?.options;
+	const parameters = chain.transforms[index]?.parameters;
 
 	const commitKey = useCallback(
 		(key: string, value: unknown) => {
 			setChain((current) => ({
 				...current,
 				transforms: current.transforms.map((transform, position) =>
-					position === index ? { ...transform, options: { ...transform.options, [key]: value } } : transform,
+					position === index ? { ...transform, parameters: { ...transform.parameters, [key]: value } } : transform,
 				),
 			}));
 		},
@@ -53,7 +53,7 @@ export const Parameters: React.FC<ParametersProps> = resnapshot(({ packageName, 
 			>
 				{entries.map(([key, property]) => {
 					const label = property.description ?? key;
-					const initialValue = options?.[key] ?? property.default;
+					const initialValue = parameters?.[key] ?? property.default;
 
 					return (
 						<ParameterSwitch

@@ -122,6 +122,7 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 
 export class DialogueIsolateNode extends TransformNode<DialogueIsolateProperties> {
 	static override readonly moduleName = "Dialogue Isolate";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Isolate dialogue from background using MDX-Net vocal separation";
 	static override readonly schema = schema;
 

@@ -11,6 +11,7 @@ export interface MouthDeClickProperties extends z.infer<typeof mouthDeClickSchem
 
 export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 	static override readonly moduleName: string = "Mouth De-Click";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly schema = mouthDeClickSchema;
 	static override is(value: unknown): value is MouthDeClickNode {
 		return DeClickNode.is(value) && value.type[3] === "mouth-de-click";

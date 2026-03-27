@@ -71,9 +71,9 @@ export function useSessionKeyboard({ undo, redo, isPlaying, playbackEngine, grap
 
 					const cutNode = {
 						id: crypto.randomUUID(),
-						package: "buffered-audio-nodes",
-						node: "Cut",
-						options: { regions: [{ start: Math.min(startSec, endSec), end: Math.max(startSec, endSec) }] },
+						packageName: "buffered-audio-nodes",
+						nodeName: "Cut",
+						parameters: { regions: [{ start: Math.min(startSec, endSec), end: Math.max(startSec, endSec) }] },
 					};
 
 					event.preventDefault();

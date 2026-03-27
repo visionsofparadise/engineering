@@ -40,8 +40,8 @@ function computeContentHashes(
 
 		const parentId = incomingEdge.get(nodeId);
 		const upstreamHash = parentId !== undefined ? compute(parentId) : "";
-		const version = getPackageVersion(packages, node.package);
-		const hash = contentHash(upstreamHash, node.package, version, node.node, node.options ?? {}, node.bypass ?? false);
+		const version = getPackageVersion(packages, node.packageName);
+		const hash = contentHash(upstreamHash, node.packageName, version, node.nodeName, node.parameters ?? {}, node.options?.bypass ?? false);
 
 		hashes.set(nodeId, hash);
 
@@ -64,7 +64,7 @@ async function computeNodeStates(
 
 	await Promise.all(
 		graphDefinition.nodes.map(async (node) => {
-			if (node.bypass) {
+			if (node.options?.bypass) {
 				states.set(node.id, "bypassed");
 
 				return;
@@ -199,11 +199,11 @@ export function useGraph(
 		[mutateGraph],
 	);
 
-	const updateNodeOptions = useCallback(
-		(nodeId: string, options: Record<string, unknown>) => {
+	const updateNodeParameters = useCallback(
+		(nodeId: string, parameters: Record<string, unknown>) => {
 			mutateGraph((gd) => ({
 				...gd,
-				nodes: gd.nodes.map((n) => (n.id === nodeId ? { ...n, options } : n)),
+				nodes: gd.nodes.map((n) => (n.id === nodeId ? { ...n, parameters } : n)),
 			}));
 		},
 		[mutateGraph],
@@ -213,7 +213,7 @@ export function useGraph(
 		(nodeId: string) => {
 			mutateGraph((gd) => ({
 				...gd,
-				nodes: gd.nodes.map((n) => (n.id === nodeId ? { ...n, bypass: !(n.bypass ?? false) } : n)),
+				nodes: gd.nodes.map((n) => (n.id === nodeId ? { ...n, options: { ...n.options, bypass: !(n.options?.bypass ?? false) } } : n)),
 			}));
 		},
 		[mutateGraph],
@@ -356,7 +356,7 @@ export function useGraph(
 		removeNode,
 		addEdge,
 		removeEdge,
-		updateNodeOptions,
+		updateNodeParameters,
 		toggleBypass,
 		setMonitor,
 		updatePositions,

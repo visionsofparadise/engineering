@@ -23,7 +23,7 @@ export const JobView: React.FC<JobViewProps> = ({ context, jobState, onAbort, ch
 				{jobState.modules.map((moduleJob) => (
 					<JobSlot
 						key={moduleJob.moduleIndex}
-						packageName={chain.transforms[moduleJob.moduleIndex]?.package ?? "acm"}
+						packageName={chain.transforms[moduleJob.moduleIndex]?.packageName ?? "acm"}
 						moduleJob={moduleJob}
 						index={moduleJob.moduleIndex}
 						context={context}

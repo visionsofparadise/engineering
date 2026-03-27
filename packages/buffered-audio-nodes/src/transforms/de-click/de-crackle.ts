@@ -11,6 +11,7 @@ export interface DeCrackleProperties extends z.infer<typeof schema>, DeClickProp
 
 export class DeCrackleNode extends DeClickNode<DeCrackleProperties> {
 	static override readonly moduleName: string = "De-Crackle";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly schema = schema;
 
 	static override is(value: unknown): value is DeCrackleNode {

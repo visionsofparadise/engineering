@@ -68,6 +68,7 @@ export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
 
 export class LevelerNode extends TransformNode<LevelerProperties> {
 	static override readonly moduleName = "Leveler";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Smooth volume variations for consistent loudness";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is LevelerNode {

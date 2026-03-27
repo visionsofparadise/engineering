@@ -83,8 +83,8 @@ program
 			const registry: NodeRegistry = new Map();
 
 			for (const nodeDef of definition.nodes) {
-				if (!registry.has(nodeDef.package)) {
-					const mod = (await import(nodeDef.package)) as Record<string, unknown>;
+				if (!registry.has(nodeDef.packageName)) {
+					const mod = (await import(nodeDef.packageName)) as Record<string, unknown>;
 					const packageMap = new Map<string, new (options?: Record<string, unknown>) => BufferedAudioNode>();
 
 					for (const [key, value] of Object.entries(mod)) {
@@ -93,7 +93,7 @@ program
 						}
 					}
 
-					registry.set(nodeDef.package, packageMap);
+					registry.set(nodeDef.packageName, packageMap);
 				}
 			}
 

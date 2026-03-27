@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { BufferedAudioNode, RenderOptions } from "./node";
 import { SourceNode } from "./source";
@@ -5,10 +6,12 @@ import { TransformNode } from "./transform";
 
 const graphNodeSchema = z.object({
 	id: z.string().min(1),
-	package: z.string().min(1),
-	node: z.string().min(1),
-	options: z.record(z.string(), z.unknown()).optional(),
-	bypass: z.boolean().optional(),
+	packageName: z.string().min(1),
+	nodeName: z.string().min(1),
+	parameters: z.record(z.string(), z.unknown()).optional(),
+	options: z.object({
+		bypass: z.boolean().optional(),
+	}).optional(),
 });
 
 const graphEdgeSchema = z.object({
@@ -32,19 +35,75 @@ export function validateGraphDefinition(json: unknown): GraphDefinition {
 	return graphDefinitionSchema.parse(json);
 }
 
-export function graphDefinitionToNodes(definition: GraphDefinition, registry: NodeRegistry): Array<SourceNode> {
+export function pack(sources: ReadonlyArray<SourceNode>, name?: string): GraphDefinition {
+	const visited = new Set<BufferedAudioNode>();
+	const nodes: Array<GraphNode> = [];
+	const edges: Array<GraphEdge> = [];
+
+	const ensureId = (node: BufferedAudioNode): string => {
+		if (node.id) return node.id;
+		const id = randomUUID();
+
+		node.properties = { ...node.properties, id };
+
+		return id;
+	};
+
+	const walk = (node: BufferedAudioNode): void => {
+		if (visited.has(node)) return;
+		visited.add(node);
+
+		const ctor = node.constructor as typeof BufferedAudioNode;
+		const id = ensureId(node);
+		const parameters = ctor.schema.parse(node.properties);
+
+		const options: { bypass?: boolean } = {};
+
+		if (node.isBypassed) options.bypass = true;
+
+		const graphNode: GraphNode = {
+			id,
+			packageName: ctor.packageName,
+			nodeName: ctor.moduleName,
+			...(Object.keys(parameters as Record<string, unknown>).length > 0
+				&& { parameters: parameters as Record<string, unknown> }),
+			...(Object.keys(options).length > 0 && { options }),
+		};
+
+		nodes.push(graphNode);
+
+		const rawChildren = node.properties.children ?? [];
+
+		for (const child of rawChildren) {
+			edges.push({ from: id, to: ensureId(child) });
+			walk(child);
+		}
+	};
+
+	for (const source of sources) {
+		walk(source);
+	}
+
+	return graphDefinitionSchema.parse({ name: name ?? "Untitled", nodes, edges });
+}
+
+export function unpack(definition: GraphDefinition, registry: NodeRegistry): Array<SourceNode> {
 	const nodeMap = new Map<string, BufferedAudioNode>();
 
 	for (const nodeDef of definition.nodes) {
-		const packageModules = registry.get(nodeDef.package);
+		const packageModules = registry.get(nodeDef.packageName);
 
-		if (!packageModules) throw new Error(`Unknown package: "${nodeDef.package}"`);
+		if (!packageModules) throw new Error(`Unknown package: "${nodeDef.packageName}"`);
 
-		const NodeClass = packageModules.get(nodeDef.node);
+		const NodeClass = packageModules.get(nodeDef.nodeName);
 
-		if (!NodeClass) throw new Error(`Unknown node: "${nodeDef.node}" in package "${nodeDef.package}"`);
+		if (!NodeClass) throw new Error(`Unknown node: "${nodeDef.nodeName}" in package "${nodeDef.packageName}"`);
 
-		const instance = new NodeClass(nodeDef.options);
+		const instance = new NodeClass(nodeDef.parameters);
+
+		if (nodeDef.options?.bypass) {
+			instance.properties = { ...instance.properties, bypass: nodeDef.options.bypass };
+		}
 
 		nodeMap.set(nodeDef.id, instance);
 	}
@@ -84,7 +143,7 @@ export function graphDefinitionToNodes(definition: GraphDefinition, registry: No
 }
 
 export async function renderGraph(definition: GraphDefinition, registry: NodeRegistry, options?: RenderOptions): Promise<void> {
-	const sources = graphDefinitionToNodes(definition, registry);
+	const sources = unpack(definition, registry);
 
 	await Promise.all(sources.map((source) => source.render(options)));
 }

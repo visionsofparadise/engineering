@@ -148,6 +148,7 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 
 export class DeReverbNode extends TransformNode<DeReverbProperties> {
 	static override readonly moduleName = "De-Reverb (WPE)";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Reduce room reverb using Weighted Prediction Error — classical DSP, fully tunable, no model required";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DeReverbNode {

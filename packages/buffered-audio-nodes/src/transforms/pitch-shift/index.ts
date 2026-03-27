@@ -25,6 +25,7 @@ export class PitchShiftStream extends FfmpegStream<PitchShiftProperties> {
 
 export class PitchShiftNode extends FfmpegNode<PitchShiftProperties> {
 	static override readonly moduleName = "Pitch Shift";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Change pitch without affecting duration";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is PitchShiftNode {

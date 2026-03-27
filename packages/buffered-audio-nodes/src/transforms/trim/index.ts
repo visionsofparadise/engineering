@@ -69,6 +69,7 @@ export class TrimStream extends BufferedTransformStream<TrimProperties> {
 
 export class TrimNode extends TransformNode<TrimProperties> {
 	static override readonly moduleName = "Trim";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Remove silence from start and end";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is TrimNode {

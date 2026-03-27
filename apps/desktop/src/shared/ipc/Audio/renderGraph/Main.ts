@@ -69,11 +69,11 @@ function computeNodeHashes(
 
 		const hash = contentHash(
 			upstreamHash,
-			node.package,
-			packageVersions[node.package] ?? "0.0.0",
-			node.node,
-			node.options ?? {},
-			node.bypass ?? false,
+			node.packageName,
+			packageVersions[node.packageName] ?? "0.0.0",
+			node.nodeName,
+			node.parameters ?? {},
+			node.options?.bypass ?? false,
 		);
 
 		hashes.set(node.id, hash);
@@ -83,7 +83,7 @@ function computeNodeHashes(
 }
 
 function resolveSourceFilePath(node: GraphNode): string {
-	const path = node.options?.path;
+	const path = node.parameters?.path;
 
 	if (typeof path !== "string" || path.length === 0) {
 		throw new Error(`Source node "${node.id}" is missing a valid "path" option`);
@@ -93,17 +93,17 @@ function resolveSourceFilePath(node: GraphNode): string {
 }
 
 function resolveTransform(node: GraphNode, registry: ModuleRegistryMap): TransformNode {
-	const packageModules = registry.get(node.package);
+	const packageModules = registry.get(node.packageName);
 
-	if (!packageModules) throw new Error(`Unknown package: "${node.package}"`);
+	if (!packageModules) throw new Error(`Unknown package: "${node.packageName}"`);
 
-	const Module = packageModules.get(node.node);
+	const Module = packageModules.get(node.nodeName);
 
-	if (!Module) throw new Error(`Unknown module: "${node.node}" in package "${node.package}"`);
+	if (!Module) throw new Error(`Unknown module: "${node.nodeName}" in package "${node.packageName}"`);
 
-	const instance = new Module(node.options);
+	const instance = new Module(node.parameters);
 
-	if (!(instance instanceof TransformNode)) throw new Error(`Module "${node.node}" is not a transform`);
+	if (!(instance instanceof TransformNode)) throw new Error(`Module "${node.nodeName}" is not a transform`);
 
 	return instance;
 }
@@ -144,7 +144,7 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 				const hash = nodeHashes.get(node.id)!;
 				const snapshotDir = join(snapshotsDir, hash);
 
-				if (node.bypass) {
+				if (node.options?.bypass) {
 					continue;
 				}
 
@@ -156,7 +156,7 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 					jobId,
 					nodeId: node.id,
 					moduleIndex: 0,
-					moduleName: node.node,
+					moduleName: node.nodeName,
 					framesProcessed: 0,
 					sourceTotalFrames: 0,
 				});
@@ -193,7 +193,7 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 					if (!parentHash) throw new Error(`Target node "${node.id}" has no parent with a computed hash`);
 
 					const parentAudioPath = join(snapshotsDir, parentHash, "audio.wav");
-					const outputPath = node.options?.path;
+					const outputPath = node.parameters?.path;
 
 					if (typeof outputPath !== "string" || outputPath.length === 0) {
 						throw new Error(`Target node "${node.id}" is missing a valid "path" option`);

@@ -50,6 +50,7 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 
 export class DeBleedNode extends TransformNode<DeBleedProperties> {
 	static override readonly moduleName = "De-Bleed";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Reduce microphone bleed between channels";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DeBleedNode {

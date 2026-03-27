@@ -64,6 +64,7 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 
 export class BreathControlNode extends TransformNode<BreathControlProperties> {
 	static override readonly moduleName = "Breath Control";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Attenuate or remove breath sounds between phrases";
 	static override readonly schema = schema;
 

@@ -178,8 +178,8 @@ describe("Graph executor", () => {
 		const valid = validateGraphDefinition({
 			name: "Test",
 			nodes: [
-				{ id: "a", package: "buffered-audio-nodes", node: "read" },
-				{ id: "b", package: "buffered-audio-nodes", node: "write" },
+				{ id: "a", packageName: "buffered-audio-nodes", nodeName: "read" },
+				{ id: "b", packageName: "buffered-audio-nodes", nodeName: "write" },
 			],
 			edges: [{ from: "a", to: "b" }],
 		});
@@ -191,7 +191,7 @@ describe("Graph executor", () => {
 
 	it("validates graph definition with default name", () => {
 		const valid = validateGraphDefinition({
-			nodes: [{ id: "a", package: "buffered-audio-nodes", node: "read" }],
+			nodes: [{ id: "a", packageName: "buffered-audio-nodes", nodeName: "read" }],
 			edges: [],
 		});
 
@@ -201,7 +201,7 @@ describe("Graph executor", () => {
 	it("rejects invalid graph definition", () => {
 		expect(() =>
 			validateGraphDefinition({
-				nodes: [{ id: "", package: "test", node: "read" }],
+				nodes: [{ id: "", packageName: "test", nodeName: "read" }],
 				edges: [],
 			}),
 		).toThrow();

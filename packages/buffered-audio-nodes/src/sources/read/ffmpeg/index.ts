@@ -250,6 +250,7 @@ export class ReadFfmpegStream<P extends ReadFfmpegProperties = ReadFfmpegPropert
 
 export class ReadFfmpegNode extends SourceNode<ReadFfmpegProperties> {
 	static override readonly moduleName = "ReadFfmpeg";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Read audio from a file using FFmpeg";
 	static override readonly schema = ffmpegSchema;
 	override readonly type = ["buffered-audio-node", "source", "read-ffmpeg"] as const;

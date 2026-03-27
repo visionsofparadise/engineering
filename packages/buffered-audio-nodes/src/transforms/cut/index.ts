@@ -92,6 +92,7 @@ export class CutStream extends BufferedTransformStream<CutProperties> {
 
 export class CutNode extends TransformNode<CutProperties> {
 	static override readonly moduleName = "Cut";
+	static override readonly packageName = "buffered-audio-nodes";
 	static override readonly moduleDescription = "Remove a region of audio";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is CutNode {
