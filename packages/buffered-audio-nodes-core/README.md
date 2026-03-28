@@ -65,7 +65,37 @@ await source.render();
 
 Fan-out is supported by calling `.to()` multiple times from the same node.
 
-## Transform Hooks
+## Stream Hooks
+
+### Source Hooks
+
+`BufferedSourceStream` provides three hooks:
+
+#### `getMetadata(): Promise<SourceMetadata>`
+
+Return the audio format: `{ sampleRate, channels, durationFrames? }`. Called before render to compute backpressure and pipeline context.
+
+#### `_read(): Promise<AudioChunk | undefined>`
+
+Produce the next chunk of audio. Return `undefined` to signal end of stream. Called repeatedly by the readable stream's pull mechanism.
+
+#### `_flush(): Promise<void>`
+
+Cleanup after the last chunk has been read. Close file handles, finalize readers.
+
+### Target Hooks
+
+`BufferedTargetStream` provides two hooks:
+
+#### `_write(chunk: AudioChunk): Promise<void>`
+
+Consume each incoming chunk. Write to disk, accumulate statistics, or forward to an external process.
+
+#### `_close(): Promise<void>`
+
+Finalize after the last chunk has been written. Flush buffers, close file handles, write headers.
+
+### Transform Hooks
 
 `BufferedTransformStream` provides four hooks for processing audio:
 
@@ -84,6 +114,10 @@ Transform individual chunks during emission. Called for every chunk read back fr
 ### `_setup(input, context)`
 
 Override for custom stream wiring. Default implementation pipes input through `createTransformStream()`. Use this to set up context-dependent resources before processing begins.
+
+### `_teardown()`
+
+Cleanup after render completes. Override to close file handles, free native resources, or release ONNX sessions. Called automatically on all streams after the pipeline finishes (whether it succeeds or fails). Defined on `BufferedStream` — available to all stream types, not just transforms.
 
 ### bufferSize Modes
 
