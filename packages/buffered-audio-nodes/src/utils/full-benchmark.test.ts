@@ -8,7 +8,7 @@ import { deReverb } from "../transforms/de-reverb";
 import { voiceDenoise } from "../transforms/voice-denoise";
 import { dialogueIsolate } from "../transforms/dialogue-isolate";
 import { musicRebalance } from "../transforms/music-rebalance";
-import { ExecutionProvider } from "buffered-audio-nodes-core";
+import { ExecutionProvider } from "@e9g/buffered-audio-nodes-core";
 
 const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "test-voice.wav");
 

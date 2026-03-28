@@ -2,7 +2,7 @@
 
 WebGPU-accelerated audio visualization for React. Renders spectrograms, waveforms, and BS.1770-4 loudness metrics from raw audio samples.
 
-![Combined visualization showing spectrogram, waveform, and loudness overlaid](screenshots/Combined.png)
+![Combined visualization showing spectrogram, waveform, and loudness overlaid](https://raw.githubusercontent.com/visionsofparadise/engineering/main/packages/spectral-display/screenshots/Combined.png)
 
 ## Features
 
@@ -18,7 +18,7 @@ WebGPU-accelerated audio visualization for React. Renders spectrograms, waveform
 ## Install
 
 ```
-npm install spectral-display
+npm install @e9g/spectral-display
 ```
 
 Peer dependencies: `react >= 18`, `react-dom >= 18`
@@ -26,7 +26,7 @@ Peer dependencies: `react >= 18`, `react-dom >= 18`
 ## Quick Start
 
 ```tsx
-import { useSpectralCompute, SpectrogramCanvas, WaveformCanvas, LoudnessCanvas } from "spectral-display";
+import { useSpectralCompute, SpectrogramCanvas, WaveformCanvas, LoudnessCanvas } from "@e9g/spectral-display";
 
 function AudioDisplay({ device, metadata, readSamples }) {
 	const computeResult = useSpectralCompute({
@@ -67,19 +67,19 @@ const readSamples = (channel: number, sampleOffset: number, sampleCount: number)
 
 Frequency content over time. Supports linear, log, mel, and ERB frequency scales with configurable FFT size, dB range, and colormap.
 
-![Spectrogram](screenshots/Spectrogram.png)
+![Spectrogram](https://raw.githubusercontent.com/visionsofparadise/engineering/main/packages/spectral-display/screenshots/Spectrogram.png)
 
 ### Waveform
 
 Peak amplitude envelope showing min/max sample values per time column.
 
-![Waveform](screenshots/Waveform.png)
+![Waveform](https://raw.githubusercontent.com/visionsofparadise/engineering/main/packages/spectral-display/screenshots/Waveform.png)
 
 ### Loudness
 
 BS.1770-4 loudness metrics: RMS envelope (filled), momentary LUFS (400ms window), short-term LUFS (3s window), and integrated LUFS (horizontal dashed line). LUFS values are mapped to amplitude (`10^(lufs/20)`) so they visually correspond to the waveform scale. True peak is shown as a red dashed horizontal line at the interpolated peak amplitude.
 
-![Loudness](screenshots/Loudness.png)
+![Loudness](https://raw.githubusercontent.com/visionsofparadise/engineering/main/packages/spectral-display/screenshots/Loudness.png)
 
 ## API
 

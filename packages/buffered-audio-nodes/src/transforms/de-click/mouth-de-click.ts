@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DeClickNode, type DeClickProperties } from ".";
-import type { BufferedAudioNodeInput } from "buffered-audio-nodes-core";
+import type { BufferedAudioNodeInput } from "@e9g/buffered-audio-nodes-core";
 
 export const mouthDeClickSchema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.7).describe("Sensitivity"),

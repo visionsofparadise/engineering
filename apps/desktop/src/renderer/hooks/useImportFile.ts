@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import type { GraphDefinition } from "buffered-audio-nodes-core";
+import type { GraphDefinition } from "@e9g/buffered-audio-nodes-core";
 import type { AppContext } from "../models/Context";
 import { addTab } from "../utils/tabs";
 
@@ -20,7 +20,7 @@ export function useImportFile(context: AppContext) {
 				nodes: [
 					{
 						id: crypto.randomUUID(),
-						packageName: "buffered-audio-nodes",
+						packageName: "@e9g/buffered-audio-nodes",
 						nodeName: "Read",
 						parameters: { path: filePath },
 					},

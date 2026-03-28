@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SpectrogramCanvas, WaveformCanvas, LoudnessCanvas, useSpectralCompute } from "spectral-display";
-import type { SpectralOptions, ColormapDefinition } from "spectral-display";
+import { SpectrogramCanvas, WaveformCanvas, LoudnessCanvas, useSpectralCompute } from "@e9g/spectral-display";
+import type { SpectralOptions, ColormapDefinition } from "@e9g/spectral-display";
 import {
   Knob,
   Selection,
@@ -14,8 +14,8 @@ import {
   AppTabBar,
   IconButton,
   getThemeColors,
-} from "@engineering/design-system";
-import type { AudioData, MenuItem } from "@engineering/design-system";
+} from "@e9g/design-system";
+import type { AudioData, MenuItem } from "@e9g/design-system";
 import { loadAudio } from "../data/audioLoader";
 import { useColormapTheme } from "../ThemeContext";
 

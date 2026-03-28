@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loops with bounds-checked typed array access */
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "buffered-audio-nodes-core";
-import { initFftBackend, istft, replaceChannel, stft, type FftBackend } from "buffered-audio-nodes-utils";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { initFftBackend, istft, replaceChannel, stft, type FftBackend } from "@e9g/buffered-audio-nodes-utils";
 import { transposeToBinMajor, transposeToFrameMajor } from "./utils/transpose";
 import { applyWpePrediction, computeBinPowerAndEnergy, solveWpeFilter } from "./utils/wpe";
 

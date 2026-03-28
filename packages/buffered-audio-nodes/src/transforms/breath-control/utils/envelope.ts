@@ -1,4 +1,4 @@
-import { bandPassCoefficients, biquadFilter, smoothEnvelope } from "buffered-audio-nodes-utils";
+import { bandPassCoefficients, biquadFilter, smoothEnvelope } from "@e9g/buffered-audio-nodes-utils";
 import type { Region } from "./regions";
 
 export interface BreathEnvelopes {

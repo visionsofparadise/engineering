@@ -1,4 +1,4 @@
-import { stft } from "buffered-audio-nodes-utils";
+import { stft } from "@e9g/buffered-audio-nodes-utils";
 
 export function computeAverageSpectrum(signal: Float32Array, _sampleRate: number): Float32Array {
 	const fftSize = 2048;

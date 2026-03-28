@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { TopBar } from "./TopBar";
 import { ThemeContext } from "./ThemeContext";
-import type { ColormapTheme } from "@engineering/design-system";
+import type { ColormapTheme } from "@e9g/design-system";
 import { ShowcasePage } from "./pages/ShowcasePage";
 import { HomePage } from "./pages/HomePage";
 import { GraphPage } from "./pages/GraphPage";

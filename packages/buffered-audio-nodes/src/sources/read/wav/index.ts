@@ -1,6 +1,6 @@
 import { open, stat, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
-import { BufferedSourceStream, SourceNode, type AudioChunk, type SourceMetadata, type SourceNodeProperties } from "buffered-audio-nodes-core";
+import { BufferedSourceStream, SourceNode, type AudioChunk, type SourceMetadata, type SourceNodeProperties } from "@e9g/buffered-audio-nodes-core";
 
 export const wavSchema = z.object({
 	path: z.string().default("").meta({ input: "file", mode: "open" }),

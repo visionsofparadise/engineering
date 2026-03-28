@@ -1,8 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { TransformNode, type GraphEdge, type GraphNode } from "buffered-audio-nodes-core";
-import { ReadNode, WriteNode, WaveformNode, SpectrogramNode } from "buffered-audio-nodes";
+import { TransformNode, type GraphEdge, type GraphNode } from "@e9g/buffered-audio-nodes-core";
+import { ReadNode, WriteNode, WaveformNode, SpectrogramNode } from "@e9g/buffered-audio-nodes";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import type { ModuleRegistryMap } from "../../../models/ModuleRegistry";
 import { contentHash } from "../../../utilities/contentHash";

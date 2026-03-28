@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "buffered-audio-nodes-core";
-import { replaceChannel } from "buffered-audio-nodes-utils";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { replaceChannel } from "@e9g/buffered-audio-nodes-utils";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { nlmsAdaptiveFilter } from "./utils/nlms";
 

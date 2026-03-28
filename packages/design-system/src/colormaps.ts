@@ -1,4 +1,4 @@
-import type { ColormapDefinition } from "spectral-display";
+import type { ColormapDefinition } from "@e9g/spectral-display";
 
 function fromPoints(points: ReadonlyArray<readonly [number, number, number]>): ColormapDefinition {
 	return {

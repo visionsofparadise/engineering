@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { loadAudio } from "./data/audioLoader";
-import type { AudioData } from "@engineering/design-system";
+import type { AudioData } from "@e9g/design-system";
 
 const AudioDataContext = createContext<AudioData | null>(null);
 

@@ -226,7 +226,7 @@ export async function loadAppState(main: MainWithEvents): Promise<Omit<AppState,
 }
 
 const CORE_PACKAGE_URLS: ReadonlyArray<ModulePackageConfig> = [
-	{ url: "https://github.com/visionsofparadise/buffered-audio-nodes.git", directory: "buffered-audio-nodes" },
+	{ url: "https://github.com/visionsofparadise/buffered-audio-nodes.git", directory: "@e9g/buffered-audio-nodes" },
 ];
 
 export function useAppState(initial: Partial<AppState>, store: ProxyStore): Snapshot<AppState> {

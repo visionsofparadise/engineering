@@ -14,8 +14,8 @@ import {
   BackgroundVariant,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { AudioNode, AudioEdge, NodeContextMenu, NodeSnapshot, IconButton, AppTabBar, Button } from "@engineering/design-system";
-import type { MenuItem, AudioNodeData } from "@engineering/design-system";
+import { AudioNode, AudioEdge, NodeContextMenu, NodeSnapshot, IconButton, AppTabBar, Button } from "@e9g/design-system";
+import type { MenuItem, AudioNodeData } from "@e9g/design-system";
 import { useColormapTheme } from "../ThemeContext";
 import { AudioDataProvider, useAudioData } from "../AudioDataContext";
 import { demoNodes, demoEdges } from "../data/demoGraph";

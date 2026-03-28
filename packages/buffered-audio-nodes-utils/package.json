@@ -1,5 +1,5 @@
 {
-  "name": "buffered-audio-nodes-utils",
+  "name": "@e9g/buffered-audio-nodes-utils",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -34,6 +34,6 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
-    "buffered-audio-nodes-core": "*"
+    "@e9g/buffered-audio-nodes-core": "*"
   }
 }

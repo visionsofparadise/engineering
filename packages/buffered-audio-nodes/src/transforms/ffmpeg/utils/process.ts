@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import type { ChunkBuffer } from "buffered-audio-nodes-core";
-import { deinterleaveBuffer, interleave } from "buffered-audio-nodes-utils";
+import type { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { deinterleaveBuffer, interleave } from "@e9g/buffered-audio-nodes-utils";
 import { waitForDrain } from "../../../utils/ffmpeg";
 
 export function runFfmpegWithFile(binaryPath: string, args: Array<string>, channels: number): Promise<Array<Float32Array>> {

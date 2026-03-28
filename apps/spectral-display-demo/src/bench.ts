@@ -11,7 +11,7 @@ import {
   resolveConfig,
   scanSamples,
   SpectralEngine,
-} from "spectral-display";
+} from "@e9g/spectral-display";
 import { loadAudio } from "./audio-loader";
 
 const WAVEFORM_POINTS_PER_SECOND = 500;

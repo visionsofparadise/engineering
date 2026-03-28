@@ -46,4 +46,4 @@ export { voiceDenoise, VoiceDenoiseNode, VoiceDenoiseStream, type VoiceDenoisePr
 
 // Composites
 export { chain, ChainNode } from "./composites/chain";
-export { CompositeNode } from "buffered-audio-nodes-core";
+export { CompositeNode } from "@e9g/buffered-audio-nodes-core";

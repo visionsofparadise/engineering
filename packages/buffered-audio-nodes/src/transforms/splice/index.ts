@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, type AudioChunk, type StreamContext, type TransformNodeProperties } from "buffered-audio-nodes-core";
+import { BufferedTransformStream, TransformNode, type AudioChunk, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { readWavSamples } from "../../utils/read-to-buffer";
 
 export const schema = z.object({

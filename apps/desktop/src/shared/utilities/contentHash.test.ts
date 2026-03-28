@@ -4,7 +4,7 @@ import { contentHash } from "./contentHash";
 describe("contentHash", () => {
 	const base = {
 		upstreamHash: "abc123",
-		packageName: "buffered-audio-nodes",
+		packageName: "@e9g/buffered-audio-nodes",
 		packageVersion: "0.2.0",
 		nodeName: "normalize",
 		parameters: { threshold: -1, ceiling: 0 },

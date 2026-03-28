@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { validateGraphDefinition, type GraphDefinition, type GraphNode, type GraphEdge } from "buffered-audio-nodes-core";
+import { validateGraphDefinition, type GraphDefinition, type GraphNode, type GraphEdge } from "@e9g/buffered-audio-nodes-core";
 import type { NodeRenderState, SessionState } from "../../shared/models/Session";
 import { contentHash } from "../../shared/utilities/contentHash";
 import { hasSnapshot, getSnapshotPaths } from "../../shared/utilities/snapshots";

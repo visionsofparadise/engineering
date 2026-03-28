@@ -4,7 +4,7 @@ import {
 	CompositeNode,
 	SourceNode,
 	TransformNode,
-} from "buffered-audio-nodes-core";
+} from "@e9g/buffered-audio-nodes-core";
 
 export class ChainNode extends CompositeNode {
 	readonly type = ["buffered-audio-node", "transform", "composite", "chain"] as const;

@@ -1,5 +1,5 @@
 {
-  "name": "spectral-display",
+  "name": "@e9g/spectral-display",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",

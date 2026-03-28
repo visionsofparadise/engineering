@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { LoudnessCanvas, SpectrogramCanvas, WaveformCanvas, useSpectralCompute } from "spectral-display";
-import type { SpectralConfig, SpectralOptions } from "spectral-display";
+import { LoudnessCanvas, SpectrogramCanvas, WaveformCanvas, useSpectralCompute } from "@e9g/spectral-display";
+import type { SpectralConfig, SpectralOptions } from "@e9g/spectral-display";
 import { loadAudio, type AudioData } from "./audio-loader";
 
 const WIDTH = 800;

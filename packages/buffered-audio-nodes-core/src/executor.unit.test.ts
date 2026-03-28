@@ -178,8 +178,8 @@ describe("Graph executor", () => {
 		const valid = validateGraphDefinition({
 			name: "Test",
 			nodes: [
-				{ id: "a", packageName: "buffered-audio-nodes", nodeName: "read" },
-				{ id: "b", packageName: "buffered-audio-nodes", nodeName: "write" },
+				{ id: "a", packageName: "@e9g/buffered-audio-nodes", nodeName: "read" },
+				{ id: "b", packageName: "@e9g/buffered-audio-nodes", nodeName: "write" },
 			],
 			edges: [{ from: "a", to: "b" }],
 		});
@@ -191,7 +191,7 @@ describe("Graph executor", () => {
 
 	it("validates graph definition with default name", () => {
 		const valid = validateGraphDefinition({
-			nodes: [{ id: "a", packageName: "buffered-audio-nodes", nodeName: "read" }],
+			nodes: [{ id: "a", packageName: "@e9g/buffered-audio-nodes", nodeName: "read" }],
 			edges: [],
 		});
 

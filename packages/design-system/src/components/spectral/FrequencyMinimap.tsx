@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useMemo } from "react";
-import { SpectrogramCanvas, useSpectralCompute } from "spectral-display";
-import type { SpectralOptions } from "spectral-display";
+import { SpectrogramCanvas, useSpectralCompute } from "@e9g/spectral-display";
+import type { SpectralOptions } from "@e9g/spectral-display";
 import type { ColormapTheme } from "../../colors";
 import { getThemeColors } from "../../colors";
 import type { AudioData } from "./types";

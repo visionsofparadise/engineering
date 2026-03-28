@@ -1,4 +1,4 @@
-import type { GraphDefinition } from "buffered-audio-nodes-core";
+import type { GraphDefinition } from "@e9g/buffered-audio-nodes-core";
 import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 
 export interface OpenSessionInput {

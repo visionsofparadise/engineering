@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type ChunkBuffer, type TransformNodeProperties } from "buffered-audio-nodes-core";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { findFirstAbove, findLastAbove } from "./utils/silence";
 
 export const schema = z.object({

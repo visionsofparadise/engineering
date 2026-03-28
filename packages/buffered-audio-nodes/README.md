@@ -1,67 +1,96 @@
 # buffered-audio-nodes
 
-A streaming audio processing protocol. Chainable modules that read, transform, and write audio — an open, scriptable, extensible alternative to GUI-bound audio engineering tools.
+A streaming audio processing framework. Chainable nodes that read, transform, and write audio — an open, scriptable, extensible alternative to GUI-bound audio engineering tools.
 
 ## Install
 
 ```bash
-npm install buffered-audio-nodes
+npm install @e9g/buffered-audio-nodes
 ```
 
 ## Usage
 
-Three module types — sources produce audio, transforms process it, targets consume it. The `chain()` function wires them into a pipeline.
+Three node types — sources produce audio, transforms process it, targets consume it. The `chain()` function wires them into a pipeline.
 
 ```ts
-import { chain, read, normalize, write } from "buffered-audio-nodes";
+import { chain, read, normalize, write } from "@e9g/buffered-audio-nodes";
 
-const source = chain(
-  read("input.wav"),
-  normalize({ ceiling: 0.95 }),
-  write("output.wav", { bitDepth: "24" })
+const pipeline = chain(
+	read("input.wav"),
+	normalize({ ceiling: 0.95 }),
+	write("output.wav", { bitDepth: "24" })
 );
 
-await source.render();
+await pipeline.render();
 ```
 
 `render()` streams audio through the chain. Backpressure, buffering, and lifecycle are handled by the framework.
 
-### Fan
+### Fan-out
 
-Split a stream into parallel branches with `fan()`:
+Split a stream into parallel branches by calling `.to()` multiple times from the same node:
 
 ```ts
-import { chain, read, fan, normalize, trim, write } from "buffered-audio-nodes";
+import { chain, read, normalize, trim, write } from "@e9g/buffered-audio-nodes";
 
-const source = chain(
-  read("input.wav"),
-  fan(
-    chain(normalize(), write("normalized.wav")),
-    chain(trim(), write("trimmed.wav"))
-  )
-);
+const source = read("input.wav");
+const normalizeNode = normalize();
+const trimNode = trim();
+
+source.to(normalizeNode);
+source.to(trimNode);
+normalizeNode.to(write("normalized.wav"));
+trimNode.to(write("trimmed.wav"));
+
+await source.render();
+```
+
+### Composition with `.to()`
+
+For graphs that are not linear chains, use `.to()` directly. `.to()` returns void, so calls are separate statements:
+
+```ts
+import { read, normalize, trim, write } from "@e9g/buffered-audio-nodes";
+
+const source = read("input.wav");
+const norm = normalize({ ceiling: 0.95 });
+const trimmer = trim({ threshold: -60 });
+
+source.to(norm);
+norm.to(trimmer);
+trimmer.to(write("output.wav"));
 
 await source.render();
 ```
 
 ## CLI
 
-Run pipelines from TypeScript files. The file's default export must be a `SourceModule`.
+### `process`
+
+Run pipelines from TypeScript files. The file's default export must be a `SourceNode`.
 
 ```bash
-npx buffered-audio-nodes process --pipeline pipeline.ts
+npx @e9g/buffered-audio-nodes process --pipeline pipeline.ts
 ```
 
 ```ts
 // pipeline.ts
-import { chain, read, normalize, trim, write } from "buffered-audio-nodes";
+import { chain, read, normalize, trim, write } from "@e9g/buffered-audio-nodes";
 
 export default chain(
-  read("input.wav"),
-  normalize(),
-  trim({ threshold: -60 }),
-  write("output.wav")
+	read("input.wav"),
+	normalize(),
+	trim({ threshold: -60 }),
+	write("output.wav")
 );
+```
+
+### `render`
+
+Render a `.bag` (Buffered Audio Graph) file. BAG files are JSON-serialized graph definitions.
+
+```bash
+npx @e9g/buffered-audio-nodes render --bag pipeline.bag
 ```
 
 | Flag | Description |
@@ -69,7 +98,7 @@ export default chain(
 | `--chunk-size <samples>` | Chunk size in samples |
 | `--high-water-mark <count>` | Stream backpressure high water mark |
 
-## Modules
+## Nodes
 
 ### Sources
 
@@ -84,6 +113,26 @@ Read audio from a file. WAV files are read natively. Other formats are transcode
 | `ffmpegPath` | `string` | | Path to [ffmpeg](https://ffmpeg.org/download.html). Required for non-WAV files. |
 | `ffprobePath` | `string` | | Path to [ffprobe](https://ffmpeg.org/download.html). Required for non-WAV files. |
 
+#### `readWav(path, options?)`
+
+Read a WAV file natively.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | `string` | | File path |
+| `channels` | `number[]` | all | Channel indices to extract |
+
+#### `readFfmpeg(path, options)`
+
+Read an audio file via FFmpeg transcoding.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | `string` | | File path |
+| `channels` | `number[]` | all | Channel indices to extract |
+| `ffmpegPath` | `string` | | Path to ffmpeg |
+| `ffprobePath` | `string` | | Path to ffprobe |
+
 ### Targets
 
 #### `write(path, options?)`
@@ -97,15 +146,32 @@ Write audio to a file. Writes WAV natively. Other formats are encoded via FFmpeg
 | `encoding` | `EncodingOptions` | | Non-WAV encoding (format, bitrate, vbr) |
 | `ffmpegPath` | `string` | | Path to [ffmpeg](https://ffmpeg.org/download.html). Required for non-WAV formats. |
 
+#### `waveform(outputPath, options?)`
+
+Extract waveform data to a file.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `outputPath` | `string` | | Output file path |
+| `resolution` | `number` | `1000` | Number of waveform points (100–10000) |
+
+#### `spectrogram(outputPath, options?)`
+
+Generate spectrogram data file.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `outputPath` | `string` | | Output file path |
+
+#### `loudnessStats(options?)`
+
+Measure loudness statistics. Access results via `.stats` after render.
+
 ### Composites
 
-#### `chain(...modules)`
+#### `chain(...nodes)`
 
-Wire modules into a linear pipeline. Returns the source module.
-
-#### `fan(...branches)`
-
-Split a stream into parallel transform branches.
+Wire nodes into a linear pipeline. Returns a `ChainNode`.
 
 ### Transforms — Basic
 
@@ -128,7 +194,7 @@ Remove silence from start and end.
 | `start` | `boolean` | `true` | Trim start |
 | `end` | `boolean` | `true` | Trim end |
 
-#### `cut(options?)`
+#### `cut(regions, options?)`
 
 Remove regions from audio.
 
@@ -136,7 +202,7 @@ Remove regions from audio.
 |-----------|------|---------|-------------|
 | `regions` | `CutRegion[]` | | Regions to remove (`{ start, end }` in samples) |
 
-#### `pad(options?)`
+#### `pad(options)`
 
 Add silence to start or end.
 
@@ -145,29 +211,7 @@ Add silence to start or end.
 | `before` | `number` | `0` | Samples of silence before audio |
 | `after` | `number` | `0` | Samples of silence after audio |
 
-#### `dither(options?)`
-
-Add dither noise before bit-depth reduction.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `bitDepth` | `"16" \| "24"` | `"16"` | Target bit depth |
-| `noiseShaping` | `boolean` | `false` | Apply noise shaping |
-
-#### `phase(options?)` / `invert()`
-
-Invert polarity or shift phase.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `invert` | `boolean` | `true` | Invert polarity |
-| `angle` | `number` | `0` | Phase angle (-180 to 180) |
-
-#### `reverse()`
-
-Reverse audio. No parameters.
-
-#### `splice(options?)`
+#### `splice(insertPath, insertAt, options?)`
 
 Insert audio at a position.
 
@@ -176,14 +220,32 @@ Insert audio at a position.
 | `insertPath` | `string` | | WAV file to insert |
 | `insertAt` | `number` | `0` | Insert position in samples |
 
-#### `waveform(options?)`
+#### `reverse(options?)`
 
-Extract waveform data to a file.
+Reverse audio.
+
+#### `phase(options?)` / `invert(options?)`
+
+Invert polarity or shift phase.
+
+#### `dither(options)`
+
+Add dither noise before bit-depth reduction.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `outputPath` | `string` | | Output file path |
-| `resolution` | `number` | `1000` | Number of waveform points (100–10000) |
+| `bitDepth` | `"16" \| "24"` | `"16"` | Target bit depth |
+| `noiseShaping` | `boolean` | `false` | Apply noise shaping |
+
+#### `resample(ffmpegPath, sampleRate, options?)`
+
+Change sample rate.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `ffmpegPath` | `string` | | Path to ffmpeg |
+| `sampleRate` | `number` | `44100` | Target sample rate (8000–192000) |
+| `dither` | `"triangular" \| "lipshitz" \| "none"` | `"triangular"` | Dither method |
 
 ### Transforms — FFmpeg
 
@@ -198,16 +260,6 @@ Run arbitrary FFmpeg filters.
 | `ffmpegPath` | `string` | | Path to ffmpeg |
 | `args` | `string[] \| (ctx) => string[]` | `[]` | FFmpeg filter arguments |
 
-#### `resample(ffmpegPath, sampleRate, options?)`
-
-Change sample rate.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `ffmpegPath` | `string` | | Path to ffmpeg |
-| `sampleRate` | `number` | `44100` | Target sample rate (8000–192000) |
-| `dither` | `"triangular" \| "lipshitz" \| "none"` | `"triangular"` | Dither method |
-
 #### `loudness(ffmpegPath, options?)`
 
 Adjust loudness to EBU R128 target.
@@ -218,24 +270,6 @@ Adjust loudness to EBU R128 target.
 | `target` | `number` | `-14` | Target LUFS (-50 to 0) |
 | `truePeak` | `number` | `-1` | True peak limit dBTP (-10 to 0) |
 | `lra` | `number` | `0` | Loudness range target (0–20) |
-
-#### `loudnessStats(options?)`
-
-Measure loudness statistics. Access results via `.stats` after render. No parameters.
-
-#### `spectrogram(outputPath, options?)`
-
-Generate spectrogram data file.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `outputPath` | `string` | | Output file path |
-| `fftSize` | `number` | `2048` | FFT size (256–8192) |
-| `hopSize` | `number` | `512` | Hop size (64–4096) |
-| `frequencyScale` | `"linear" \| "log"` | `"log"` | Frequency axis scale |
-| `numBands` | `number` | `512` | Number of frequency bands (log scale) |
-| `minFrequency` | `number` | `20` | Minimum frequency in Hz |
-| `maxFrequency` | `number` | `sr/2` | Maximum frequency in Hz |
 
 ### Transforms — Audio Engineering
 
@@ -403,104 +437,103 @@ Remove background noise from speech using DTLN.
 | `vkfftAddonPath` | `string` | | Path to [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
 | `fftwAddonPath` | `string` | | Path to [fftw-addon](https://github.com/visionsofparadise/fftw-addon) |
 
-## Creating Modules
+## Creating Nodes
 
-Extend `SourceModule`, `TransformModule`, or `TargetModule`.
+Each node has two parts: a **Node** (inert descriptor) and a **Stream** (stateful runtime instance). Nodes are defined once and describe the transform. Streams are created fresh per render and hold the mutable processing state.
 
-### Transform
+Extend `TransformNode` from `@e9g/buffered-audio-nodes-core` and create a companion `BufferedTransformStream`. The node's `createStream()` method produces a new stream instance for each render.
 
-The most common module type. A transform's `bufferSize` controls how audio is collected before processing:
-
-- `0` — streaming. Each chunk passes through `_unbuffer` immediately.
-- `n` — block-based. Chunks accumulate in a `ChunkBuffer` until `n` frames are collected, then `_process` runs on the buffer and `_unbuffer` emits the result.
-- `Infinity` — full-file. All audio is buffered before `_process` and `_unbuffer` run.
-
-The three hooks:
+### Stream Hooks
 
 - **`_buffer(chunk, buffer)`** — called for each incoming chunk. Override to inspect or modify data as it's buffered. Default appends to the buffer.
 - **`_process(buffer)`** — called once the buffer reaches `bufferSize`. Use this for analysis or in-place modification of the full buffer.
 - **`_unbuffer(chunk)`** — called for each chunk emitted from the buffer. Transform or replace the chunk here. Return `undefined` to drop it.
 
+### Buffer Size Modes
+
+- `0` — pass-through. Each chunk flows through `_unbuffer` immediately.
+- `N` — block mode. Chunks accumulate until `N` frames are collected, then `_process` runs and `_unbuffer` emits the result.
+- `WHOLE_FILE` (`Infinity`) — full-file. All audio is buffered before `_process` and `_unbuffer` run.
+
+### Example: Normalize
+
 ```ts
-import {
-  TransformModule,
-  type TransformModuleProperties,
-  type AudioChunk,
-  type ChunkBuffer,
-} from "buffered-audio-nodes";
 import { z } from "zod";
+import {
+	BufferedTransformStream,
+	TransformNode,
+	WHOLE_FILE,
+	type AudioChunk,
+	type ChunkBuffer,
+	type TransformNodeProperties,
+} from "@e9g/buffered-audio-nodes-core";
 
 const schema = z.object({
-  ceiling: z.number().min(0).max(1).default(1.0),
+	ceiling: z.number().min(0).max(1).multipleOf(0.01).default(1.0).describe("Ceiling"),
 });
 
-interface NormalizeProperties extends z.infer<typeof schema>, TransformModuleProperties {}
+interface NormalizeProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
-class NormalizeModule extends TransformModule<NormalizeProperties> {
-  static override readonly moduleName = "Normalize";
-  static override readonly moduleDescription = "Adjust peak level to a target ceiling";
-  static override readonly schema = schema;
+class NormalizeStream extends BufferedTransformStream<NormalizeProperties> {
+	private peak = 0;
+	private scale = 1;
 
-  override readonly type = ["buffered-audio-node", "transform", "normalize"] as const;
+	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {
+		await super._buffer(chunk, buffer);
+		for (let ch = 0; ch < chunk.samples.length; ch++) {
+			const channel = chunk.samples[ch] ?? new Float32Array(0);
+			for (let si = 0; si < channel.length; si++) {
+				const absolute = Math.abs(channel[si] ?? 0);
+				if (Number.isFinite(absolute) && absolute > this.peak) this.peak = absolute;
+			}
+		}
+	}
 
-  // Buffer all audio before processing — we need to find the peak first
-  override readonly bufferSize = Infinity;
-  override readonly latency = Infinity;
+	override _process(_buffer: ChunkBuffer): void {
+		const raw = this.peak === 0 ? 1 : this.properties.ceiling / this.peak;
+		this.scale = Number.isFinite(raw) ? raw : 1;
+	}
 
-  private peak = 0;
-  private scale = 1;
-
-  // _buffer: called for each incoming chunk. Track the peak while buffering.
-  override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {
-    await super._buffer(chunk, buffer);
-
-    for (const channel of chunk.samples) {
-      for (const sample of channel) {
-        const absolute = Math.abs(sample);
-        if (absolute > this.peak) this.peak = absolute;
-      }
-    }
-  }
-
-  // _process: called once all audio is buffered. Compute the gain scale.
-  override _process(_buffer: ChunkBuffer): void {
-    this.scale = this.peak === 0 ? 1 : this.properties.ceiling / this.peak;
-  }
-
-  // _unbuffer: called for each chunk emitted from the buffer. Apply the gain.
-  override _unbuffer(chunk: AudioChunk): AudioChunk {
-    if (this.scale === 1) return chunk;
-
-    const scaled = chunk.samples.map((channel) => {
-      const out = new Float32Array(channel.length);
-      for (let i = 0; i < channel.length; i++) {
-        out[i] = (channel[i] ?? 0) * this.scale;
-      }
-      return out;
-    });
-
-    return { samples: scaled, offset: chunk.offset, duration: chunk.duration };
-  }
-
-  clone(overrides?: Partial<NormalizeProperties>): NormalizeModule {
-    return new NormalizeModule({ ...this.properties, previousProperties: this.properties, ...overrides });
-  }
+	override _unbuffer(chunk: AudioChunk): AudioChunk {
+		if (this.scale === 1) return chunk;
+		const scaledSamples = chunk.samples.map((channel) => {
+			const scaled = new Float32Array(channel.length);
+			for (let index = 0; index < channel.length; index++) {
+				scaled[index] = (channel[index] ?? 0) * this.scale;
+			}
+			return scaled;
+		});
+		return { samples: scaledSamples, offset: chunk.offset, sampleRate: chunk.sampleRate, bitDepth: chunk.bitDepth };
+	}
 }
 
-export function normalize(options?: { ceiling?: number }): NormalizeModule {
-  return new NormalizeModule({ ceiling: options?.ceiling ?? 1.0 });
+class NormalizeNode extends TransformNode<NormalizeProperties> {
+	static override readonly moduleName = "Normalize";
+	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly moduleDescription = "Adjust peak or loudness level to a target ceiling";
+	static override readonly schema = schema;
+
+	override readonly type = ["buffered-audio-node", "transform", "normalize"] as const;
+
+	constructor(properties: NormalizeProperties) {
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
+	}
+
+	override createStream(): NormalizeStream {
+		return new NormalizeStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
+	}
+
+	override clone(overrides?: Partial<NormalizeProperties>): NormalizeNode {
+		return new NormalizeNode({ ...this.properties, previousProperties: this.properties, ...overrides });
+	}
+}
+
+export function normalize(options?: { ceiling?: number; id?: string }): NormalizeNode {
+	return new NormalizeNode({ ceiling: options?.ceiling ?? 1.0, id: options?.id });
 }
 ```
 
-### Source
-
-Implement `_init` to return stream metadata (`sampleRate`, `channels`, `duration`), `_read` to produce chunks via the controller, and `_flush` for cleanup.
-
-### Target
-
-Implement `_write` to consume each chunk and `_close` to finalize (close file handles, flush buffers).
-
-### FFT Backends
+## FFT Backends
 
 Transforms that use spectral processing (STFT/iSTFT) can use native FFT backends for performance. The framework selects a backend based on the stream's `executionProviders` preference:
 
@@ -510,19 +543,19 @@ Transforms that use spectral processing (STFT/iSTFT) can use native FFT backends
 | FFTW | `cpu-native` | [fftw-addon](https://github.com/visionsofparadise/fftw-addon) | Native CPU FFT |
 | JavaScript | `cpu` | Built-in | Pure JS fallback, no addon needed |
 
-Pass addon paths via module properties (`vkfftAddonPath`, `fftwAddonPath`). Falls back to the built-in JavaScript implementation when no native addon is available.
+Pass addon paths via node properties (`vkfftAddonPath`, `fftwAddonPath`). Falls back to the built-in JavaScript implementation when no native addon is available.
 
-### ONNX Models
+## ONNX Models
 
-ML-based transforms use ONNX Runtime for inference via a native addon. Modules that use ONNX accept:
+ML-based transforms use ONNX Runtime for inference via a native addon. Nodes that use ONNX accept:
 
 - `onnxAddonPath` — path to the [onnx-runtime-addon](https://github.com/visionsofparadise/onnx-runtime-addon) native binary
 - `modelPath` — path to the `.onnx` model file
 
-Models are not bundled with the package. Each module's parameter table links to the expected model source.
+Models are not bundled with the package. Each node's parameter table links to the expected model source.
 
-| Module | Model | Source |
-|--------|-------|--------|
+| Node | Model | Source |
+|------|-------|--------|
 | DialogueIsolate | Kim_Vocal_2.onnx | [uvr_models](https://huggingface.co/seanghay/uvr_models) |
 | MusicRebalance | htdemucs.onnx + .onnx.data | [demucs](https://github.com/facebookresearch/demucs) |
 | VoiceDenoise | model_1.onnx, model_2.onnx | [DTLN](https://github.com/breizhn/DTLN) |

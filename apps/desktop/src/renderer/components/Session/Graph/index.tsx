@@ -18,7 +18,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
-import type { GraphNode as GNode, GraphEdge as GEdge } from "buffered-audio-nodes-core";
+import type { GraphNode as GNode, GraphEdge as GEdge } from "@e9g/buffered-audio-nodes-core";
 import type { SessionContext } from "../../../models/Context";
 import { SourceNode, type SourceNodeData } from "./nodes/SourceNode";
 import { TransformNode, type TransformNodeData } from "./nodes/TransformNode";

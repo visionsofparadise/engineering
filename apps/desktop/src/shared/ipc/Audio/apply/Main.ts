@@ -1,5 +1,5 @@
-import type { SourceNode, TransformNode } from "buffered-audio-nodes-core";
-import { ReadNode, WriteNode, WaveformNode, SpectrogramNode, type EncodingOptions, type FrequencyScale } from "buffered-audio-nodes";
+import type { SourceNode, TransformNode } from "@e9g/buffered-audio-nodes-core";
+import { ReadNode, WriteNode, WaveformNode, SpectrogramNode, type EncodingOptions, type FrequencyScale } from "@e9g/buffered-audio-nodes";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import type { ModuleRegistryMap } from "../../../models/ModuleRegistry";
 import { APPLY_ACTION, type ApplyInput, type ApplyIpcParameters, type ApplyIpcReturn, type ChainModuleReference } from "./Renderer";

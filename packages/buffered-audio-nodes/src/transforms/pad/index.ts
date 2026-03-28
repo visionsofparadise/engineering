@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type ChunkBuffer, type TransformNodeProperties } from "buffered-audio-nodes-core";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 
 export const schema = z.object({
 	before: z.number().min(0).multipleOf(0.001).default(0).describe("Before"),

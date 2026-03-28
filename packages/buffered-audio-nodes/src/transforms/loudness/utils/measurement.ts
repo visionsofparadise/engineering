@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import type { ChunkBuffer } from "buffered-audio-nodes-core";
-import { interleave } from "buffered-audio-nodes-utils";
+import type { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { interleave } from "@e9g/buffered-audio-nodes-utils";
 import type { LoudnessProperties } from "..";
 
 export async function measureLoudness(

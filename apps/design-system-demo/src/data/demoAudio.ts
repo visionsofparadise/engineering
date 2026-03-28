@@ -87,7 +87,7 @@ function generateSpectrogram(): ReadonlyArray<ReadonlyArray<number>> {
   return data;
 }
 
-import type { AudioDisplayData, WaveformFrame, LoudnessData } from "@engineering/design-system";
+import type { AudioDisplayData, WaveformFrame, LoudnessData } from "@e9g/design-system";
 
 function generateWaveform(): ReadonlyArray<ReadonlyArray<WaveformFrame>> {
   const voiceActivity = generateVoiceActivity();

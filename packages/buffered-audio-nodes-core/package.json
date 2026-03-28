@@ -1,5 +1,5 @@
 {
-  "name": "buffered-audio-nodes-core",
+  "name": "@e9g/buffered-audio-nodes-core",
   "version": "0.1.0",
   "type": "module",
   "exports": {

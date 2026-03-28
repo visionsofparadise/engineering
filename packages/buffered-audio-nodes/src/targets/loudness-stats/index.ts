@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BufferedTargetStream, TargetNode, WHOLE_FILE, type AudioChunk, type TargetNodeProperties } from "buffered-audio-nodes-core";
+import { BufferedTargetStream, TargetNode, WHOLE_FILE, type AudioChunk, type TargetNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { applyKWeighting, computeBlockLoudness, computeIntegratedLoudness, computeLra } from "./utils/measurement";
 
 export const schema = z.object({});

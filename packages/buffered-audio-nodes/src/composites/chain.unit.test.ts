@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ChunkBuffer } from "buffered-audio-nodes-core";
-import { BufferedSourceStream, SourceNode, type AudioChunk, type SourceMetadata } from "buffered-audio-nodes-core";
-import { BufferedTransformStream, TransformNode } from "buffered-audio-nodes-core";
-import { BufferedTargetStream, TargetNode } from "buffered-audio-nodes-core";
+import type { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { BufferedSourceStream, SourceNode, type AudioChunk, type SourceMetadata } from "@e9g/buffered-audio-nodes-core";
+import { BufferedTransformStream, TransformNode } from "@e9g/buffered-audio-nodes-core";
+import { BufferedTargetStream, TargetNode } from "@e9g/buffered-audio-nodes-core";
 import { chain, ChainNode } from "./chain";
 
 class MockSourceStream extends BufferedSourceStream {

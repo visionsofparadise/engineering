@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react";
-import { TerrainShader, AppTabBar } from "@engineering/design-system";
-import type { MenuItem } from "@engineering/design-system";
+import { TerrainShader, AppTabBar } from "@e9g/design-system";
+import type { MenuItem } from "@e9g/design-system";
 import { useColormapTheme } from "../ThemeContext";
 
 const HOME_TABS = [

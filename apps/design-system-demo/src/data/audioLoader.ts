@@ -1,4 +1,4 @@
-import type { AudioData } from "@engineering/design-system";
+import type { AudioData } from "@e9g/design-system";
 
 export type { AudioData };
 

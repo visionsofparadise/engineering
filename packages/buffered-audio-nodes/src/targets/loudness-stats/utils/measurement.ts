@@ -1,4 +1,4 @@
-import { biquadFilter, preFilterCoefficients, rlbFilterCoefficients } from "buffered-audio-nodes-utils";
+import { biquadFilter, preFilterCoefficients, rlbFilterCoefficients } from "@e9g/buffered-audio-nodes-utils";
 
 export function flattenBuffers(chunks: Array<Float32Array>, totalFrames: number): Float32Array {
 	const result = new Float32Array(totalFrames);
