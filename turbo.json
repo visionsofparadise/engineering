@@ -2,7 +2,7 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "check": {
-      "dependsOn": ["^check"],
+      "dependsOn": ["^build"],
       "inputs": ["src/**", "./tsconfig.json"],
       "outputs": []
     },
