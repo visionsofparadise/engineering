@@ -20,6 +20,7 @@ const graphEdgeSchema = z.object({
 });
 
 const graphDefinitionSchema = z.object({
+	id: z.uuid(),
 	name: z.string().default("Untitled"),
 	nodes: z.array(graphNodeSchema),
 	edges: z.array(graphEdgeSchema),
@@ -35,7 +36,7 @@ export function validateGraphDefinition(json: unknown): GraphDefinition {
 	return graphDefinitionSchema.parse(json);
 }
 
-export function pack(sources: ReadonlyArray<SourceNode>, name?: string): GraphDefinition {
+export function pack(sources: ReadonlyArray<SourceNode>, metadata?: { name?: string; id?: string }): GraphDefinition {
 	const visited = new Set<BufferedAudioNode>();
 	const nodes: Array<GraphNode> = [];
 	const edges: Array<GraphEdge> = [];
@@ -84,7 +85,7 @@ export function pack(sources: ReadonlyArray<SourceNode>, name?: string): GraphDe
 		walk(source);
 	}
 
-	return graphDefinitionSchema.parse({ name: name ?? "Untitled", nodes, edges });
+	return graphDefinitionSchema.parse({ id: metadata?.id ?? randomUUID(), name: metadata?.name ?? "Untitled", nodes, edges });
 }
 
 export function unpack(definition: GraphDefinition, registry: NodeRegistry): Array<SourceNode> {

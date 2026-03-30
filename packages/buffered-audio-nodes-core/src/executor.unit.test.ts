@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import type { ChunkBuffer } from "./buffer";
-import { validateGraphDefinition } from "./graph-format";
+import { pack, validateGraphDefinition } from "./graph-format";
 import type { AudioChunk } from "./node";
 import type { SourceMetadata } from "./source";
 import { BufferedSourceStream, SourceNode } from "./source";
@@ -27,6 +28,10 @@ class MockSourceStream extends BufferedSourceStream {
 }
 
 class MockSource extends SourceNode {
+	static readonly packageName = "test";
+	static readonly moduleName = "mock-source";
+	static override readonly schema = z.object({});
+
 	readonly type = ["buffered-audio-node", "source", "mock"] as const;
 	get bufferSize(): number { return 0; }
 	get latency(): number { return 0; }
@@ -88,6 +93,10 @@ class MockTargetStream extends BufferedTargetStream {
 }
 
 class MockTarget extends TargetNode {
+	static readonly packageName = "test";
+	static readonly moduleName = "mock-target";
+	static override readonly schema = z.object({});
+
 	readonly type = ["buffered-audio-node", "target", "mock"] as const;
 	get bufferSize(): number { return 0; }
 	get latency(): number { return 0; }
@@ -176,6 +185,7 @@ describe("Graph executor", () => {
 
 	it("validates graph definition schema", () => {
 		const valid = validateGraphDefinition({
+			id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 			name: "Test",
 			nodes: [
 				{ id: "a", packageName: "@e9g/buffered-audio-nodes", nodeName: "read" },
@@ -191,6 +201,7 @@ describe("Graph executor", () => {
 
 	it("validates graph definition with default name", () => {
 		const valid = validateGraphDefinition({
+			id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 			nodes: [{ id: "a", packageName: "@e9g/buffered-audio-nodes", nodeName: "read" }],
 			edges: [],
 		});
@@ -205,5 +216,57 @@ describe("Graph executor", () => {
 				edges: [],
 			}),
 		).toThrow();
+	});
+
+	it("validates graph definition with id", () => {
+		const id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+		const valid = validateGraphDefinition({
+			id,
+			name: "Test",
+			nodes: [{ id: "a", packageName: "test", nodeName: "read" }],
+			edges: [],
+		});
+
+		expect(valid.id).toBe(id);
+	});
+
+	it("rejects graph definition with invalid id", () => {
+		expect(() =>
+			validateGraphDefinition({
+				id: "not-a-uuid",
+				nodes: [{ id: "a", packageName: "test", nodeName: "read" }],
+				edges: [],
+			}),
+		).toThrow();
+	});
+
+	it("rejects graph definition without id", () => {
+		expect(() =>
+			validateGraphDefinition({
+				nodes: [{ id: "a", packageName: "test", nodeName: "read" }],
+				edges: [],
+			}),
+		).toThrow();
+	});
+
+	it("pack preserves id", () => {
+		const source = new MockSource();
+		const target = new MockTarget();
+		source.to(target);
+
+		const id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+		const definition = pack([source], { name: "Test", id });
+
+		expect(definition.id).toBe(id);
+	});
+
+	it("pack without id generates one", () => {
+		const source = new MockSource();
+		const target = new MockTarget();
+		source.to(target);
+
+		const definition = pack([source], { name: "Test" });
+
+		expect(definition.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 	});
 });
