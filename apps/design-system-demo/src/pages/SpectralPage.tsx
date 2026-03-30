@@ -11,12 +11,12 @@ import {
   Transport,
   StereoMeter,
   FrequencyMinimap,
-  AppTabBar,
   IconButton,
   getThemeColors,
 } from "@e9g/design-system";
 import type { AudioData, MenuItem } from "@e9g/design-system";
 import { loadAudio } from "../data/audioLoader";
+import { DemoTabBar } from "../DemoTabBar";
 import { useColormapTheme } from "../ThemeContext";
 
 const SPECTRAL_TABS = [
@@ -363,7 +363,7 @@ export function SpectralPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-void">
-      <AppTabBar tabs={SPECTRAL_TABS} activeTabId="podcast" menuItems={MENU_ITEMS} />
+      <DemoTabBar tabs={SPECTRAL_TABS} activeTabId="podcast" menuItems={MENU_ITEMS} />
       {/* Top bar — columns match grid below */}
       <div className="relative flex h-8 items-center bg-void px-4">
         {/* Left: Source → Current + Reference + A/B */}

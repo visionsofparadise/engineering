@@ -11,6 +11,11 @@ export interface HistoryEntry {
 	redo: () => void;
 }
 
+export interface HistoryState {
+	entries: Array<HistoryEntry>;
+	cursor: number;
+}
+
 export interface AppContext {
 	readonly app: Snapshot<AppState>;
 	readonly appStore: ProxyStore;
@@ -19,5 +24,5 @@ export interface AppContext {
 	readonly queryClient: QueryClient;
 	readonly userDataPath: string;
 	readonly windowId: string;
-	readonly historyStacks: Map<string, { undo: Array<HistoryEntry>; redo: Array<HistoryEntry> }>;
+	readonly historyStacks: Map<string, HistoryState>;
 }

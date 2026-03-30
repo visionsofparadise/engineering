@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
-import { TerrainShader, AppTabBar } from "@e9g/design-system";
+import { TerrainShader } from "@e9g/design-system";
 import type { MenuItem } from "@e9g/design-system";
+import { DemoTabBar } from "../DemoTabBar";
 import { useColormapTheme } from "../ThemeContext";
 
 const HOME_TABS = [
@@ -67,7 +68,7 @@ export function HomePage() {
 
 	return (
 		<div className="flex h-full flex-col overflow-hidden bg-void">
-		<AppTabBar tabs={HOME_TABS} activeTabId="" menuItems={MENU_ITEMS} />
+		<DemoTabBar tabs={HOME_TABS} activeTabId="" menuItems={MENU_ITEMS} />
 		<div className="relative min-h-0 flex-1 overflow-hidden">
 			<TerrainShader className="absolute inset-0" colormap={colormap} />
 

@@ -15,8 +15,6 @@ export type { SelectProps } from "./components/Select";
 export { DropdownButton } from "./components/DropdownButton";
 export type { DropdownButtonProps, MenuItem } from "./components/DropdownButton";
 export { IconButton } from "./components/IconButton";
-export { AppTabBar } from "./components/AppTabBar";
-export type { AppTabBarProps } from "./components/AppTabBar";
 export { TerrainShader } from "./components/TerrainShader";
 
 // Graph

@@ -14,8 +14,9 @@ import {
   BackgroundVariant,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { AudioNode, AudioEdge, NodeContextMenu, NodeSnapshot, IconButton, AppTabBar, Button } from "@e9g/design-system";
+import { AudioNode, AudioEdge, NodeContextMenu, NodeSnapshot, IconButton, Button } from "@e9g/design-system";
 import type { MenuItem, AudioNodeData } from "@e9g/design-system";
+import { DemoTabBar } from "../DemoTabBar";
 import { useColormapTheme } from "../ThemeContext";
 import { AudioDataProvider, useAudioData } from "../AudioDataContext";
 import { demoNodes, demoEdges } from "../data/demoGraph";
@@ -90,7 +91,7 @@ function GraphPageInner() {
 
   return (
     <div className="flex h-full w-full flex-col">
-    <AppTabBar tabs={GRAPH_TABS} activeTabId="podcast" menuItems={MENU_ITEMS} />
+    <DemoTabBar tabs={GRAPH_TABS} activeTabId="podcast" menuItems={MENU_ITEMS} />
     <div
       className="relative min-h-0 flex-1"
       onContextMenu={handleContextMenu}

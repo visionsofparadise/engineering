@@ -1,12 +1,20 @@
 import type { IpcHandlerAction, IpcHandlerParameters, IpcHandlerReturn } from "../models/AsyncRendererIpc";
+import { AbortJobRendererIpc } from "./Audio/abortJob/Renderer";
+import { ApplyRendererIpc } from "./Audio/apply/Renderer";
+import { RenderGraphRendererIpc } from "./Audio/renderGraph/Renderer";
 import { ShowOpenDialogRendererIpc } from "./Dialog/showOpenDialog/Renderer";
 import { ShowSaveDialogRendererIpc } from "./Dialog/showSaveDialog/Renderer";
+import { CloseFileHandleRendererIpc } from "./FileSystem/closeFileHandle/Renderer";
 import { DeleteFileRendererIpc } from "./FileSystem/deleteFile/Renderer";
 import { EnsureDirectoryRendererIpc } from "./FileSystem/ensureDirectory/Renderer";
 import { ReadDirectoryRendererIpc } from "./FileSystem/readDirectory/Renderer";
+import { OpenFileHandleRendererIpc } from "./FileSystem/openFileHandle/Renderer";
 import { ReadFileRendererIpc } from "./FileSystem/readFile/Renderer";
 import { ReadFileChunkRendererIpc } from "./FileSystem/readFileChunk/Renderer";
+import { ReadFileHandleRendererIpc } from "./FileSystem/readFileHandle/Renderer";
 import { StatRendererIpc } from "./FileSystem/stat/Renderer";
+import { UnwatchFileRendererIpc } from "./FileSystem/unwatchFile/Renderer";
+import { WatchFileRendererIpc } from "./FileSystem/watchFile/Renderer";
 import { WriteFileRendererIpc } from "./FileSystem/writeFile/Renderer";
 import { GitCloneRendererIpc } from "./Git/clone/Renderer";
 import { BundlePackageRendererIpc } from "./Package/bundle/Renderer";
@@ -19,12 +27,20 @@ import { GetWindowIdRendererIpc } from "./System/getWindowId/Renderer";
 import { SetBoundsRendererIpc } from "./System/setBounds/Renderer";
 
 export const ASYNC_RENDERER_IPCS = [
+	AbortJobRendererIpc,
+	ApplyRendererIpc,
+	RenderGraphRendererIpc,
+	CloseFileHandleRendererIpc,
 	DeleteFileRendererIpc,
 	EnsureDirectoryRendererIpc,
+	OpenFileHandleRendererIpc,
 	ReadDirectoryRendererIpc,
 	ReadFileRendererIpc,
 	ReadFileChunkRendererIpc,
+	ReadFileHandleRendererIpc,
 	StatRendererIpc,
+	UnwatchFileRendererIpc,
+	WatchFileRendererIpc,
 	WriteFileRendererIpc,
 	GitCloneRendererIpc,
 	BundlePackageRendererIpc,

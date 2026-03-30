@@ -8,6 +8,14 @@ export class WriteFileMainIpc extends AsyncMainIpc<WriteFileIpcParameters, Write
 
 	async handler(filePath: string, content: string, _dependencies: IpcHandlerDependencies): Promise<WriteFileIpcReturn> {
 		await fs.mkdir(path.dirname(filePath), { recursive: true });
-		await fs.writeFile(filePath, content, "utf-8");
+		const tmpPath = `${filePath}.tmp`;
+
+		try {
+			await fs.writeFile(tmpPath, content, "utf-8");
+			await fs.rename(tmpPath, filePath);
+		} catch (error) {
+			await fs.unlink(tmpPath).catch(() => {});
+			throw error;
+		}
 	}
 }
