@@ -1,11 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { runTransform } from "../../utils/test-pipeline";
 import { expectedDuration, somethingChanged } from "../../utils/test-audio";
+import { audio } from "../../utils/test-binaries";
 import { deBleed } from ".";
 
-const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("DeBleed", () => {
 	it("processes voice audio", async () => {

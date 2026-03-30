@@ -1,10 +1,9 @@
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { loudnessStats } from ".";
 import { read } from "../../sources/read";
+import { audio } from "../../utils/test-binaries";
 
-const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("loudness-stats", () => {
 	it("processes voice audio and produces stats", async () => {

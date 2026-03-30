@@ -7,8 +7,9 @@ import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, ty
 import { read } from "../sources/read";
 import { write } from "../targets/write";
 import { readWavSamples } from "../utils/read-to-buffer";
+import { audio } from "../utils/test-binaries";
 
-const testVoice = join(import.meta.dirname, "../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 class PassthroughTransform extends TransformNode {
 	static override readonly moduleName = "Passthrough";

@@ -1,12 +1,12 @@
 import { describe, it } from "vitest";
-import { resolve, dirname } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBenchmark, appendBenchmarkLog } from "../../utils/test-benchmark";
-import { binaries } from "../../utils/test-binaries";
+import { audio, binaries } from "../../utils/test-binaries";
 import { timeStretch } from ".";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const testVoice = resolve(here, "../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("time-stretch benchmark", () => {
 	it("benchmarks time-stretch", async () => {

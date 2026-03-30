@@ -7,9 +7,10 @@ import { describe, it } from "vitest";
 import { read } from ".";
 import { write } from "../../targets/write";
 import { appendBenchmarkLog } from "../../utils/test-benchmark";
+import { audio } from "../../utils/test-binaries";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const testVoice = resolve(here, "../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("read benchmark", () => {
 	it("benchmarks read", async () => {

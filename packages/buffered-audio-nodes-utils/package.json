@@ -24,7 +24,8 @@
     "lint:verbose": "eslint .",
     "lint:fix": "eslint . --fix",
     "build": "tsup",
-    "unit": "vitest run unit"
+    "unit": "vitest run unit",
+    "integration": "vitest run integration"
   },
   "devDependencies": {
     "@types/node": "^25.3.5",

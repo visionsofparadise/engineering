@@ -264,7 +264,7 @@ function computeTwiddles(radices: Array<number>): { twiddleRe: Float32Array; twi
 
 	for (const radix of radices) {
 		groupSize *= radix;
-		totalTwiddles += (radix - 1) * (groupSize / radix);
+		totalTwiddles += (radix - 1) * (groupSize / radix - 1);
 	}
 
 	const twiddleRe = new Float32Array(totalTwiddles);
@@ -279,7 +279,7 @@ function computeTwiddles(radices: Array<number>): { twiddleRe: Float32Array; twi
 		const subSize = groupSize / radix;
 
 		for (let kk = 1; kk < radix; kk++) {
-			for (let ni = 0; ni < subSize; ni++) {
+			for (let ni = 1; ni < subSize; ni++) {
 				const angle = (-2 * Math.PI * kk * ni) / groupSize;
 
 				twiddleRe[twOffset] = Math.cos(angle);

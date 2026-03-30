@@ -1,13 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { stat, unlink, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { waveform } from ".";
 import { read } from "../../sources/read";
+import { audio } from "../../utils/test-binaries";
 
-const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("Waveform", () => {
 	it("produces a non-empty output file from voice audio", async () => {

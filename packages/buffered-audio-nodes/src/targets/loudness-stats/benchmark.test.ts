@@ -1,12 +1,13 @@
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "vitest";
 import { loudnessStats } from ".";
 import { read } from "../../sources/read";
 import { appendBenchmarkLog } from "../../utils/test-benchmark";
+import { audio } from "../../utils/test-binaries";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const testVoice = resolve(here, "../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("loudnessStats benchmark", () => {
 	it("benchmarks loudnessStats", async () => {

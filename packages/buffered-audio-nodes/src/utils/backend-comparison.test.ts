@@ -1,12 +1,11 @@
 import { describe, it } from "vitest";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { runBenchmark } from "./test-benchmark";
+import { audio } from "./test-binaries";
 import { spectralRepair } from "../transforms/spectral-repair";
 import { deReverb } from "../transforms/de-reverb";
 import { ExecutionProvider } from "@e9g/buffered-audio-nodes-core";
 
-const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "test-voice.wav");
+const testVoice = audio.testVoice;
 
 const configs: Array<{ label: string; providers: ReadonlyArray<ExecutionProvider> }> = [
 	{ label: "js", providers: ["cpu"] },

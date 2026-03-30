@@ -1,12 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { runTransform } from "../../utils/test-pipeline";
 import { notSilent, expectedDuration, somethingChanged, notAnomalous } from "../../utils/test-audio";
-import { binaries } from "../../utils/test-binaries";
+import { audio, binaries } from "../../utils/test-binaries";
 import { musicRebalance } from ".";
 
-const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("music-rebalance", () => {
 	it("processes voice audio", async () => {

@@ -1,11 +1,12 @@
 import { describe, it } from "vitest";
-import { resolve, dirname } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBenchmark, appendBenchmarkLog } from "../../utils/test-benchmark";
+import { audio } from "../../utils/test-binaries";
 import { dither } from ".";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const testVoice = resolve(here, "../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("dither benchmark", () => {
 	it("benchmarks dither", async () => {

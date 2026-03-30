@@ -1,7 +1,8 @@
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const binariesDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../binaries");
+const fixturesDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../fixtures");
+const binariesDir = resolve(fixturesDir, "binaries");
 
 export const binaries = {
 	ffmpeg: resolve(binariesDir, "ffmpeg.exe"),
@@ -13,4 +14,9 @@ export const binaries = {
 	model2: resolve(binariesDir, "model_2.onnx"),
 	kimVocal2: resolve(binariesDir, "Kim_Vocal_2.onnx"),
 	htdemucs: resolve(binariesDir, "htdemucs.onnx"),
+} as const;
+
+export const audio = {
+	testVoice: resolve(fixturesDir, "audio/test-voice.wav"),
+	testMusic: resolve(fixturesDir, "audio/test-music.wav"),
 } as const;

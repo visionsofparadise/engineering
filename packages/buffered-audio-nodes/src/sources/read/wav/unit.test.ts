@@ -7,8 +7,9 @@ import { ReadWavNode, readWav } from ".";
 import { read } from "..";
 import { write } from "../../../targets/write";
 import { readToBuffer, readWavSamples } from "../../../utils/read-to-buffer";
+import { audio } from "../../../utils/test-binaries";
 
-const testVoice = join(import.meta.dirname, "../../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("ReadWavNode", () => {
 	it("creates a ReadWavNode via readWav convenience function", () => {

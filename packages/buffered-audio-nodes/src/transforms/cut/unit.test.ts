@@ -1,11 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { runTransform } from "../../utils/test-pipeline";
 import { notSilent, notAnomalous } from "../../utils/test-audio";
+import { audio } from "../../utils/test-binaries";
 import { cut } from ".";
 
-const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "../../utils/test-voice.wav");
+const testVoice = audio.testVoice;
 
 describe("cut", () => {
 	it("removes a region from voice audio", async () => {

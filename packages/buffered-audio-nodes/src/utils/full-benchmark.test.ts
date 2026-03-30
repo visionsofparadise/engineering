@@ -1,8 +1,6 @@
 import { describe, it } from "vitest";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { runBenchmark, type BenchmarkResult } from "./test-benchmark";
-import { binaries } from "./test-binaries";
+import { audio, binaries } from "./test-binaries";
 import { spectralRepair } from "../transforms/spectral-repair";
 import { deReverb } from "../transforms/de-reverb";
 import { voiceDenoise } from "../transforms/voice-denoise";
@@ -10,7 +8,7 @@ import { dialogueIsolate } from "../transforms/dialogue-isolate";
 import { musicRebalance } from "../transforms/music-rebalance";
 import { ExecutionProvider } from "@e9g/buffered-audio-nodes-core";
 
-const testVoice = resolve(dirname(fileURLToPath(import.meta.url)), "test-voice.wav");
+const testVoice = audio.testVoice;
 
 // --- FFT backend configs ---
 const fftConfigs: Array<{ label: string; providers: ReadonlyArray<ExecutionProvider> }> = [
