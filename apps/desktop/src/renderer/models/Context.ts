@@ -1,43 +1,23 @@
-import type { useGraph } from "../hooks/useGraph";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Snapshot } from "valtio/vanilla";
-import type { Logger } from "../../shared/models/Logger/Logger";
-import type { SpectralData } from "../components/Session/Workspace/hooks/useSpectralData";
-import type { SpectrogramHeader } from "../components/Session/Workspace/hooks/useSpectrogramHeader";
-import type { WaveformHeader } from "../components/Session/Workspace/hooks/useWaveformHeader";
-import type { MainWithEvents } from "./Main";
-import type { PlaybackEngine } from "./PlaybackEngine";
+import type { Logger } from "../../shared/models/Logger";
+import type { Main } from "./Main";
 import type { ProxyStore } from "./ProxyStore/ProxyStore";
 import type { AppState } from "./State/App";
-import type { JobsState } from "./State/Jobs";
-import type { PlaybackState } from "./State/Playback";
-import type { SelectionState } from "./State/Selection";
-import type { WorkspaceState } from "./State/Workspace";
+
+export interface HistoryEntry {
+	label: string;
+	undo: () => void;
+	redo: () => void;
+}
 
 export interface AppContext {
 	readonly app: Snapshot<AppState>;
 	readonly appStore: ProxyStore;
-	readonly jobs: Snapshot<JobsState>;
 	readonly logger: Logger;
-	readonly main: MainWithEvents;
+	readonly main: Main;
 	readonly queryClient: QueryClient;
 	readonly userDataPath: string;
 	readonly windowId: string;
-}
-
-export interface SessionContext extends AppContext {
-	readonly bagPath: string;
-	readonly graph: ReturnType<typeof useGraph>;
-	readonly sessionStore: ProxyStore;
-	readonly workspace: Snapshot<WorkspaceState>;
-	readonly selection: Snapshot<SelectionState>;
-	readonly playback: Snapshot<PlaybackState>;
-	readonly playbackEngine: PlaybackEngine;
-}
-
-export interface WorkspaceContext extends SessionContext {
-	readonly spectrogramHeader: SpectrogramHeader;
-	readonly waveformHeader: WaveformHeader;
-	readonly spectralData: SpectralData;
-	readonly channelCount: number;
+	readonly historyStacks: Map<string, { undo: Array<HistoryEntry>; redo: Array<HistoryEntry> }>;
 }

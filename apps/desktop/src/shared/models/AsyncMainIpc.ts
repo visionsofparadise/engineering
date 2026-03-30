@@ -1,7 +1,6 @@
 import type { BrowserWindow } from "electron";
 import type { JobManager } from "../ipc/Audio/apply/utils/jobManager";
-import type { LogContext } from "./LogContext";
-import { Logger } from "./Logger/Logger";
+import { Logger } from "./Logger";
 import type { ModuleRegistryMap } from "./ModuleRegistry";
 
 export interface IpcHandlerDependencies {
@@ -16,7 +15,7 @@ export abstract class AsyncMainIpc<P extends Array<unknown>, R> {
 	abstract action: string;
 	abstract handler(...parameters: [...P, IpcHandlerDependencies]): R | Promise<R>;
 
-	log(transactionId: string, _context: LogContext | undefined, logger: Logger): void {
+	log(transactionId: string, logger: Logger): void {
 		logger.debug(`Executing IPC handler`, {
 			namespace: "ipc",
 			transactionId,
@@ -31,9 +30,7 @@ export abstract class AsyncMainIpc<P extends Array<unknown>, R> {
 			const transactionId = Logger.generateTransactionId();
 
 			try {
-				const logContext = parameters[parameters.length - 1] as LogContext | undefined;
-
-				this.log(transactionId, logContext, logger);
+				this.log(transactionId, logger);
 
 				const result = await this.handler(...(parameters as P), dependencies);
 

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
 import { WRITE_FILE_ACTION, type WriteFileIpcParameters, type WriteFileIpcReturn } from "./Renderer";
 
@@ -6,16 +7,7 @@ export class WriteFileMainIpc extends AsyncMainIpc<WriteFileIpcParameters, Write
 	action = WRITE_FILE_ACTION;
 
 	async handler(filePath: string, content: string, _dependencies: IpcHandlerDependencies): Promise<WriteFileIpcReturn> {
-		const tmpPath = `${filePath}.tmp`;
-
-		await fs.writeFile(tmpPath, content, "utf-8");
-		try {
-			await fs.rename(tmpPath, filePath);
-		} catch (error) {
-			await fs.rm(tmpPath, { force: true }).catch(() => {});
-			throw error;
-		}
-
-		return undefined;
+		await fs.mkdir(path.dirname(filePath), { recursive: true });
+		await fs.writeFile(filePath, content, "utf-8");
 	}
 }

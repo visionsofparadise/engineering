@@ -6,19 +6,13 @@ export class StatMainIpc extends AsyncMainIpc<StatIpcParameters, StatIpcReturn> 
 	action = STAT_ACTION;
 
 	async handler(filePath: string, _dependencies: IpcHandlerDependencies): Promise<StatIpcReturn> {
-		try {
-			const stats = await fs.stat(filePath);
+		const stats = await fs.stat(filePath);
 
-			return {
-				size: stats.size,
-				modifiedAt: stats.mtimeMs,
-			};
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-				return null;
-			}
-
-			throw error;
-		}
+		return {
+			size: stats.size,
+			isFile: stats.isFile(),
+			isDirectory: stats.isDirectory(),
+			mtimeMs: stats.mtimeMs,
+		};
 	}
 }

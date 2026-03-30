@@ -1,9 +1,3 @@
 import { defineConfig } from 'vite';
 
-export default defineConfig({
-  build: {
-    rollupOptions: {
-      external: ['esbuild', 'npm'],
-    },
-  },
-});
+export default defineConfig({});

@@ -1,62 +1,55 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect } from "react";
 import { subscribe, type Snapshot } from "valtio/vanilla";
-import type { MainWithEvents } from "../models/Main";
+import type { Main } from "../models/Main";
 import type { ProxyStore } from "../models/ProxyStore/ProxyStore";
 import type { AppState } from "../models/State/App";
 
-export function useAutosave(app: Snapshot<AppState>, store: ProxyStore, main: MainWithEvents, userDataPath: string | undefined): void {
-	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+const DEBOUNCE_MS = 500;
 
-	const proxy = useMemo(() => store.dangerouslyGetProxy<AppState>(app._key), [store, app._key]);
-
+export function useAutosave(app: Snapshot<AppState>, store: ProxyStore, main: Main, userDataPath: string): void {
 	useEffect(() => {
+		const proxy = store.dangerouslyGetProxy<AppState>(app._key);
+
 		if (!proxy) return;
 
-		if (!userDataPath) return;
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		let pendingData: string | null = null;
 
-		const statePath = `${userDataPath}/state.json`;
+		function flush(): void {
+			if (pendingData !== null) {
+				const data = pendingData;
+
+				pendingData = null;
+				void main.writeFile(`${userDataPath}/state.json`, data);
+			}
+		}
 
 		const unsubscribe = subscribe(proxy, () => {
-			if (debounceRef.current) clearTimeout(debounceRef.current);
+			pendingData = JSON.stringify(proxy, null, 2);
 
-			debounceRef.current = setTimeout(() => {
-				void (async () => {
-					try {
-						const json = JSON.stringify(proxy, null, 2);
-
-						await main.writeFile(statePath, json);
-					} catch {
-						return;
-					}
-				})();
-			}, 500);
+			if (timer !== null) clearTimeout(timer);
+			timer = setTimeout(() => {
+				timer = null;
+				flush();
+			}, DEBOUNCE_MS);
 		});
 
-		const handleBeforeUnload = () => {
-			if (debounceRef.current) {
-				clearTimeout(debounceRef.current);
-				debounceRef.current = null;
-				const json = JSON.stringify(proxy, null, 2);
-
-				void main.writeFile(statePath, json).catch(() => {});
-			}
+		const onBeforeUnload = (): void => {
+			flush();
 		};
 
-		window.addEventListener("beforeunload", handleBeforeUnload);
+		window.addEventListener("beforeunload", onBeforeUnload);
 
 		return () => {
 			unsubscribe();
-			window.removeEventListener("beforeunload", handleBeforeUnload);
+			window.removeEventListener("beforeunload", onBeforeUnload);
 
-			if (debounceRef.current) {
-				clearTimeout(debounceRef.current);
-				debounceRef.current = null;
-
-				// Flush pending save
-				const json = JSON.stringify(proxy, null, 2);
-
-				void main.writeFile(statePath, json).catch(() => {});
+			if (timer !== null) {
+				clearTimeout(timer);
+				timer = null;
 			}
+
+			flush();
 		};
-	}, [proxy, main, app, userDataPath]);
+	}, [app._key, store, main, userDataPath]);
 }

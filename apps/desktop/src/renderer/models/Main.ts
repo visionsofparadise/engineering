@@ -1,7 +1,6 @@
 import type { IpcRendererEvent } from "electron";
 import type { AsyncIpcAction, AsyncIpcParameters, AsyncIpcReturn } from "../../shared/ipc/asyncRendererIpcs";
 import type { MainEventMap } from "../../shared/utilities/emitToRenderer";
-import type { MainEvents } from "./MainEvents";
 
 type MainListener<K extends keyof MainEventMap> = (event: IpcRendererEvent, ...parameters: MainEventMap[K]) => void;
 
@@ -14,12 +13,6 @@ export type Main = {
 	};
 
 	send: (channel: string, ...args: Array<unknown>) => void;
-
-	getPathForFile: (file: File) => string;
-};
-
-export type MainWithEvents = Omit<Main, "events"> & {
-	events: MainEvents;
 };
 
 export const main = (window as Window & typeof globalThis & { main: Main }).main;

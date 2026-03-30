@@ -1,40 +1,42 @@
 import { useEffect } from "react";
+import type { IpcRendererEvent } from "electron";
 import type { Snapshot } from "valtio/vanilla";
-import type { WindowState } from "../../shared/utilities/emitToRenderer";
-import type { MainWithEvents } from "../models/Main";
+import type { Main } from "../models/Main";
 import type { ProxyStore } from "../models/ProxyStore/ProxyStore";
-import type { AppState } from "../models/State/App";
+import type { AppState, WindowBounds } from "../models/State/App";
 
-export function useWindowState(app: Snapshot<AppState>, appStore: ProxyStore, main: MainWithEvents): void {
+export function useWindowState(app: Snapshot<AppState>, appStore: ProxyStore, main: Main): void {
 	useEffect(() => {
-		const saved = app.windowState;
+		// Restore saved window bounds on mount
+		if (app.windowBounds) {
+			const bounds = app.windowBounds;
 
-		if (!saved) return;
+			void main.getAllDisplays().then((displays) => {
+				const isVisible = displays.some(
+					(display) =>
+						bounds.x < display.x + display.width &&
+						bounds.x + bounds.width > display.x &&
+						bounds.y < display.y + display.height &&
+						bounds.y + bounds.height > display.y,
+				);
 
-		void (async () => {
-			const displays = await main.getAllDisplays();
+				if (isVisible) {
+					void main.setBounds(bounds);
+				}
+			});
+		}
 
-			const isOnDisplay = displays.some((display) =>
-				saved.x >= display.x && saved.y >= display.y && saved.x + saved.width <= display.x + display.width && saved.y + saved.height <= display.y + display.height,
-			);
-
-			if (isOnDisplay) {
-				await main.setBounds({ x: saved.x, y: saved.y, width: saved.width, height: saved.height });
-			}
-		})();
-	}, []);
-
-	useEffect(() => {
-		const handler = (windowState: WindowState) => {
+		// Subscribe to window bounds changes from main process
+		const listener = (_event: IpcRendererEvent, windowBounds: WindowBounds): void => {
 			appStore.mutate(app, (proxy) => {
-				proxy.windowState = windowState;
+				proxy.windowBounds = windowBounds;
 			});
 		};
 
-		main.events.on("windowBoundsChanged", handler);
+		main.events.on("windowBoundsChanged", listener);
 
 		return () => {
-			main.events.off("windowBoundsChanged", handler);
+			main.events.removeListener("windowBoundsChanged", listener);
 		};
-	}, [main, app, appStore]);
+	}, [app._key, appStore, main]);
 }

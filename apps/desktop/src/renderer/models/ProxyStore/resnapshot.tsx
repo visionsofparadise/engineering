@@ -121,15 +121,14 @@ function useResnapshotAll(stores: Array<ProxyStore>, snapshots: Array<{ _key: sy
 
 interface StoreContext {
 	appStore: ProxyStore;
-	sessionStore?: ProxyStore;
 }
 
 export const resnapshot = <P extends { context: StoreContext }>(component: FC<P>): FC<P> => {
 	const componentName = component.name || "Anonymous";
 
 	const Resnapshotted: FC<P> = (props) => {
-		const { appStore, sessionStore } = props.context;
-		const stores = useMemo(() => (sessionStore ? [appStore, sessionStore] : [appStore]), [appStore, sessionStore]);
+		const { appStore } = props.context;
+		const stores = useMemo(() => [appStore], [appStore]);
 
 		const snapshotPaths = useMemo(() => findSnapshotPaths(props), [props]);
 

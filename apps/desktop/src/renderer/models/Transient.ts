@@ -63,6 +63,9 @@ export class Transient<V> {
 		};
 
 		this._transientAccessor = ref({
+			get value() {
+				return _this._transient.current;
+			},
 			set value(value: V | undefined) {
 				if (value !== undefined) {
 					_this._transient.set(_this.applyClamp(value));

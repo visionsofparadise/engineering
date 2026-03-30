@@ -10,9 +10,6 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
-    extraResource: [
-      './resources/binaries',
-    ],
   },
   rebuildConfig: {},
   makers: [
@@ -25,12 +22,12 @@ const config: ForgeConfig = {
     new VitePlugin({
       build: [
         {
-          entry: 'src/main/main.ts',
+          entry: 'src/main/index.ts',
           config: 'vite.main.config.ts',
           target: 'main',
         },
         {
-          entry: 'src/preload/preload.ts',
+          entry: 'src/preload/index.ts',
           config: 'vite.preload.config.ts',
           target: 'preload',
         },
