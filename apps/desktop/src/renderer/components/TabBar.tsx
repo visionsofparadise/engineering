@@ -3,6 +3,8 @@ import type { AppContext } from "../models/Context";
 
 interface Props {
 	readonly context: AppContext;
+	readonly onOpenModuleManager: () => void;
+	readonly onOpenBinaryManager: () => void;
 }
 
 const MENU_ITEMS: ReadonlyArray<MenuItem> = [
@@ -15,7 +17,7 @@ const MENU_ITEMS: ReadonlyArray<MenuItem> = [
 	{ kind: "action", icon: "lucide:redo-2", label: "Redo", shortcut: "Ctrl+Shift+Z" },
 ];
 
-export const AppTabBar: React.FC<Props> = ({ context }) => {
+export const AppTabBar: React.FC<Props> = ({ context, onOpenModuleManager, onOpenBinaryManager }) => {
 	const { app, appStore } = context;
 
 	const tabs = app.tabs.map((tab) => ({
@@ -48,6 +50,9 @@ export const AppTabBar: React.FC<Props> = ({ context }) => {
 				trigger={<IconButton icon="lucide:menu" label="Menu" size={16} />}
 				items={MENU_ITEMS}
 			/>
+
+			<IconButton icon="lucide:blocks" label="Module Manager" size={16} onClick={onOpenModuleManager} />
+			<IconButton icon="lucide:hard-drive" label="Binary Manager" size={16} onClick={onOpenBinaryManager} />
 
 			<div className="h-4 w-px bg-chrome-border-subtle" />
 

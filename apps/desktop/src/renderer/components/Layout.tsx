@@ -1,12 +1,16 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Logger } from "../../shared/models/Logger";
 import { useAutosave } from "../hooks/useAutosave";
+import { usePackageLoader } from "../hooks/usePackageLoader";
 import { useWindowState } from "../hooks/useWindowState";
 import type { AppContext } from "../models/Context";
 import { main } from "../models/Main";
 import type { ProxyStore } from "../models/ProxyStore/ProxyStore";
 import { useAppState, type AppState } from "../models/State/App";
+import { LoadingScreen } from "./LoadingScreen";
+import { BinaryManager } from "./BinaryManager";
+import { ModuleManager } from "./ModuleManager";
 import { AppTabBar } from "./TabBar";
 import { TabContent } from "./TabContent";
 
@@ -24,6 +28,16 @@ export const AppLayout: React.FC<Props> = ({ initialState, windowId, userDataPat
 
 	useWindowState(app, appStore, main);
 	useAutosave(app, appStore, main, userDataPath);
+
+	const { isLoading } = usePackageLoader(app, appStore, main, userDataPath);
+	const [hasPassedLoading, setHasPassedLoading] = useState(false);
+	const [moduleManagerOpen, setModuleManagerOpen] = useState(false);
+	const [binaryManagerOpen, setBinaryManagerOpen] = useState(false);
+
+	const openModuleManager = useCallback(() => setModuleManagerOpen(true), []);
+	const closeModuleManager = useCallback(() => setModuleManagerOpen(false), []);
+	const openBinaryManager = useCallback(() => setBinaryManagerOpen(true), []);
+	const closeBinaryManager = useCallback(() => setBinaryManagerOpen(false), []);
 
 	const context: AppContext = useMemo(
 		() => ({
@@ -47,10 +61,22 @@ export const AppLayout: React.FC<Props> = ({ initialState, windowId, userDataPat
 		}
 	}, [app.theme]);
 
+	if (!hasPassedLoading) {
+		return (
+			<LoadingScreen
+				packages={app.packages}
+				isLoading={isLoading}
+				onContinue={() => setHasPassedLoading(true)}
+			/>
+		);
+	}
+
 	return (
 		<div className="flex flex-col h-screen">
-			<AppTabBar context={context} />
+			<AppTabBar context={context} onOpenModuleManager={openModuleManager} onOpenBinaryManager={openBinaryManager} />
 			<TabContent context={context} />
+			<ModuleManager context={context} isOpen={moduleManagerOpen} onClose={closeModuleManager} />
+			<BinaryManager context={context} isOpen={binaryManagerOpen} onClose={closeBinaryManager} />
 		</div>
 	);
 };
