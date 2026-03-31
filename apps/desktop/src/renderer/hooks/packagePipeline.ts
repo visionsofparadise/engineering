@@ -88,7 +88,7 @@ export async function runPackagePipeline(
 	// 4. Ready
 	mutatePackageAt(appStore, app, index, (target) => {
 		target.status = "ready";
-		target.modules = modules as Array<{ moduleName: string; moduleDescription: string; schema: unknown }>;
+		target.modules = modules as Array<{ moduleName: string; moduleDescription: string; schema: unknown; category: "source" | "transform" | "target" }>;
 		target.version = version;
 	});
 }

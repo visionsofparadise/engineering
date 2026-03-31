@@ -27,6 +27,7 @@ const LoadedModuleInfoSchema = z.object({
 	moduleName: z.string(),
 	moduleDescription: z.string(),
 	schema: z.unknown(),
+	category: z.enum(["source", "transform", "target"]),
 });
 
 const ModulePackageStateSchema = z.object({

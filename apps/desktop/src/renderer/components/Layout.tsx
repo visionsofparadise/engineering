@@ -1,18 +1,19 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Logger } from "../../shared/models/Logger";
 import { useAutosave } from "../hooks/useAutosave";
 import { usePackageLoader } from "../hooks/usePackageLoader";
 import { useWindowState } from "../hooks/useWindowState";
-import type { AppContext } from "../models/Context";
+import type { AppContext, HistoryState } from "../models/Context";
 import { main } from "../models/Main";
 import type { ProxyStore } from "../models/ProxyStore/ProxyStore";
 import { useAppState, type AppState } from "../models/State/App";
+import { loadBag, newBag, openBag } from "../utilities/bagOperations";
 import { LoadingScreen } from "./LoadingScreen";
 import { BinaryManager } from "./BinaryManager";
 import { ModuleManager } from "./ModuleManager";
 import { AppTabBar } from "./TabBar";
-import { TabContent } from "./TabContent";
+import { TabContent } from "./Tab";
 
 interface Props {
 	readonly initialState: Omit<AppState, "_key">;
@@ -23,7 +24,7 @@ interface Props {
 	readonly logger: Logger;
 }
 
-export const AppLayout: React.FC<Props> = ({ initialState, windowId, userDataPath, appStore, queryClient, logger }) => {
+export function AppLayout({ initialState, windowId, userDataPath, appStore, queryClient, logger }: Props) {
 	const app = useAppState(initialState, appStore);
 
 	useWindowState(app, appStore, main);
@@ -39,6 +40,59 @@ export const AppLayout: React.FC<Props> = ({ initialState, windowId, userDataPat
 	const openBinaryManager = useCallback(() => setBinaryManagerOpen(true), []);
 	const closeBinaryManager = useCallback(() => setBinaryManagerOpen(false), []);
 
+	const historyStacksRef = useRef(new Map<string, HistoryState>());
+	const tabNamesRef = useRef(new Map<string, string>());
+	const renameCallbacksRef = useRef(new Map<string, (name: string) => void>());
+
+	const addTab = useCallback(
+		(bagId: string, bagPath: string, name: string) => {
+			appStore.mutate(app, (proxy) => {
+				if (proxy.tabs.some((tab) => tab.id === bagId)) {
+					proxy.activeTabId = bagId;
+
+					return;
+				}
+
+				proxy.tabs.push({ id: bagId, bagPath });
+				proxy.activeTabId = bagId;
+
+				const existing = proxy.recentFiles.filter((rf) => rf.id !== bagId);
+
+				existing.unshift({ id: bagId, bagPath, name, lastOpened: Date.now() });
+				proxy.recentFiles = existing.slice(0, 20);
+			});
+
+			tabNamesRef.current.set(bagId, name);
+		},
+		[app, appStore],
+	);
+
+	const openBagTab = useCallback(async () => {
+		const bagPath = await openBag(main);
+
+		if (!bagPath) return;
+
+		const definition = await loadBag(main, bagPath);
+
+		addTab(definition.id, bagPath, definition.name);
+	}, [addTab]);
+
+	const newBagTab = useCallback(async () => {
+		const result = await newBag(main);
+
+		if (!result) return;
+
+		addTab(result.definition.id, result.bagPath, result.definition.name);
+	}, [addTab]);
+
+	const renameTab = useCallback((tabId: string, newName: string) => {
+		const callback = renameCallbacksRef.current.get(tabId);
+
+		if (callback) {
+			callback(newName);
+		}
+	}, []);
+
 	const context: AppContext = useMemo(
 		() => ({
 			app,
@@ -48,9 +102,14 @@ export const AppLayout: React.FC<Props> = ({ initialState, windowId, userDataPat
 			queryClient,
 			userDataPath,
 			windowId,
-			historyStacks: new Map(),
+			historyStacks: historyStacksRef.current,
+			tabNames: tabNamesRef.current,
+			renameCallbacks: renameCallbacksRef.current,
+			openBagTab,
+			newBagTab,
+			renameTab,
 		}),
-		[app, windowId, userDataPath],
+		[app, windowId, userDataPath, openBagTab, newBagTab, renameTab],
 	);
 
 	useEffect(() => {
@@ -79,4 +138,4 @@ export const AppLayout: React.FC<Props> = ({ initialState, windowId, userDataPat
 			<BinaryManager context={context} isOpen={binaryManagerOpen} onClose={closeBinaryManager} />
 		</div>
 	);
-};
+}

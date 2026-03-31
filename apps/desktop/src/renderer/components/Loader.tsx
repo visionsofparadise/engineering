@@ -13,7 +13,7 @@ interface Props {
 	readonly logger: Logger;
 }
 
-export const AppLoader: React.FC<Props> = ({ queryClient, logger }) => {
+export function AppLoader({ queryClient, logger }: Props) {
 	const { data: initialState } = useQuery({
 		queryKey: ["initialState"],
 		queryFn: () => loadAppState(main),
@@ -47,4 +47,4 @@ export const AppLoader: React.FC<Props> = ({ queryClient, logger }) => {
 			logger={logger}
 		/>
 	);
-};
+}

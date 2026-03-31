@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { SourceNode, TargetNode, TransformNode } from "@e9g/buffered-audio-nodes-core";
 import { toJSONSchema } from "zod";
 import { registerPackage, type ModuleClass } from "../../../models/ModuleRegistry";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
@@ -8,6 +9,16 @@ function isAudioChainModule(value: unknown): value is ModuleClass {
 	return (
 		typeof value === "function" && "moduleName" in value && typeof value.moduleName === "string" && "moduleDescription" in value && typeof value.moduleDescription === "string" && "schema" in value
 	);
+}
+
+function getModuleCategory(value: ModuleClass): "source" | "transform" | "target" {
+	const proto: unknown = value.prototype;
+
+	if (proto instanceof SourceNode) return "source";
+	if (proto instanceof TargetNode) return "target";
+	if (proto instanceof TransformNode) return "transform";
+
+	throw new Error(`Module "${value.moduleName}" does not extend SourceNode, TransformNode, or TargetNode`);
 }
 
 export class LoadPackageModulesMainIpc extends AsyncMainIpc<LoadPackageModulesIpcParameters, LoadPackageModulesIpcReturn> {
@@ -27,6 +38,7 @@ export class LoadPackageModulesMainIpc extends AsyncMainIpc<LoadPackageModulesIp
 					moduleName: value.moduleName,
 					moduleDescription: value.moduleDescription,
 					schema: toJSONSchema(value.schema),
+					category: getModuleCategory(value),
 				});
 			}
 		}

@@ -9,6 +9,7 @@ export interface LoadedModuleInfo {
 	readonly moduleName: string;
 	readonly moduleDescription: string;
 	readonly schema: unknown;
+	readonly category: "source" | "transform" | "target";
 }
 
 export type LoadPackageModulesIpcParameters = [input: LoadPackageModulesInput];

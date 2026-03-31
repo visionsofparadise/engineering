@@ -1,9 +1,11 @@
+import type { GraphDefinition } from "@e9g/buffered-audio-nodes-core";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Snapshot } from "valtio/vanilla";
 import type { Logger } from "../../shared/models/Logger";
 import type { Main } from "./Main";
 import type { ProxyStore } from "./ProxyStore/ProxyStore";
 import type { AppState } from "./State/App";
+import type { GraphState } from "./State/Graph";
 
 export interface HistoryEntry {
 	label: string;
@@ -25,4 +27,22 @@ export interface AppContext {
 	readonly userDataPath: string;
 	readonly windowId: string;
 	readonly historyStacks: Map<string, HistoryState>;
+	readonly tabNames: Map<string, string>;
+	readonly renameCallbacks: Map<string, (name: string) => void>;
+	readonly openBagTab: () => Promise<void>;
+	readonly newBagTab: () => Promise<void>;
+	readonly renameTab: (tabId: string, newName: string) => void;
+}
+
+export interface GraphContext extends AppContext {
+	readonly graph: Snapshot<GraphState>;
+	readonly graphStore: ProxyStore;
+	readonly graphDefinition: GraphDefinition;
+	readonly mutateDefinition: (updater: (definition: GraphDefinition) => GraphDefinition) => void;
+	readonly bagPath: string;
+	readonly bagId: string;
+	readonly history: HistoryState;
+	readonly pushHistory: (entry: HistoryEntry) => void;
+	readonly undo: () => void;
+	readonly redo: () => void;
 }
