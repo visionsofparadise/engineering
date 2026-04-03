@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { Button } from "@e9g/design-system";
 import type { AppContext } from "../models/Context";
+import type { ModuleJsonSchema } from "../../shared/ipc/Package/loadModules/Renderer";
 
 interface Props {
 	readonly context: AppContext;
@@ -18,23 +19,13 @@ function extractBinaries(context: AppContext): Array<BinaryInfo> {
 
 	for (const entry of context.app.packages) {
 		for (const mod of entry.modules) {
-			const schema = mod.schema as Record<string, unknown> | null | undefined;
+			const schema = mod.schema as ModuleJsonSchema | null;
 
-			if (!schema || typeof schema !== "object") continue;
+			if (!schema?.properties) continue;
 
-			const properties = schema.properties as Record<string, unknown> | undefined;
-
-			if (!properties || typeof properties !== "object") continue;
-
-			for (const propDef of Object.values(properties)) {
-				const prop = propDef as Record<string, unknown> | undefined;
-
-				if (!prop || typeof prop !== "object") continue;
-
-				const meta = prop.meta as Record<string, unknown> | undefined;
-
-				if (meta && typeof meta === "object" && typeof meta.binary === "string") {
-					binaryNames.add(meta.binary);
+			for (const prop of Object.values(schema.properties)) {
+				if (prop.binary) {
+					binaryNames.add(prop.binary);
 				}
 			}
 		}

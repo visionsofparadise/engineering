@@ -1,5 +1,5 @@
 import type { Node, Edge } from "@xyflow/react";
-import type { AudioNodeData, Parameter, NumberParameter, NodeState, NodeCategory } from "@e9g/design-system";
+import type { AudioNodeData, Parameter, NumberParameter, NodeState, NodeCategory } from "../components/graph/types";
 
 interface AudioEdgeData {
   readonly state: "idle" | "active" | "complete";

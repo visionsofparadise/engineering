@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import type { BufferedAudioNode, RenderOptions } from "./node";
 import { SourceNode } from "./source";
@@ -9,9 +9,11 @@ const graphNodeSchema = z.object({
 	packageName: z.string().min(1),
 	nodeName: z.string().min(1),
 	parameters: z.record(z.string(), z.unknown()).optional(),
-	options: z.object({
-		bypass: z.boolean().optional(),
-	}).optional(),
+	options: z
+		.object({
+			bypass: z.boolean().optional(),
+		})
+		.optional(),
 });
 
 const graphEdgeSchema = z.object({
@@ -66,8 +68,7 @@ export function pack(sources: ReadonlyArray<SourceNode>, metadata?: { name?: str
 			id,
 			packageName: ctor.packageName,
 			nodeName: ctor.moduleName,
-			...(Object.keys(parameters as Record<string, unknown>).length > 0
-				&& { parameters: parameters as Record<string, unknown> }),
+			...(Object.keys(parameters as Record<string, unknown>).length > 0 && { parameters: parameters as Record<string, unknown> }),
 			...(Object.keys(options).length > 0 && { options }),
 		};
 

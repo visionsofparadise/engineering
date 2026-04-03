@@ -5,20 +5,25 @@ export const Knob = ({
   label,
   size = 40,
   onChange,
+  onChangeEnd,
   className,
   hideValue,
+  disabled,
 }: {
   readonly value: number;
   readonly label: string;
   readonly size?: number;
   readonly onChange?: (v: number) => void;
+  readonly onChangeEnd?: (v: number) => void;
   readonly className?: string;
   readonly hideValue?: boolean;
+  readonly disabled?: boolean;
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragging, setDragging] = useState(false);
   const startY = useRef(0);
   const startValue = useRef(0);
+  const currentValue = useRef(value);
 
   const radius = (size - 4) / 2;
   const cx = size / 2;
@@ -48,28 +53,31 @@ export const Knob = ({
 
   const onPointerDown = useCallback(
     (ev: React.PointerEvent) => {
-      if (!onChange) return;
+      if (!onChange || disabled) return;
       setDragging(true);
       (ev.target as Element).setPointerCapture(ev.pointerId);
       startY.current = ev.clientY;
       startValue.current = value;
     },
-    [onChange, value],
+    [onChange, disabled, value],
   );
 
   const onPointerMove = useCallback(
     (ev: React.PointerEvent) => {
       if (!dragging || !onChange) return;
       const delta = (startY.current - ev.clientY) / 150;
+      const clamped = Math.max(0, Math.min(1, startValue.current + delta));
 
-      onChange(Math.max(0, Math.min(1, startValue.current + delta)));
+      currentValue.current = clamped;
+      onChange(clamped);
     },
     [dragging, onChange],
   );
 
   const onPointerUp = useCallback(() => {
     setDragging(false);
-  }, []);
+    onChangeEnd?.(currentValue.current);
+  }, [onChangeEnd]);
 
   return (
     <div className={`flex flex-col items-center gap-1${className ? ` ${className}` : ''}`}>
@@ -79,7 +87,7 @@ export const Knob = ({
         width={size}
         height={size}
         style={{ display: 'block', width: size, height: size }}
-        className={onChange ? 'cursor-pointer' : undefined}
+        className={onChange && !disabled ? 'cursor-pointer' : undefined}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

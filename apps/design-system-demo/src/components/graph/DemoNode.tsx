@@ -1,25 +1,71 @@
+import { useState, useEffect, useRef } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Icon } from "@iconify/react";
-import { Knob } from "../controls/Knob";
-import { IconButton } from "../IconButton";
-import { DropdownButton } from "../DropdownButton";
-import type { MenuItem } from "../DropdownButton";
-import type { AudioNodeData, Parameter, NumberParameter } from "./types";
+import { Knob, Toggle, ButtonSelection, Select, Button, IconButton, DropdownButton } from "@e9g/design-system";
+import type { MenuItem } from "@e9g/design-system";
+import type { AudioNodeData, NumberParameter } from "./types";
 
-function formatValue(param: Parameter): string {
-  switch (param.kind) {
-    case "number":
-      return param.unit ? `${param.value} ${param.unit}` : String(param.value);
-    case "boolean":
-      return param.value ? "ON" : "OFF";
-    case "enum":
-      return param.value;
-    case "string":
-      return param.value;
-  }
+function snapToStep(value: number, step: number): number {
+  if (step <= 0) return value;
+
+  return Math.round(value / step) * step;
 }
 
-function NodeKnob({ param, dimmed }: { readonly param: NumberParameter; readonly dimmed?: boolean }) {
+function EditableKnob({
+  param,
+  dimmed,
+  onParameterChange,
+}: {
+  readonly param: NumberParameter;
+  readonly dimmed?: boolean;
+  readonly onParameterChange?: (name: string, value: unknown) => void;
+}) {
+  const range = param.max - param.min;
+  const normalize = (raw: number) => (raw - param.min) / range;
+  const denormalize = (normalized: number) => param.min + normalized * range;
+
+  const [localValue, setLocalValue] = useState(param.value);
+  const draggingRef = useRef(false);
+
+  useEffect(() => {
+    if (!draggingRef.current) setLocalValue(param.value);
+  }, [param.value]);
+
+  const normalized = normalize(localValue);
+  const displayValue = draggingRef.current ? localValue : param.value;
+
+  return (
+    <div className={`flex items-center justify-between gap-3 ${dimmed ? "opacity-40" : ""}`}>
+      <span className="font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] text-chrome-text-secondary">
+        {param.name}
+      </span>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="font-technical text-[length:var(--text-xs)] tabular-nums text-chrome-text">
+          {displayValue}{param.unit ? ` ${param.unit}` : ""}
+        </span>
+        <Knob
+          value={normalized}
+          label=""
+          size={32}
+          hideValue
+          onChange={onParameterChange ? (norm: number) => {
+            draggingRef.current = true;
+            setLocalValue(snapToStep(denormalize(norm), param.step));
+          } : undefined}
+          onChangeEnd={onParameterChange ? (norm: number) => {
+            draggingRef.current = false;
+            const committed = snapToStep(denormalize(norm), param.step);
+
+            setLocalValue(committed);
+            onParameterChange(param.name, committed);
+          } : undefined}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ReadOnlyKnob({ param, dimmed }: { readonly param: NumberParameter; readonly dimmed?: boolean }) {
   const normalized = (param.value - param.min) / (param.max - param.min);
 
   return (
@@ -95,7 +141,7 @@ function NodeMenu({ isSource, isProcessing, isPending, isBypassed, isInspected }
   );
 }
 
-export function AudioNode({ data, selected, children }: NodeProps & { readonly children?: React.ReactNode }) {
+export function DemoNode({ data, selected, children }: NodeProps & { readonly children?: React.ReactNode }) {
   const nodeData = data as unknown as AudioNodeData;
   const isBypassed = nodeData.bypassed;
   const isInspected = nodeData.inspected ?? false;
@@ -108,6 +154,8 @@ export function AudioNode({ data, selected, children }: NodeProps & { readonly c
   const hasError = nodeData.error !== undefined;
   const progress = nodeData.progress;
 
+  const onParameterChange = nodeData.onParameterChange;
+  const onParameterBrowse = nodeData.onParameterBrowse;
   const numberParams = nodeData.parameters.filter((param): param is NumberParameter => param.kind === "number");
   const otherParams = nodeData.parameters.filter((param) => param.kind !== "number");
 
@@ -150,43 +198,72 @@ export function AudioNode({ data, selected, children }: NodeProps & { readonly c
           </div>
         )}
 
-        {/* Parameters */}
+        {/* Parameters — non-number */}
         {otherParams.length > 0 && (
           <div className={`flex flex-col gap-3 px-3 pb-3 ${isBypassed ? "opacity-40" : ""}`}>
             {otherParams.map((param) => (
               <div key={param.name} className="flex flex-col gap-0.5">
-                {param.kind === "string" ? (
+                {param.kind === "boolean" ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={`font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] ${isBypassed ? "text-chrome-text-dim" : "text-chrome-text-secondary"}`}>
+                      {param.name}
+                    </span>
+                    <Toggle
+                      value={param.value}
+                      onChange={onParameterChange ? (toggled) => onParameterChange(param.name, toggled) : undefined}
+                    />
+                  </div>
+                ) : param.kind === "enum" ? (
+                  <div className="flex flex-col gap-1">
+                    <span className={`font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] ${isBypassed ? "text-chrome-text-dim" : "text-chrome-text-secondary"}`}>
+                      {param.name}
+                    </span>
+                    {param.options.every((opt) => opt.length <= 10) ? (
+                      <ButtonSelection
+                        active={param.value}
+                        options={param.options}
+                        onSelect={onParameterChange ? (option) => onParameterChange(param.name, option) : undefined}
+                      />
+                    ) : (
+                      <Select
+                        value={param.value}
+                        options={param.options}
+                        onSelect={onParameterChange ? (option) => onParameterChange(param.name, option) : undefined}
+                      />
+                    )}
+                  </div>
+                ) : param.kind === "file" ? (
+                  <div className="flex flex-col gap-1">
+                    <span className={`font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] ${isBypassed ? "text-chrome-text-dim" : "text-chrome-text-secondary"}`}>
+                      {param.name}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate font-body text-[length:var(--text-xs)] text-chrome-text">
+                        {param.value ? param.value.split(/[/\\]/).pop() : "No file selected"}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => onParameterBrowse?.(param.name)}
+                        disabled={!onParameterBrowse}
+                      >
+                        Browse
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
                   <div className="flex flex-col gap-1">
                     <span className={`font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] ${isBypassed ? "text-chrome-text-dim" : "text-chrome-text-secondary"}`}>
                       {param.name}
                     </span>
                     <input
+                      key={param.value}
                       type="text"
                       defaultValue={param.value}
+                      onBlur={onParameterChange ? (ev) => onParameterChange(param.name, ev.target.value) : undefined}
+                      onKeyDown={(ev) => { if (ev.key === "Enter") ev.currentTarget.blur(); }}
                       className="w-full bg-chrome-base px-2 py-1.5 font-technical text-[length:var(--text-sm)] text-chrome-text outline-none"
                     />
-                  </div>
-                ) : param.kind === "enum" ? (
-                  <div className="flex items-center justify-between gap-3">
-                    <span className={`font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] ${isBypassed ? "text-chrome-text-dim" : "text-chrome-text-secondary"}`}>
-                      {param.name}
-                    </span>
-                    <button
-                      type="button"
-                      className="flex items-center gap-0.5 bg-chrome-raised font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] text-chrome-text"
-                    >
-                      <span>{param.value}</span>
-                      <Icon icon="lucide:chevron-down" width={10} height={10} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className={`font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] ${isBypassed ? "text-chrome-text-dim" : "text-chrome-text-secondary"}`}>
-                      {param.name}
-                    </span>
-                    <span className={`font-technical text-[length:var(--text-sm)] tabular-nums whitespace-nowrap ${isBypassed ? "text-chrome-text-dim" : "text-chrome-text"}`}>
-                      {formatValue(param)}
-                    </span>
                   </div>
                 )}
               </div>
@@ -198,7 +275,9 @@ export function AudioNode({ data, selected, children }: NodeProps & { readonly c
         {numberParams.length > 0 && (
           <div className="flex flex-col gap-3 px-3 pb-3">
             {numberParams.map((param) => (
-              <NodeKnob key={param.name} param={param} dimmed={isBypassed} />
+              onParameterChange
+                ? <EditableKnob key={param.name} param={param} dimmed={isBypassed} onParameterChange={onParameterChange} />
+                : <ReadOnlyKnob key={param.name} param={param} dimmed={isBypassed} />
             ))}
           </div>
         )}

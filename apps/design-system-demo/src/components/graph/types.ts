@@ -30,7 +30,13 @@ export interface StringParameter {
   readonly value: string;
 }
 
-export type Parameter = NumberParameter | BooleanParameter | EnumParameter | StringParameter;
+export interface FileParameter {
+  readonly kind: "file";
+  readonly name: string;
+  readonly value: string;
+}
+
+export type Parameter = NumberParameter | BooleanParameter | EnumParameter | StringParameter | FileParameter;
 
 export interface AudioNodeData {
   readonly label: string;
@@ -48,5 +54,9 @@ export interface AudioNodeData {
   readonly error?: string;
   /** Processing progress 0-1 */
   readonly progress?: number;
+  /** Called when a parameter value is committed (drag end, blur, enter, click) */
+  readonly onParameterChange?: (name: string, value: unknown) => void;
+  /** Called when a file parameter's browse button is clicked */
+  readonly onParameterBrowse?: (name: string) => void;
   [key: string]: unknown;
 }

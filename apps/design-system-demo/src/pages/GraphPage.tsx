@@ -14,8 +14,13 @@ import {
   BackgroundVariant,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { AudioNode, AudioEdge, NodeContextMenu, NodeSnapshot, IconButton, Button } from "@e9g/design-system";
-import type { MenuItem, AudioNodeData } from "@e9g/design-system";
+import { IconButton, Button } from "@e9g/design-system";
+import type { MenuItem } from "@e9g/design-system";
+import { DemoNode } from "../components/graph/DemoNode";
+import { DemoEdge } from "../components/graph/DemoEdge";
+import { DemoContextMenu } from "../components/graph/DemoContextMenu";
+import { DemoSnapshot } from "../components/graph/DemoSnapshot";
+import type { AudioNodeData } from "../components/graph/types";
 import { DemoTabBar } from "../DemoTabBar";
 import { useColormapTheme } from "../ThemeContext";
 import { AudioDataProvider, useAudioData } from "../AudioDataContext";
@@ -41,20 +46,20 @@ const MENU_ITEMS: ReadonlyArray<MenuItem> = [
   { kind: "action", icon: "lucide:settings", label: "Settings", shortcut: "Ctrl+," },
 ];
 
-function DemoAudioNode(props: React.ComponentProps<typeof AudioNode>) {
+function DemoAudioNode(props: React.ComponentProps<typeof DemoNode>) {
   const audioData = useAudioData();
   const { colormap } = useColormapTheme();
   const nodeData = props.data as unknown as AudioNodeData;
 
   return (
-    <AudioNode {...props}>
-      {nodeData.snapshot && <NodeSnapshot audioData={audioData} colormap={colormap} />}
-    </AudioNode>
+    <DemoNode {...props}>
+      {nodeData.snapshot && <DemoSnapshot audioData={audioData} colormap={colormap} />}
+    </DemoNode>
   );
 }
 
 const NODE_TYPES: NodeTypes = { audioNode: DemoAudioNode };
-const EDGE_TYPES: EdgeTypes = { audioEdge: AudioEdge };
+const EDGE_TYPES: EdgeTypes = { audioEdge: DemoEdge };
 
 interface ContextMenuState {
   readonly x: number;
@@ -254,7 +259,7 @@ function GraphPageInner() {
       </div>
 
       {contextMenu && (
-        <NodeContextMenu
+        <DemoContextMenu
           position={contextMenu}
           onClose={closeContextMenu}
         />

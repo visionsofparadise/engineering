@@ -1,5 +1,5 @@
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from "@xyflow/react";
-import { Icon } from "@iconify/react";
+import { Plus } from "lucide-react";
 
 interface AudioEdgeData {
   readonly state: "idle" | "active" | "complete";
@@ -12,7 +12,7 @@ const EDGE_COLORS: Record<string, string> = {
   complete: "var(--color-edge-complete)",
 };
 
-export function AudioEdge({
+export function EdgeContainer({
   id,
   sourceX,
   sourceY,
@@ -64,7 +64,7 @@ export function AudioEdge({
             pointerEvents: "all",
           }}
         >
-          <Icon icon="lucide:plus" width={12} height={12} />
+          <Plus size={12} />
         </button>
       </EdgeLabelRenderer>
     </>

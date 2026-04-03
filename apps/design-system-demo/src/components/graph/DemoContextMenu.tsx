@@ -5,7 +5,7 @@ interface ContextMenuPosition {
   readonly y: number;
 }
 
-interface NodeContextMenuProps {
+interface DemoContextMenuProps {
   readonly position: ContextMenuPosition;
   readonly onClose: () => void;
 }
@@ -31,7 +31,7 @@ const MENU_ITEMS: ReadonlyArray<ContextMenuItem> = [
   { kind: "action", label: "Render", action: "render" },
 ];
 
-export function NodeContextMenu({ position, onClose }: NodeContextMenuProps) {
+export function DemoContextMenu({ position, onClose }: DemoContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

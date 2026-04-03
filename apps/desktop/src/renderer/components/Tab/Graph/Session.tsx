@@ -6,8 +6,9 @@ import type { AppContext, GraphContext } from "../../../models/Context";
 import { ProxyStore } from "../../../models/ProxyStore/ProxyStore";
 import type { TabEntry } from "../../../models/State/App";
 import type { GraphState } from "../../../models/State/Graph";
+import { ReactFlowProvider } from "@xyflow/react";
 import { computeAutoLayout } from "../../../utilities/autoLayout";
-import { GraphEditor } from "./Editor";
+import { GraphCanvas } from "./Canvas";
 
 interface Props {
 	readonly initialGraphState: Omit<GraphState, "_key">;
@@ -67,5 +68,9 @@ export function GraphSession({ initialGraphState, context, tab, graphDefinition,
 		[context, graph, graphStore, graphDefinition, mutateDefinition, tab.bagPath, tab.id, history, pushHistory, undo, redo],
 	);
 
-	return <GraphEditor context={graphContext} />;
+	return (
+		<ReactFlowProvider>
+			<GraphCanvas context={graphContext} />
+		</ReactFlowProvider>
+	);
 }

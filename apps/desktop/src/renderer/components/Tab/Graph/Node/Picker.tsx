@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Snapshot } from "valtio/vanilla";
-import type { AppState } from "../../../models/State/App";
+import type { AppState } from "../../../../models/State/App";
 
 interface NodePickerProps {
 	readonly app: Snapshot<AppState>;

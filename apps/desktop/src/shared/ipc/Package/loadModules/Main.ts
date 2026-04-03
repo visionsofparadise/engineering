@@ -37,7 +37,7 @@ export class LoadPackageModulesMainIpc extends AsyncMainIpc<LoadPackageModulesIp
 				result.push({
 					moduleName: value.moduleName,
 					moduleDescription: value.moduleDescription,
-					schema: toJSONSchema(value.schema),
+					schema: toJSONSchema(value.schema) as LoadedModuleInfo["schema"],
 					category: getModuleCategory(value),
 				});
 			}

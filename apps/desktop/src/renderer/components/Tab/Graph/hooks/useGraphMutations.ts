@@ -14,6 +14,7 @@ interface GraphMutations {
 	insertNodeOnEdge: (edge: GraphEdge, packageName: string, nodeName: string) => void;
 	toggleBypass: (nodeId: string) => void;
 	setGraphName: (name: string) => void;
+	updateNodeParameters: (nodeId: string, parameterName: string, value: unknown) => void;
 }
 
 export function useGraphMutations(context: GraphContext): GraphMutations {
@@ -263,6 +264,42 @@ export function useGraphMutations(context: GraphContext): GraphMutations {
 		});
 	}
 
+	function updateNodeParameters(nodeId: string, parameterName: string, value: unknown): void {
+		const currentNode = graphDefinition.nodes.find((node) => node.id === nodeId);
+		const previousValue = currentNode?.parameters?.[parameterName];
+
+		mutateDefinition((definition) => ({
+			...definition,
+			nodes: definition.nodes.map((node) =>
+				node.id === nodeId
+					? { ...node, parameters: { ...node.parameters, [parameterName]: value } }
+					: node,
+			),
+		}));
+
+		pushHistory({
+			label: `Change ${parameterName}`,
+			undo: () =>
+				mutateDefinition((definition) => ({
+					...definition,
+					nodes: definition.nodes.map((node) =>
+						node.id === nodeId
+							? { ...node, parameters: { ...node.parameters, [parameterName]: previousValue } }
+							: node,
+					),
+				})),
+			redo: () =>
+				mutateDefinition((definition) => ({
+					...definition,
+					nodes: definition.nodes.map((node) =>
+						node.id === nodeId
+							? { ...node, parameters: { ...node.parameters, [parameterName]: value } }
+							: node,
+					),
+				})),
+		});
+	}
+
 	return {
 		addNode,
 		removeNode,
@@ -271,5 +308,6 @@ export function useGraphMutations(context: GraphContext): GraphMutations {
 		insertNodeOnEdge,
 		toggleBypass,
 		setGraphName,
+		updateNodeParameters,
 	};
 }

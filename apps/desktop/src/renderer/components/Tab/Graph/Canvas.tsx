@@ -1,5 +1,3 @@
-import type { AudioNodeData, NodeCategory } from "@e9g/design-system";
-import { AudioEdge, AudioNode } from "@e9g/design-system";
 import {
 	Background,
 	BackgroundVariant,
@@ -19,10 +17,16 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ModuleJsonSchema } from "../../../../shared/ipc/Package/loadModules/Renderer";
 import type { GraphContext } from "../../../models/Context";
+import type { Parameter } from "./Node/utils/buildParameters";
+import { buildParameters } from "./Node/utils/buildParameters";
+import { EdgeContainer } from "./EdgeContainer";
 import { GraphContextMenu, NODE_MENU_ITEMS, PANE_MENU_ITEMS, type ContextMenuAction, type ContextMenuPosition } from "./GraphContextMenu";
 import { useGraphMutations } from "./hooks/useGraphMutations";
-import { NodePicker } from "./NodePicker";
+import type { NodeCategory, NodeContainerData } from "./Node/Container";
+import { NodeContainer } from "./Node/Container";
+import { NodePicker } from "./Node/Picker";
 
 interface AudioEdgeData {
 	readonly state: "idle" | "active" | "complete";
@@ -34,14 +38,10 @@ interface NodePickerState {
 	readonly y: number;
 }
 
-function AudioNodeWrapper(props: React.ComponentProps<typeof AudioNode>) {
-	return <AudioNode {...props} />;
-}
+const NODE_TYPES: NodeTypes = { bufferedAudioNode: NodeContainer };
+const EDGE_TYPES: EdgeTypes = { bufferedAudioEdge: EdgeContainer };
 
-const NODE_TYPES: NodeTypes = { audioNode: AudioNodeWrapper };
-const EDGE_TYPES: EdgeTypes = { audioEdge: AudioEdge };
-
-function lookupModule(context: GraphContext, packageName: string, nodeName: string): { category: NodeCategory; moduleDescription: string } {
+function lookupModule(context: GraphContext, packageName: string, nodeName: string): { category: NodeCategory; moduleDescription: string; schema: ModuleJsonSchema | null } {
 	for (const modulePackage of context.app.packages) {
 		if (modulePackage.name === packageName) {
 			for (const mod of modulePackage.modules) {
@@ -49,29 +49,33 @@ function lookupModule(context: GraphContext, packageName: string, nodeName: stri
 					return {
 						category: mod.category,
 						moduleDescription: mod.moduleDescription,
+						schema: mod.schema as ModuleJsonSchema,
 					};
 				}
 			}
 		}
 	}
 
-	return { category: "transform", moduleDescription: "" };
+	return { category: "transform", moduleDescription: "", schema: null };
 }
 
-function buildReactFlowNodes(context: GraphContext): Array<Node<AudioNodeData>> {
+function buildReactFlowNodes(context: GraphContext): Array<Node<NodeContainerData>> {
+	const binaryDefaults = context.app.binaries as Record<string, string>;
+
 	return context.graphDefinition.nodes.map((graphNode) => {
-		const { category, moduleDescription } = lookupModule(context, graphNode.packageName, graphNode.nodeName);
+		const { category, moduleDescription, schema } = lookupModule(context, graphNode.packageName, graphNode.nodeName);
+		const parameters: Array<Parameter> = buildParameters(graphNode, schema, binaryDefaults);
 
 		return {
 			id: graphNode.id,
-			type: "audioNode",
+			type: "bufferedAudioNode",
 			position: context.graph.positions[graphNode.id] ?? { x: 0, y: 0 },
 			data: {
 				label: graphNode.nodeName,
 				category,
 				state: "pending",
 				bypassed: graphNode.options?.bypass ?? false,
-				parameters: [],
+				parameters,
 				inspected: graphNode.id === context.graph.inspectedNodeId,
 				description: moduleDescription,
 			},
@@ -86,7 +90,7 @@ function buildReactFlowEdges(context: GraphContext): Array<Edge<AudioEdgeData>> 
 		target: edge.to,
 		sourceHandle: "source",
 		targetHandle: "target",
-		type: "audioEdge",
+		type: "bufferedAudioEdge",
 		data: { state: "idle" },
 	}));
 }
@@ -115,14 +119,52 @@ export function GraphCanvas({ context }: Props) {
 	const { screenToFlowPosition, getNodes } = useReactFlow();
 	const mutations = useGraphMutations(context);
 
+	const handleParameterBrowse = useCallback(
+		async (nodeId: string, parameterName: string) => {
+			const graphNode = context.graphDefinition.nodes.find((node) => node.id === nodeId);
+
+			if (!graphNode) return;
+
+			const { schema } = lookupModule(context, graphNode.packageName, graphNode.nodeName);
+			const prop = schema?.properties?.[parameterName];
+			const isFolder = prop?.input === "folder";
+
+			const result = await context.main.showOpenDialog({
+				properties: [isFolder ? "openDirectory" : "openFile"],
+			});
+
+			if (result?.[0]) {
+				mutations.updateNodeParameters(nodeId, parameterName, result[0]);
+			}
+		},
+		[context, mutations],
+	);
+
+	const attachCallbacks = useCallback(
+		(builtNodes: Array<Node<NodeContainerData>>): Array<Node<NodeContainerData>> =>
+			builtNodes.map((node) => ({
+				...node,
+				data: {
+					...node.data,
+					onParameterChange: (name: string, value: unknown) => {
+						mutations.updateNodeParameters(node.id, name, value);
+					},
+					onParameterBrowse: (name: string) => {
+						void handleParameterBrowse(node.id, name);
+					},
+				},
+			})),
+		[mutations, handleParameterBrowse],
+	);
+
 	// Sync from graph definition (source of truth) into React Flow state
 	useEffect(() => {
-		setNodes(buildReactFlowNodes(context));
+		setNodes(attachCallbacks(buildReactFlowNodes(context)));
 		setEdges(buildReactFlowEdges(context));
-	}, [context, setNodes, setEdges]);
+	}, [context, setNodes, setEdges, attachCallbacks]);
 
 	const handleNodesChange = useCallback(
-		(changes: Array<NodeChange<Node<AudioNodeData>>>) => {
+		(changes: Array<NodeChange<Node<NodeContainerData>>>) => {
 			onNodesChange(changes);
 
 			for (const change of changes) {
@@ -353,7 +395,7 @@ export function GraphCanvas({ context }: Props) {
 				onPaneClick={handlePaneClick}
 				fitView
 				fitViewOptions={{ padding: 0.3 }}
-				defaultEdgeOptions={{ type: "audioEdge" }}
+				defaultEdgeOptions={{ type: "bufferedAudioEdge" }}
 				proOptions={{ hideAttribution: true }}
 			>
 				<Background

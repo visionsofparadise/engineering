@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SpectrogramCanvas, WaveformCanvas, useSpectralCompute } from "@e9g/spectral-display";
 import type { SpectralOptions } from "@e9g/spectral-display";
-import type { ColormapTheme } from "../../colors";
-import { getThemeColors } from "../../colors";
-import type { AudioData } from "../spectral/types";
+import type { ColormapTheme } from "@e9g/design-system";
+import { getThemeColors } from "@e9g/design-system";
+import type { AudioData } from "@e9g/design-system";
 
-export interface NodeSnapshotProps {
+export interface DemoSnapshotProps {
   readonly audioData: AudioData | null;
   readonly colormap?: ColormapTheme;
 }
 
-export function NodeSnapshot({ audioData, colormap = "lava" }: NodeSnapshotProps) {
+export function DemoSnapshot({ audioData, colormap = "lava" }: DemoSnapshotProps) {
   if (!audioData) return null;
 
   return <SnapshotInner audioData={audioData} colormap={colormap} />;
