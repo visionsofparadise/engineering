@@ -12,6 +12,7 @@ export interface FileChangedPayload {
 
 export interface AudioProgressPayload {
 	jobId: string;
+	nodeId: string;
 	framesProcessed: number;
 	sourceTotalFrames: number;
 }

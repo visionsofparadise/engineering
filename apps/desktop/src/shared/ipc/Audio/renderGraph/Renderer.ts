@@ -4,11 +4,12 @@ import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 export interface RenderGraphInput {
 	bagId: string;
 	graphDefinition: GraphDefinition;
+	packageVersions: Record<string, string>;
 	snapshotsDir: string;
 }
 
 export type RenderGraphIpcParameters = [input: RenderGraphInput];
-export type RenderGraphIpcReturn = undefined;
+export interface RenderGraphIpcReturn { jobId: string }
 export const RENDER_GRAPH_ACTION = "audioRenderGraph" as const;
 
 export class RenderGraphRendererIpc extends AsyncRendererIpc<typeof RENDER_GRAPH_ACTION, RenderGraphIpcParameters, RenderGraphIpcReturn> {

@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^2.0.4",
+    "@e9g/buffered-audio-nodes": "*",
     "@e9g/buffered-audio-nodes-core": "*",
     "@e9g/design-system": "*",
     "@fontsource-variable/bricolage-grotesque": "*",

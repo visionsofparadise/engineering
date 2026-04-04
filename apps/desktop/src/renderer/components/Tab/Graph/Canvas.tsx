@@ -24,9 +24,11 @@ import { buildParameters } from "./Node/utils/buildParameters";
 import { EdgeContainer } from "./EdgeContainer";
 import { GraphContextMenu, NODE_MENU_ITEMS, PANE_MENU_ITEMS, type ContextMenuAction, type ContextMenuPosition } from "./GraphContextMenu";
 import { useGraphMutations } from "./hooks/useGraphMutations";
-import type { NodeCategory, NodeContainerData } from "./Node/Container";
+import type { NodeCategory, NodeContainerData, NodeState } from "./Node/Container";
 import { NodeContainer } from "./Node/Container";
 import { NodePicker } from "./Node/Picker";
+import { useNodeStates } from "./hooks/useNodeStates";
+import { useRenderJob } from "./hooks/useRenderJob";
 
 interface AudioEdgeData {
 	readonly state: "idle" | "active" | "complete";
@@ -59,12 +61,27 @@ function lookupModule(context: GraphContext, packageName: string, nodeName: stri
 	return { category: "transform", moduleDescription: "", schema: null };
 }
 
-function buildReactFlowNodes(context: GraphContext): Array<Node<NodeContainerData>> {
+function buildReactFlowNodes(
+	context: GraphContext,
+	nodeStates: Map<string, { readonly state: NodeState; readonly hash: string }>,
+	processingNodes: Map<string, number>,
+	errorNodes: Set<string>,
+): Array<Node<NodeContainerData>> {
 	const binaryDefaults = context.app.binaries as Record<string, string>;
 
 	return context.graphDefinition.nodes.map((graphNode) => {
 		const { category, moduleDescription, schema } = lookupModule(context, graphNode.packageName, graphNode.nodeName);
 		const parameters: Array<Parameter> = buildParameters(graphNode, schema, binaryDefaults);
+
+		let state: NodeState = nodeStates.get(graphNode.id)?.state ?? "pending";
+		let progress: number | undefined;
+
+		if (processingNodes.has(graphNode.id)) {
+			state = "processing";
+			progress = processingNodes.get(graphNode.id);
+		} else if (errorNodes.has(graphNode.id)) {
+			state = "error";
+		}
 
 		return {
 			id: graphNode.id,
@@ -73,17 +90,37 @@ function buildReactFlowNodes(context: GraphContext): Array<Node<NodeContainerDat
 			data: {
 				label: graphNode.nodeName,
 				category,
-				state: "pending",
+				state,
 				bypassed: graphNode.options?.bypass ?? false,
 				parameters,
 				inspected: graphNode.id === context.graph.inspectedNodeId,
 				description: moduleDescription,
+				progress,
 			},
 		};
 	});
 }
 
-function buildReactFlowEdges(context: GraphContext): Array<Edge<AudioEdgeData>> {
+function deriveEdgeState(
+	sourceId: string,
+	targetId: string,
+	nodeStates: Map<string, { readonly state: NodeState; readonly hash: string }>,
+	processingNodes: Map<string, number>,
+): AudioEdgeData["state"] {
+	const sourceState = processingNodes.has(sourceId) ? "processing" : nodeStates.get(sourceId)?.state ?? "pending";
+	const targetState = processingNodes.has(targetId) ? "processing" : nodeStates.get(targetId)?.state ?? "pending";
+
+	if (sourceState === "rendered" && targetState === "rendered") return "complete";
+	if (sourceState === "rendered" && targetState === "processing") return "active";
+
+	return "idle";
+}
+
+function buildReactFlowEdges(
+	context: GraphContext,
+	nodeStates: Map<string, { readonly state: NodeState; readonly hash: string }>,
+	processingNodes: Map<string, number>,
+): Array<Edge<AudioEdgeData>> {
 	return context.graphDefinition.edges.map((edge) => ({
 		id: `${edge.from}-${edge.to}`,
 		source: edge.from,
@@ -91,7 +128,7 @@ function buildReactFlowEdges(context: GraphContext): Array<Edge<AudioEdgeData>> 
 		sourceHandle: "source",
 		targetHandle: "target",
 		type: "bufferedAudioEdge",
-		data: { state: "idle" },
+		data: { state: deriveEdgeState(edge.from, edge.to, nodeStates, processingNodes) },
 	}));
 }
 
@@ -100,13 +137,16 @@ interface Props {
 }
 
 export function GraphCanvas({ context }: Props) {
+	const { nodeStates, refresh } = useNodeStates(context);
+	const { startRender, abortRender, processingNodes, errorNodes } = useRenderJob(context, refresh);
+
 	const initialNodes = useMemo(
-		() => buildReactFlowNodes(context),
+		() => buildReactFlowNodes(context, nodeStates, processingNodes, errorNodes),
 
 		[],
 	);
 	const initialEdges = useMemo(
-		() => buildReactFlowEdges(context),
+		() => buildReactFlowEdges(context, nodeStates, processingNodes),
 
 		[],
 	);
@@ -152,16 +192,18 @@ export function GraphCanvas({ context }: Props) {
 					onParameterBrowse: (name: string) => {
 						void handleParameterBrowse(node.id, name);
 					},
+					onRender: () => void startRender(),
+					onAbort: () => void abortRender(),
 				},
 			})),
-		[mutations, handleParameterBrowse],
+		[mutations, handleParameterBrowse, startRender, abortRender],
 	);
 
 	// Sync from graph definition (source of truth) into React Flow state
 	useEffect(() => {
-		setNodes(attachCallbacks(buildReactFlowNodes(context)));
-		setEdges(buildReactFlowEdges(context));
-	}, [context, setNodes, setEdges, attachCallbacks]);
+		setNodes(attachCallbacks(buildReactFlowNodes(context, nodeStates, processingNodes, errorNodes)));
+		setEdges(buildReactFlowEdges(context, nodeStates, processingNodes));
+	}, [context, nodeStates, processingNodes, errorNodes, setNodes, setEdges, attachCallbacks]);
 
 	const handleNodesChange = useCallback(
 		(changes: Array<NodeChange<Node<NodeContainerData>>>) => {
@@ -239,13 +281,13 @@ export function GraphCanvas({ context }: Props) {
 				}
 
 				case "render": {
-					// Render-related features are Plan 7+
+					void startRender();
 					setContextMenu(null);
 					break;
 				}
 			}
 		},
-		[contextMenu, mutations],
+		[contextMenu, mutations, startRender],
 	);
 
 	const handleNodePickerSelect = useCallback(

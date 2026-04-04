@@ -25,6 +25,8 @@ export interface NodeContainerData {
 	readonly progress?: number;
 	readonly onParameterChange?: (name: string, value: unknown) => void;
 	readonly onParameterBrowse?: (name: string) => void;
+	readonly onRender?: () => void;
+	readonly onAbort?: () => void;
 	[key: string]: unknown;
 }
 
@@ -49,7 +51,6 @@ export function NodeContainer({ data, selected, children }: NodeProps & { readon
 
 	if (!isSource && !isBypassed) {
 		if (isProcessing) renderLabel = "Abort";
-		else if (isPending) renderLabel = "Pending";
 		else renderLabel = "Render";
 	}
 
@@ -85,6 +86,8 @@ export function NodeContainer({ data, selected, children }: NodeProps & { readon
 							isPending={isPending}
 							isBypassed={isBypassed}
 							isInspected={isInspected}
+							onRender={nodeData.onRender}
+							onAbort={nodeData.onAbort}
 						/>
 					</div>
 				</div>
@@ -166,17 +169,17 @@ export function NodeContainer({ data, selected, children }: NodeProps & { readon
 								<span className="font-technical text-[length:var(--text-xs)] tabular-nums text-state-processing">{Math.round(progress * 100)}%</span>
 							</div>
 						)}
-						<span
+						<button
+							type="button"
+							onClick={isProcessing ? nodeData.onAbort : nodeData.onRender}
 							className={`font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] ${
 								isProcessing
-									? "bg-state-error text-void"
-									: isPending
-										? "bg-chrome-raised text-chrome-text-dim"
-										: "bg-chrome-raised text-chrome-text-dim hover:text-chrome-text-secondary cursor-pointer"
+									? "bg-state-error text-void hover:bg-state-error/80 cursor-pointer"
+									: "bg-chrome-raised text-chrome-text-dim hover:text-chrome-text-secondary cursor-pointer"
 							}`}
 						>
 							{renderLabel}
-						</span>
+						</button>
 					</div>
 				)}
 
