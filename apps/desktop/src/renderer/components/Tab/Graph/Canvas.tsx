@@ -194,6 +194,11 @@ export function GraphCanvas({ context }: Props) {
 					},
 					onRender: () => void startRender(),
 					onAbort: () => void abortRender(),
+					onView: () => {
+						context.graphStore.mutate(context.graph, (proxy) => {
+							proxy.spectralNodeId = node.id;
+						});
+					},
 				},
 			})),
 		[mutations, handleParameterBrowse, startRender, abortRender],

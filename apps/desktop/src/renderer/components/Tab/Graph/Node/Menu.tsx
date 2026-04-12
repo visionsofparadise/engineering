@@ -1,14 +1,16 @@
 import { IconButton, DropdownButton } from "@e9g/design-system";
 import type { MenuItem } from "@e9g/design-system";
 
-export function NodeMenu({ isSource, isProcessing, isPending, isBypassed, isInspected, onRender, onAbort }: {
+export function NodeMenu({ isSource, isProcessing, isPending, isBypassed, isInspected, isRendered, onRender, onAbort, onView }: {
 	readonly isSource: boolean;
 	readonly isProcessing: boolean;
 	readonly isPending: boolean;
 	readonly isBypassed: boolean;
 	readonly isInspected: boolean;
+	readonly isRendered: boolean;
 	readonly onRender?: () => void;
 	readonly onAbort?: () => void;
+	readonly onView?: () => void;
 }) {
 	let renderLabel = "Render";
 	let renderColor = "text-chrome-text";
@@ -17,6 +19,14 @@ export function NodeMenu({ isSource, isProcessing, isPending, isBypassed, isInsp
 	else if (isPending) { renderLabel = "Pending"; renderColor = "text-chrome-text-dim"; }
 
 	const items: Array<MenuItem> = [];
+
+	items.push({
+		kind: "action",
+		label: "View",
+		icon: "lucide:eye",
+		disabled: !isRendered,
+		onClick: onView,
+	});
 
 	if (isSource) {
 		items.push({

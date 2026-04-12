@@ -6,6 +6,7 @@ import type { Logger } from "../shared/models/Logger";
 import { createModuleRegistry } from "../shared/models/ModuleRegistry";
 import { FileHandleManager } from "./FileHandleManager";
 import { FileWatcherManager } from "./FileWatcherManager";
+import { registerMediaProtocol } from "./mediaProtocol";
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -39,6 +40,8 @@ export const createWindow = (logger: Logger): BrowserWindow => {
 	const fileWatcherManager = new FileWatcherManager(browserWindow);
 	const jobManager = new JobManager();
 	const moduleRegistry = createModuleRegistry();
+
+	registerMediaProtocol();
 
 	for (const AsyncMainIpc of ASYNC_MAIN_IPCS) {
 		new AsyncMainIpc().register({ browserWindow, fileHandleManager, fileWatcherManager, jobManager, logger, moduleRegistry, windowId });

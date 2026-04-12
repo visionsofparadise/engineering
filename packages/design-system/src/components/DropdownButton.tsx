@@ -7,6 +7,7 @@ export type MenuItem = {
   readonly icon?: string;
   readonly shortcut?: string;
   readonly color?: string;
+  readonly disabled?: boolean;
   readonly onClick?: () => void;
 } | {
   readonly kind: "separator";
@@ -63,11 +64,12 @@ export function DropdownButton({ trigger, items, align = "left", className }: Dr
               <button
                 key={item.label}
                 type="button"
+                disabled={item.disabled}
                 onClick={() => {
                   item.onClick?.();
                   setOpen(false);
                 }}
-                className={`flex items-center gap-2 mx-2 my-0.5 text-left font-technical uppercase tracking-[0.06em] text-sm hover:bg-interactive-hover ${item.color ?? "text-chrome-text"}`}
+                className={`flex items-center gap-2 mx-2 my-0.5 text-left font-technical uppercase tracking-[0.06em] text-sm ${item.disabled ? "opacity-30 cursor-default" : "hover:bg-interactive-hover"} ${item.color ?? "text-chrome-text"}`}
               >
                 {item.icon && <Icon icon={item.icon} width={12} height={12} className="shrink-0" />}
                 <span className="flex-1">{item.label}</span>

@@ -27,6 +27,7 @@ export interface NodeContainerData {
 	readonly onParameterBrowse?: (name: string) => void;
 	readonly onRender?: () => void;
 	readonly onAbort?: () => void;
+	readonly onView?: () => void;
 	[key: string]: unknown;
 }
 
@@ -40,6 +41,7 @@ export function NodeContainer({ data, selected, children }: NodeProps & { readon
 	const hasSnapshot = nodeData.snapshot ?? false;
 	const isProcessing = nodeData.state === "processing";
 	const isPending = nodeData.state === "pending";
+	const isRendered = nodeData.state === "rendered";
 	const hasError = nodeData.error !== undefined;
 	const progress = nodeData.progress;
 
@@ -86,8 +88,10 @@ export function NodeContainer({ data, selected, children }: NodeProps & { readon
 							isPending={isPending}
 							isBypassed={isBypassed}
 							isInspected={isInspected}
+							isRendered={isRendered}
 							onRender={nodeData.onRender}
 							onAbort={nodeData.onAbort}
+							onView={nodeData.onView}
 						/>
 					</div>
 				</div>

@@ -89,6 +89,7 @@ function NodeMenu({ isSource, isProcessing, isPending, isBypassed, isInspected }
   readonly isPending: boolean;
   readonly isBypassed: boolean;
   readonly isInspected: boolean;
+  readonly isRendered: boolean;
 }) {
   let renderLabel = "Render";
   let renderColor = "text-chrome-text";
@@ -185,7 +186,7 @@ export function DemoNode({ data, selected, children }: NodeProps & { readonly ch
               <IconButton icon="lucide:eye" label="Inspect" active={isInspected} activeVariant="primary" />
             )}
             <IconButton icon="lucide:power" label="Bypass" active={isBypassed} activeVariant="secondary" />
-            <NodeMenu isSource={isSource} isProcessing={isProcessing} isPending={isPending} isBypassed={isBypassed} isInspected={isInspected} />
+            <NodeMenu isSource={isSource} isProcessing={isProcessing} isPending={isPending} isBypassed={isBypassed} isInspected={isInspected} isRendered={false} />
           </div>
         </div>
 

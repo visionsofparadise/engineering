@@ -9,6 +9,7 @@ import type { GraphState } from "../../../models/State/Graph";
 import { ReactFlowProvider } from "@xyflow/react";
 import { computeAutoLayout } from "../../../utilities/autoLayout";
 import { GraphCanvas } from "./Canvas";
+import { SnapshotSession } from "../Spectral/Session";
 
 interface Props {
 	readonly initialGraphState: Omit<GraphState, "_key">;
@@ -67,6 +68,12 @@ export function GraphSession({ initialGraphState, context, tab, graphDefinition,
 		}),
 		[context, graph, graphStore, graphDefinition, mutateDefinition, tab.bagPath, tab.id, history, pushHistory, undo, redo],
 	);
+
+	const { spectralNodeId } = graph;
+
+	if (spectralNodeId !== null) {
+		return <SnapshotSession context={graphContext} spectralNodeId={spectralNodeId} />;
+	}
 
 	return (
 		<ReactFlowProvider>
