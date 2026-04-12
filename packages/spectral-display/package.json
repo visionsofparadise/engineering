@@ -2,6 +2,7 @@
   "name": "@e9g/spectral-display",
   "version": "0.1.2",
   "description": "WebGPU audio spectrogram and waveform visualization",
+  "keywords": ["webgpu", "spectrogram", "waveform", "audio", "visualization"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
