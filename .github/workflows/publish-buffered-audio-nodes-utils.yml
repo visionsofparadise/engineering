@@ -50,4 +50,4 @@ jobs:
 
       - name: Publish to npm
         if: steps.check.outputs.skip == 'false'
-        run: npm publish --workspace=packages/buffered-audio-nodes-utils --access public --provenance
+        run: npm publish --workspace=packages/buffered-audio-nodes-utils --access public
