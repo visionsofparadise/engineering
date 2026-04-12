@@ -18,7 +18,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Check if version is already published
         id: check
@@ -50,4 +49,4 @@ jobs:
 
       - name: Publish to npm
         if: steps.check.outputs.skip == 'false'
-        run: npm publish --workspace=packages/spectral-display --access public
+        run: npm publish --workspace=packages/spectral-display --access public --provenance
