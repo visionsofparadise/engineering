@@ -20,6 +20,9 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@11
+
       - name: Check if version is already published
         id: check
         run: |
@@ -50,6 +53,4 @@ jobs:
 
       - name: Publish to npm
         if: steps.check.outputs.skip == 'false'
-        run: npm publish --workspace=packages/spectral-display --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ''
+        run: npm publish --workspace=packages/spectral-display --access public
