@@ -7,6 +7,8 @@ on:
       - ".github/workflows/ci-buffered-audio.yml"
       - "package.json"
       - "package-lock.json"
+      - "turbo.json"
+      - "tsconfig.json"
       - "packages/buffered-audio-nodes-core/**"
       - "packages/buffered-audio-nodes-utils/**"
       - "packages/buffered-audio-nodes/**"
@@ -15,6 +17,8 @@ on:
       - ".github/workflows/ci-buffered-audio.yml"
       - "package.json"
       - "package-lock.json"
+      - "turbo.json"
+      - "tsconfig.json"
       - "packages/buffered-audio-nodes-core/**"
       - "packages/buffered-audio-nodes-utils/**"
       - "packages/buffered-audio-nodes/**"
@@ -34,29 +38,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check core
-        run: npm run check --workspace=packages/buffered-audio-nodes-core
+      - name: Check (topo-ordered across all three packages)
+        run: npx turbo check --filter=@e9g/buffered-audio-nodes
 
-      - name: Unit core
-        run: npm run unit --workspace=packages/buffered-audio-nodes-core
+      - name: Unit (topo-ordered)
+        run: npx turbo unit --filter=@e9g/buffered-audio-nodes
 
-      - name: Build core
-        run: npm run build --workspace=packages/buffered-audio-nodes-core
-
-      - name: Check utils
-        run: npm run check --workspace=packages/buffered-audio-nodes-utils
-
-      - name: Unit utils
-        run: npm run unit --workspace=packages/buffered-audio-nodes-utils
-
-      - name: Build utils
-        run: npm run build --workspace=packages/buffered-audio-nodes-utils
-
-      - name: Check nodes
-        run: npm run check --workspace=packages/buffered-audio-nodes
-
-      - name: Unit nodes
-        run: npm run unit --workspace=packages/buffered-audio-nodes
-
-      - name: Build nodes
-        run: npm run build --workspace=packages/buffered-audio-nodes
+      - name: Build (topo-ordered)
+        run: npx turbo build --filter=@e9g/buffered-audio-nodes

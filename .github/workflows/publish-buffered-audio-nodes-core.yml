@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'packages/buffered-audio-nodes-core/package.json'
+  workflow_dispatch:
 
 jobs:
   publish:
@@ -39,17 +40,17 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         run: npm ci
 
-      - name: Type check and lint
+      - name: Type check and lint (topo-ordered)
         if: steps.check.outputs.skip == 'false'
-        run: npm run check --workspace=packages/buffered-audio-nodes-core
+        run: npx turbo check --filter=@e9g/buffered-audio-nodes-core
 
       - name: Run unit tests
         if: steps.check.outputs.skip == 'false'
-        run: npm run unit --workspace=packages/buffered-audio-nodes-core
+        run: npx turbo unit --filter=@e9g/buffered-audio-nodes-core
 
-      - name: Build
+      - name: Build (topo-ordered)
         if: steps.check.outputs.skip == 'false'
-        run: npm run build --workspace=packages/buffered-audio-nodes-core
+        run: npx turbo build --filter=@e9g/buffered-audio-nodes-core
 
       - name: Publish to npm
         if: steps.check.outputs.skip == 'false'
