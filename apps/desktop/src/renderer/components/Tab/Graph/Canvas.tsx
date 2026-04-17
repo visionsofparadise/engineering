@@ -43,9 +43,14 @@ interface NodePickerState {
 const NODE_TYPES: NodeTypes = { bufferedAudioNode: NodeContainer };
 const EDGE_TYPES: EdgeTypes = { bufferedAudioEdge: EdgeContainer };
 
-function lookupModule(context: GraphContext, packageName: string, nodeName: string): { category: NodeCategory; moduleDescription: string; schema: ModuleJsonSchema | null } {
+function lookupModule(
+	context: GraphContext,
+	packageName: string,
+	packageVersion: string,
+	nodeName: string,
+): { category: NodeCategory; moduleDescription: string; schema: ModuleJsonSchema | null } {
 	for (const modulePackage of context.app.packages) {
-		if (modulePackage.name === packageName) {
+		if (modulePackage.name === packageName && modulePackage.version === packageVersion) {
 			for (const mod of modulePackage.modules) {
 				if (mod.moduleName === nodeName) {
 					return {
@@ -70,7 +75,13 @@ function buildReactFlowNodes(
 	const binaryDefaults = context.app.binaries as Record<string, string>;
 
 	return context.graphDefinition.nodes.map((graphNode) => {
-		const { category, moduleDescription, schema } = lookupModule(context, graphNode.packageName, graphNode.nodeName);
+		const packageVersion = typeof graphNode.packageVersion === "string" ? graphNode.packageVersion : "";
+		const { category, moduleDescription, schema } = lookupModule(
+			context,
+			graphNode.packageName,
+			packageVersion,
+			graphNode.nodeName,
+		);
 		const parameters: Array<Parameter> = buildParameters(graphNode, schema, binaryDefaults);
 
 		let state: NodeState = nodeStates.get(graphNode.id)?.state ?? "pending";
@@ -165,7 +176,13 @@ export function GraphCanvas({ context }: Props) {
 
 			if (!graphNode) return;
 
-			const { schema } = lookupModule(context, graphNode.packageName, graphNode.nodeName);
+			const packageVersion = typeof graphNode.packageVersion === "string" ? graphNode.packageVersion : "";
+			const { schema } = lookupModule(
+				context,
+				graphNode.packageName,
+				packageVersion,
+				graphNode.nodeName,
+			);
 			const prop = schema?.properties?.[parameterName];
 			const isFolder = prop?.input === "folder";
 
@@ -296,12 +313,12 @@ export function GraphCanvas({ context }: Props) {
 	);
 
 	const handleNodePickerSelect = useCallback(
-		(packageName: string, nodeName: string) => {
+		(packageName: string, packageVersion: string, nodeName: string) => {
 			if (!nodePicker) return;
 
 			const flowPosition = screenToFlowPosition({ x: nodePicker.x, y: nodePicker.y });
 
-			mutations.addNode(packageName, nodeName, flowPosition);
+			mutations.addNode(packageName, packageVersion, nodeName, flowPosition);
 			setNodePicker(null);
 		},
 		[nodePicker, screenToFlowPosition, mutations],

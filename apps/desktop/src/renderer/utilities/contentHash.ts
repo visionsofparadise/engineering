@@ -1,4 +1,4 @@
-import { sortKeysRecursive } from "../../shared/utilities/contentHash";
+import { sortKeysRecursive } from "../../shared/utilities/sortKeysRecursive";
 
 export { sortKeysRecursive };
 

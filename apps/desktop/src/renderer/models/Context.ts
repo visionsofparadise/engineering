@@ -35,9 +35,11 @@ export interface AppContext {
 	readonly historyStacks: Map<string, HistoryState>;
 	readonly tabNames: Map<string, string>;
 	readonly renameCallbacks: Map<string, (name: string) => void>;
+	readonly importCallbacks: Map<string, () => Promise<void>>;
 	readonly openBagTab: () => Promise<void>;
 	readonly newBagTab: () => Promise<void>;
 	readonly renameTab: (tabId: string, newName: string) => void;
+	readonly importBagIntoActiveTab: () => Promise<void>;
 }
 
 export interface GraphContext extends AppContext {

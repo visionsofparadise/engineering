@@ -12,11 +12,11 @@ function isAudioChainModule(value: unknown): value is ModuleClass {
 }
 
 function getModuleCategory(value: ModuleClass): "source" | "transform" | "target" {
-	const proto: unknown = value.prototype;
+	const instance = new value();
 
-	if (proto instanceof SourceNode) return "source";
-	if (proto instanceof TargetNode) return "target";
-	if (proto instanceof TransformNode) return "transform";
+	if (SourceNode.is(instance)) return "source";
+	if (TargetNode.is(instance)) return "target";
+	if (TransformNode.is(instance)) return "transform";
 
 	throw new Error(`Module "${value.moduleName}" does not extend SourceNode, TransformNode, or TargetNode`);
 }
@@ -25,7 +25,7 @@ export class LoadPackageModulesMainIpc extends AsyncMainIpc<LoadPackageModulesIp
 	action = LOAD_PACKAGE_MODULES_ACTION;
 
 	async handler(input: LoadPackageModulesInput, dependencies: IpcHandlerDependencies): Promise<LoadPackageModulesIpcReturn> {
-		const url = `${pathToFileURL(input.bundlePath).href}?t=${Date.now()}`;
+		const url = `${pathToFileURL(input.loadEntryPath).href}?t=${Date.now()}`;
 		const exports = (await import(url)) as Record<string, unknown>;
 		const modules = new Map<string, ModuleClass>();
 		const result: Array<LoadedModuleInfo> = [];
@@ -43,7 +43,7 @@ export class LoadPackageModulesMainIpc extends AsyncMainIpc<LoadPackageModulesIp
 			}
 		}
 
-		registerPackage(dependencies.moduleRegistry, input.packageName, modules);
+		registerPackage(dependencies.moduleRegistry, input.packageName, input.packageVersion, modules);
 
 		return result;
 	}

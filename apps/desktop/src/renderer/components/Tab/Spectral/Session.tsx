@@ -40,7 +40,11 @@ async function loadSnapshotData(
 		throw new Error("No snapshots found");
 	}
 
-	const hash = entries[entries.length - 1]!;
+	const hash = entries[entries.length - 1];
+
+	if (hash === undefined) {
+		throw new Error("No snapshot hash found");
+	}
 
 	const audioPath = `${context.userDataPath}/snapshots/${context.bagId}/${spectralNodeId}/${hash}/audio.wav`;
 	const wavFile = await openWavFile(context.main, audioPath);

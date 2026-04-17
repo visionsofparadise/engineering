@@ -1,6 +1,7 @@
 import type { Snapshot } from "valtio/vanilla";
 import { z } from "zod";
 import type { State } from ".";
+import { packageNameFromSpec } from "../../../shared/utilities/packageSpec";
 import { useCreateState } from "../ProxyStore/hooks/useCreateState";
 import type { ProxyStore } from "../ProxyStore/ProxyStore";
 
@@ -31,10 +32,10 @@ const LoadedModuleInfoSchema = z.object({
 });
 
 const ModulePackageStateSchema = z.object({
-	url: z.string(),
+	requestedSpec: z.string(),
 	name: z.string(),
 	version: z.string().nullable().default(null),
-	status: z.enum(["pending", "cloning", "building", "loading", "ready", "error"]).default("pending"),
+	status: z.enum(["pending", "installing", "loading", "ready", "error"]).default("pending"),
 	error: z.string().nullable().default(null),
 	modules: z.array(LoadedModuleInfoSchema).default([]),
 	isBuiltIn: z.boolean().default(false),
@@ -62,9 +63,125 @@ const SavedStateSchema = AppStateSchema.pick({
 	theme: true,
 	windowBounds: true,
 	recentFiles: true,
-	packages: true,
 	binaries: true,
-}).partial();
+})
+	.extend({
+		packages: z.array(z.unknown()).optional(),
+	})
+	.partial();
+
+const LegacyModulePackageStateSchema = z.object({
+	url: z.string().optional(),
+	name: z.string().optional(),
+	version: z.string().nullable().optional(),
+	status: z.string().optional(),
+	error: z.string().nullable().optional(),
+	modules: z.array(LoadedModuleInfoSchema).optional(),
+	isBuiltIn: z.boolean().optional(),
+});
+
+const BUILT_IN_PACKAGE_NAME = "@e9g/buffered-audio-nodes";
+const BUILT_IN_PACKAGE_SPEC = "@e9g/buffered-audio-nodes@latest";
+const BUILT_IN_PACKAGE_URL = "https://github.com/visionsofparadise/buffered-audio-nodes";
+
+function resetPackageLifecycle(entry: ModulePackageState): ModulePackageState {
+	return entry.status === "ready"
+		? entry
+		: {
+			...entry,
+			status: "pending",
+			error: null,
+			modules: [],
+			version: null,
+		};
+}
+
+function migrateLegacyPackageState(value: unknown): ModulePackageState | null {
+	const current = ModulePackageStateSchema.safeParse(value);
+
+	if (current.success) {
+		return resetPackageLifecycle(current.data);
+	}
+
+	const legacy = LegacyModulePackageStateSchema.safeParse(value);
+
+	if (!legacy.success) {
+		return null;
+	}
+
+	const entry = legacy.data;
+	const isBuiltIn = entry.isBuiltIn === true || entry.url === BUILT_IN_PACKAGE_URL || entry.name === BUILT_IN_PACKAGE_NAME;
+	let requestedSpec: string | null = null;
+
+	if (isBuiltIn) {
+		requestedSpec = BUILT_IN_PACKAGE_SPEC;
+	} else if (entry.name) {
+		const looksLikeRegistryName = entry.name.startsWith("@") || !entry.name.includes("/");
+
+		if (looksLikeRegistryName) {
+			requestedSpec = entry.version ? `${entry.name}@${entry.version}` : `${entry.name}@latest`;
+		}
+	}
+
+	if (!requestedSpec) {
+		return null;
+	}
+
+	return resetPackageLifecycle({
+		requestedSpec,
+		name: packageNameFromSpec(requestedSpec),
+		version: entry.status === "ready" ? (entry.version ?? null) : null,
+		status: entry.status === "ready" ? "ready" : "pending",
+		error: entry.status === "ready" ? (entry.error ?? null) : null,
+		modules: entry.status === "ready" ? (entry.modules ?? []) : [],
+		isBuiltIn,
+	});
+}
+
+function loadSavedPackages(savedPackages: Array<unknown> | undefined): Array<ModulePackageState> {
+	const migrated = (savedPackages ?? [])
+		.map((entry) => migrateLegacyPackageState(entry))
+		.filter((entry): entry is ModulePackageState => entry !== null);
+
+	if (migrated.length === 0) {
+		return [
+			{
+				requestedSpec: BUILT_IN_PACKAGE_SPEC,
+				name: BUILT_IN_PACKAGE_NAME,
+				version: null,
+				status: "pending",
+				error: null,
+				modules: [],
+				isBuiltIn: true,
+			},
+		];
+	}
+
+	if (!migrated.some((entry) => entry.isBuiltIn)) {
+		return [
+			{
+				requestedSpec: BUILT_IN_PACKAGE_SPEC,
+				name: BUILT_IN_PACKAGE_NAME,
+				version: null,
+				status: "pending",
+				error: null,
+				modules: [],
+				isBuiltIn: true,
+			},
+			...migrated,
+		];
+	}
+
+	return migrated.map((entry) =>
+		entry.isBuiltIn
+			? {
+				...entry,
+				requestedSpec: BUILT_IN_PACKAGE_SPEC,
+				name: BUILT_IN_PACKAGE_NAME,
+			}
+			: entry,
+	);
+}
 
 export async function loadAppState(main: { getUserDataPath: () => Promise<string>; readFile: (path: string) => Promise<string> }): Promise<Omit<AppState, "_key">> {
 	const userDataPath = await main.getUserDataPath();
@@ -87,27 +204,7 @@ export async function loadAppState(main: { getUserDataPath: () => Promise<string
 
 	const activeTabId = tabs.some((tab) => tab.id === saved.activeTabId) ? (saved.activeTabId ?? null) : (tabs[0]?.id ?? null);
 
-	const BUILT_IN_PACKAGE: ModulePackageState = {
-		url: "https://github.com/visionsofparadise/buffered-audio-nodes",
-		name: "@e9g/buffered-audio-nodes",
-		version: null,
-		status: "pending",
-		error: null,
-		modules: [],
-		isBuiltIn: true,
-	};
-
-	let packages: Array<ModulePackageState> = saved.packages ?? [];
-
-	// Reset interrupted sessions — any package not "ready" goes back to "pending"
-	packages = packages.map((entry) => (entry.status !== "ready" ? { ...entry, status: "pending" as const, error: null } : entry));
-
-	// Seed built-in package if missing
-	if (packages.length === 0) {
-		packages = [BUILT_IN_PACKAGE];
-	} else if (!packages.some((entry) => entry.isBuiltIn)) {
-		packages = [BUILT_IN_PACKAGE, ...packages];
-	}
+	const packages = loadSavedPackages(saved.packages);
 
 	return {
 		tabs,

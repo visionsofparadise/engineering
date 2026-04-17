@@ -16,8 +16,7 @@ import { StatRendererIpc } from "./FileSystem/stat/Renderer";
 import { UnwatchFileRendererIpc } from "./FileSystem/unwatchFile/Renderer";
 import { WatchFileRendererIpc } from "./FileSystem/watchFile/Renderer";
 import { WriteFileRendererIpc } from "./FileSystem/writeFile/Renderer";
-import { GitCloneRendererIpc } from "./Git/clone/Renderer";
-import { BundlePackageRendererIpc } from "./Package/bundle/Renderer";
+import { InstallPackageRendererIpc } from "./Package/install/Renderer";
 import { LoadPackageModulesRendererIpc } from "./Package/loadModules/Renderer";
 import { UnloadPackageModulesRendererIpc } from "./Package/unloadModules/Renderer";
 import { GetAllDisplaysRendererIpc } from "./System/getAllDisplays/Renderer";
@@ -42,8 +41,7 @@ export const ASYNC_RENDERER_IPCS = [
 	UnwatchFileRendererIpc,
 	WatchFileRendererIpc,
 	WriteFileRendererIpc,
-	GitCloneRendererIpc,
-	BundlePackageRendererIpc,
+	InstallPackageRendererIpc,
 	LoadPackageModulesRendererIpc,
 	UnloadPackageModulesRendererIpc,
 	ShowOpenDialogRendererIpc,

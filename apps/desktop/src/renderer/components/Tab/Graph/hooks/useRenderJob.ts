@@ -24,17 +24,10 @@ export function useRenderJob(context: GraphContext, refresh: () => void): UseRen
 	}, [activeJobId]);
 
 	const startRender = useCallback(async () => {
-		const packageVersions: Record<string, string> = {};
-
-		for (const modulePackage of context.app.packages) {
-			packageVersions[modulePackage.name] = modulePackage.version ?? "";
-		}
-
 		const result = await context.main.audioRenderGraph({
 			bagId: context.graphDefinition.id,
 			graphDefinition: context.graphDefinition,
 			snapshotsDir: `${context.userDataPath}/snapshots`,
-			packageVersions,
 		});
 
 		setActiveJobId(result.jobId);

@@ -13,7 +13,7 @@ export function ModuleManager({ context, isOpen, onClose }: Props) {
 	const { app } = context;
 	const { addPackage, removePackage, updatePackage } = usePackageManager(context);
 
-	const [addUrl, setAddUrl] = useState("");
+	const [packageSpec, setPackageSpec] = useState("");
 	const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set());
 
 	const handleEscape = useCallback(
@@ -45,22 +45,22 @@ export function ModuleManager({ context, isOpen, onClose }: Props) {
 	);
 
 	const handleAdd = useCallback(async () => {
-		if (!addUrl.trim()) return;
+		if (!packageSpec.trim()) return;
 
-		const url = addUrl.trim();
+		const requestedSpec = packageSpec.trim();
 
-		setAddUrl("");
-		await addPackage(url);
-	}, [addUrl, addPackage]);
+		setPackageSpec("");
+		await addPackage(requestedSpec);
+	}, [packageSpec, addPackage]);
 
-	const toggleExpanded = useCallback((name: string) => {
+	const toggleExpanded = useCallback((requestedSpec: string) => {
 		setExpandedPackages((previous) => {
 			const next = new Set(previous);
 
-			if (next.has(name)) {
-				next.delete(name);
+			if (next.has(requestedSpec)) {
+				next.delete(requestedSpec);
 			} else {
-				next.add(name);
+				next.add(requestedSpec);
 			}
 
 			return next;
@@ -88,17 +88,17 @@ export function ModuleManager({ context, isOpen, onClose }: Props) {
 				<div className="flex-1 overflow-y-auto px-4 py-3">
 					<ul className="flex flex-col gap-2">
 						{app.packages.map((entry) => {
-							const isExpanded = expandedPackages.has(entry.name);
+							const isExpanded = expandedPackages.has(entry.requestedSpec);
 
 							return (
-								<li key={entry.url} className="bg-chrome-surface p-2">
+								<li key={entry.requestedSpec} className="bg-chrome-surface p-2">
 									<div className="flex items-center gap-2">
 										{/* Expand toggle */}
 										{entry.modules.length > 0 && (
 											<button
 												type="button"
 												className="text-chrome-text-secondary hover:text-chrome-text text-xs"
-												onClick={() => toggleExpanded(entry.name)}
+												onClick={() => toggleExpanded(entry.requestedSpec)}
 											>
 												{isExpanded ? "\u25BC" : "\u25B6"}
 											</button>
@@ -143,7 +143,7 @@ export function ModuleManager({ context, isOpen, onClose }: Props) {
 											<Button
 												variant="secondary"
 												size="sm"
-												onClick={() => void updatePackage(entry.name)}
+												onClick={() => void updatePackage(entry.requestedSpec)}
 											>
 												Update
 											</Button>
@@ -151,12 +151,16 @@ export function ModuleManager({ context, isOpen, onClose }: Props) {
 												<Button
 													variant="ghost"
 													size="sm"
-													onClick={() => void removePackage(entry.name)}
+													onClick={() => void removePackage(entry.requestedSpec)}
 												>
 													Remove
 												</Button>
 											)}
 										</div>
+									</div>
+
+									<div className="mt-1 font-technical text-[length:var(--text-xs)] text-chrome-text-dim">
+										{entry.requestedSpec}
 									</div>
 
 									{/* Error message */}
@@ -189,10 +193,10 @@ export function ModuleManager({ context, isOpen, onClose }: Props) {
 					{/* Add package */}
 					<div className="flex items-end gap-2 mt-3">
 						<Input
-							label="Git URL"
-							value={addUrl}
-							placeholder="https://github.com/..."
-							onChange={setAddUrl}
+							label="Package Spec"
+							value={packageSpec}
+							placeholder="@e9g/buffered-audio-nodes@latest"
+							onChange={setPackageSpec}
 							className="flex-1"
 						/>
 						<Button variant="primary" onClick={() => void handleAdd()}>

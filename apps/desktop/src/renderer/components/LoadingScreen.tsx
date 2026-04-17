@@ -1,19 +1,19 @@
 import type { Snapshot } from "valtio/vanilla";
 import { Button } from "@e9g/design-system";
 import type { ModulePackageState } from "../models/State/App";
+import { EngineeringIcon } from "./EngineeringIcon";
 
 interface Props {
 	readonly packages: Snapshot<Array<ModulePackageState>>;
 	readonly isLoading: boolean;
 	readonly onContinue: () => void;
+	readonly theme: "lava" | "viridis";
 }
 
 function statusText(status: ModulePackageState["status"]): string {
 	switch (status) {
-		case "cloning":
-			return "Cloning";
-		case "building":
-			return "Building";
+		case "installing":
+			return "Installing";
 		case "loading":
 			return "Loading";
 		default:
@@ -21,17 +21,20 @@ function statusText(status: ModulePackageState["status"]): string {
 	}
 }
 
-export function LoadingScreen({ packages, isLoading, onContinue }: Props) {
+export function LoadingScreen({ packages, isLoading, onContinue, theme }: Props) {
 	const hasError = packages.some((entry) => entry.status === "error");
 
 	return (
 		<div className="flex h-screen items-center justify-center bg-chrome-base">
 			<div className="flex flex-col items-center gap-6">
-				<h1 className="font-body text-chrome-text text-xl">Engineering</h1>
+				<div className="flex flex-col items-center gap-3">
+					<EngineeringIcon theme={theme} className="h-16 w-16" title="Engineering" />
+					<h1 className="font-body text-chrome-text text-xl">Engineering</h1>
+				</div>
 
 				<ul className="flex flex-col gap-2">
 					{packages.map((entry) => (
-						<li key={entry.url} className="flex flex-col gap-0.5">
+						<li key={entry.requestedSpec} className="flex flex-col gap-0.5">
 							<div className="flex items-center gap-3">
 								<span className="font-technical uppercase tracking-[0.06em] text-chrome-text text-sm">
 									{entry.name}
@@ -41,7 +44,7 @@ export function LoadingScreen({ packages, isLoading, onContinue }: Props) {
 										Pending
 									</span>
 								)}
-								{(entry.status === "cloning" || entry.status === "building" || entry.status === "loading") && (
+								{(entry.status === "installing" || entry.status === "loading") && (
 									<span className="font-technical uppercase tracking-[0.06em] text-chrome-text-secondary text-xs">
 										{statusText(entry.status)}
 									</span>

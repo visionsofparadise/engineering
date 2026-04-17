@@ -8,6 +8,8 @@ import type { TabEntry } from "../../../models/State/App";
 import type { GraphState } from "../../../models/State/Graph";
 import { ReactFlowProvider } from "@xyflow/react";
 import { computeAutoLayout } from "../../../utilities/autoLayout";
+import { importBag } from "../../../utilities/bagOperations";
+import { mergeImportedBag } from "../../../utilities/importBag";
 import { GraphCanvas } from "./Canvas";
 import { SnapshotSession } from "../Spectral/Session";
 
@@ -51,6 +53,52 @@ export function GraphSession({ initialGraphState, context, tab, graphDefinition,
 			context.renameCallbacks.delete(tab.id);
 		};
 	}, [context.renameCallbacks, tab.id, mutateDefinition]);
+
+	useEffect(() => {
+		context.importCallbacks.set(tab.id, async () => {
+			const imported = await importBag(context.main);
+
+			if (!imported) return;
+
+			const previousDefinition = structuredClone(graphDefinition);
+			const previousPositions = structuredClone(graph.positions);
+			const merged = mergeImportedBag({
+				currentDefinition: previousDefinition,
+				currentPositions: previousPositions,
+				importedDefinition: imported.definition,
+			});
+
+			if (merged.importedNodeCount === 0) return;
+
+			const nextDefinition = structuredClone(merged.definition);
+			const nextPositions = structuredClone(merged.positions);
+
+			mutateDefinition(() => nextDefinition);
+			graphStore.mutate(graph, (proxy) => {
+				proxy.positions = nextPositions;
+			});
+
+			pushHistory({
+				label: `Import ${imported.definition.name}`,
+				undo: () => {
+					mutateDefinition(() => previousDefinition);
+					graphStore.mutate(graph, (proxy) => {
+						proxy.positions = structuredClone(previousPositions);
+					});
+				},
+				redo: () => {
+					mutateDefinition(() => nextDefinition);
+					graphStore.mutate(graph, (proxy) => {
+						proxy.positions = structuredClone(nextPositions);
+					});
+				},
+			});
+		});
+
+		return () => {
+			context.importCallbacks.delete(tab.id);
+		};
+	}, [context.importCallbacks, context.main, tab.id, graphDefinition, graph.positions, graph, graphStore, mutateDefinition, pushHistory]);
 
 	const graphContext: GraphContext = useMemo(
 		() => ({

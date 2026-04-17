@@ -19,6 +19,7 @@ export function AppTabBar({ context, onOpenModuleManager, onOpenBinaryManager }:
 		() => [
 			{ kind: "action", icon: "lucide:file-plus", label: "New Session", shortcut: "Ctrl+N", onClick: () => void context.newBagTab() },
 			{ kind: "action", icon: "lucide:folder-open", label: "Open Session", shortcut: "Ctrl+O", onClick: () => void context.openBagTab() },
+			{ kind: "action", icon: "lucide:import", label: "Import Bag", shortcut: "Ctrl+Shift+O", onClick: () => void context.importBagIntoActiveTab() },
 			{ kind: "action", icon: "lucide:save", label: "Save", shortcut: "Ctrl+S" },
 			{ kind: "action", icon: "lucide:save-all", label: "Save As\u2026", shortcut: "Ctrl+Shift+S" },
 			{ kind: "separator" },
@@ -54,6 +55,7 @@ export function AppTabBar({ context, onOpenModuleManager, onOpenBinaryManager }:
 		context.historyStacks.delete(id);
 		context.tabNames.delete(id);
 		context.renameCallbacks.delete(id);
+		context.importCallbacks.delete(id);
 	};
 
 	const startEditing = useCallback((tabId: string, currentLabel: string) => {

@@ -51,16 +51,6 @@ function resolveUpstreamHash(
 	return resolveUpstreamHash(firstGrandparent, nodeMap, edges, computedHashes);
 }
 
-function lookupPackageVersion(context: GraphContext, packageName: string): string {
-	for (const modulePackage of context.app.packages) {
-		if (modulePackage.name === packageName) {
-			return modulePackage.version ?? "";
-		}
-	}
-
-	return "";
-}
-
 export function useNodeStates(context: GraphContext): UseNodeStatesReturn {
 	const { graphDefinition, main, userDataPath, bagId } = context;
 	const [nodeStates, setNodeStates] = useState<Map<string, NodeStateEntry>>(() => new Map());
@@ -101,6 +91,7 @@ export function useNodeStates(context: GraphContext): UseNodeStatesReturn {
 					const node = nodeMap.get(nodeId);
 
 					if (!node) return;
+					const packageVersion = typeof node.packageVersion === "string" ? node.packageVersion : "";
 
 					// Derive upstream hash from parent nodes
 					const parentIds = getParentIds(nodeId, edges);
@@ -115,8 +106,6 @@ export function useNodeStates(context: GraphContext): UseNodeStatesReturn {
 						// Combine multiple parent hashes (for nodes with multiple inputs)
 						upstreamHash = parentHashes.join("");
 					}
-
-					const packageVersion = lookupPackageVersion(context, node.packageName);
 
 					const hash = await contentHash(
 						upstreamHash,
@@ -166,7 +155,7 @@ export function useNodeStates(context: GraphContext): UseNodeStatesReturn {
 		);
 
 		setNodeStates(new Map(snapshotEntries));
-	}, [graphDefinition, main, userDataPath, bagId, context]);
+	}, [graphDefinition, main, userDataPath, bagId]);
 
 	useEffect(() => {
 		void compute();

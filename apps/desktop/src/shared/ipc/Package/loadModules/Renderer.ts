@@ -21,8 +21,9 @@ export interface ModuleJsonSchema {
 }
 
 export interface LoadPackageModulesInput {
-	readonly bundlePath: string;
+	readonly loadEntryPath: string;
 	readonly packageName: string;
+	readonly packageVersion: string;
 }
 
 export interface LoadedModuleInfo {

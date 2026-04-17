@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Logger } from "../../shared/models/Logger";
 import { useAutosave } from "../hooks/useAutosave";
+import { ensureGraphPackagesInstalled } from "../hooks/packagePipeline";
 import { usePackageLoader } from "../hooks/usePackageLoader";
 import { useWindowState } from "../hooks/useWindowState";
 import type { AppContext, HistoryState } from "../models/Context";
@@ -30,7 +31,8 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 	useWindowState(app, appStore, main);
 	useAutosave(app, appStore, main, userDataPath);
 
-	const { isLoading } = usePackageLoader(app, appStore, main, userDataPath);
+	const { isLoading } = usePackageLoader(app, appStore, main);
+	const hasUnresolvedPackages = app.packages.some((entry) => entry.status !== "ready" && entry.status !== "error");
 	const [hasPassedLoading, setHasPassedLoading] = useState(false);
 	const [moduleManagerOpen, setModuleManagerOpen] = useState(false);
 	const [binaryManagerOpen, setBinaryManagerOpen] = useState(false);
@@ -43,6 +45,7 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 	const historyStacksRef = useRef(new Map<string, HistoryState>());
 	const tabNamesRef = useRef(new Map<string, string>());
 	const renameCallbacksRef = useRef(new Map<string, (name: string) => void>());
+	const importCallbacksRef = useRef(new Map<string, () => Promise<void>>());
 
 	const addTab = useCallback(
 		(bagId: string, bagPath: string, name: string) => {
@@ -74,8 +77,21 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 
 		const definition = await loadBag(main, bagPath);
 
+		setHasPassedLoading(false);
+
+		try {
+			await ensureGraphPackagesInstalled(definition, app, appStore, main);
+		} catch (error) {
+			logger.error("Failed to install exact package versions required by bag", error as Error, {
+				namespace: "packages",
+				bagPath,
+			});
+		} finally {
+			setHasPassedLoading(true);
+		}
+
 		addTab(definition.id, bagPath, definition.name);
-	}, [addTab]);
+	}, [addTab, app, appStore, logger, main]);
 
 	const newBagTab = useCallback(async () => {
 		const result = await newBag(main);
@@ -93,6 +109,18 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 		}
 	}, []);
 
+	const importBagIntoActiveTab = useCallback(async () => {
+		const activeTabId = app.activeTabId;
+
+		if (!activeTabId) return;
+
+		const callback = importCallbacksRef.current.get(activeTabId);
+
+		if (!callback) return;
+
+		await callback();
+	}, [app.activeTabId]);
+
 	const context: AppContext = useMemo(
 		() => ({
 			app,
@@ -105,11 +133,13 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 			historyStacks: historyStacksRef.current,
 			tabNames: tabNamesRef.current,
 			renameCallbacks: renameCallbacksRef.current,
+			importCallbacks: importCallbacksRef.current,
 			openBagTab,
 			newBagTab,
 			renameTab,
+			importBagIntoActiveTab,
 		}),
-		[app, windowId, userDataPath, openBagTab, newBagTab, renameTab],
+		[app, windowId, userDataPath, openBagTab, newBagTab, renameTab, importBagIntoActiveTab],
 	);
 
 	useEffect(() => {
@@ -124,8 +154,9 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 		return (
 			<LoadingScreen
 				packages={app.packages}
-				isLoading={isLoading}
+				isLoading={isLoading || hasUnresolvedPackages}
 				onContinue={() => setHasPassedLoading(true)}
+				theme={app.theme}
 			/>
 		);
 	}

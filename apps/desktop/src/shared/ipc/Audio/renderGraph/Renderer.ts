@@ -4,7 +4,6 @@ import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 export interface RenderGraphInput {
 	bagId: string;
 	graphDefinition: GraphDefinition;
-	packageVersions: Record<string, string>;
 	snapshotsDir: string;
 }
 

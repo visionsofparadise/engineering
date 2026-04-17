@@ -15,8 +15,7 @@ import { StatMainIpc } from "./FileSystem/stat/Main";
 import { UnwatchFileMainIpc } from "./FileSystem/unwatchFile/Main";
 import { WatchFileMainIpc } from "./FileSystem/watchFile/Main";
 import { WriteFileMainIpc } from "./FileSystem/writeFile/Main";
-import { GitCloneMainIpc } from "./Git/clone/Main";
-import { BundlePackageMainIpc } from "./Package/bundle/Main";
+import { InstallPackageMainIpc } from "./Package/install/Main";
 import { LoadPackageModulesMainIpc } from "./Package/loadModules/Main";
 import { UnloadPackageModulesMainIpc } from "./Package/unloadModules/Main";
 import { GetAllDisplaysMainIpc } from "./System/getAllDisplays/Main";
@@ -41,8 +40,7 @@ export const ASYNC_MAIN_IPCS = [
 	UnwatchFileMainIpc,
 	WatchFileMainIpc,
 	WriteFileMainIpc,
-	GitCloneMainIpc,
-	BundlePackageMainIpc,
+	InstallPackageMainIpc,
 	LoadPackageModulesMainIpc,
 	UnloadPackageModulesMainIpc,
 	ShowOpenDialogMainIpc,

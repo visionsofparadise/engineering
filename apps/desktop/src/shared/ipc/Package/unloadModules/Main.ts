@@ -11,7 +11,7 @@ export class UnloadPackageModulesMainIpc extends AsyncMainIpc<UnloadPackageModul
 	action = UNLOAD_PACKAGE_MODULES_ACTION;
 
 	handler(input: UnloadPackageModulesInput, dependencies: IpcHandlerDependencies): UnloadPackageModulesIpcReturn {
-		unregisterPackage(dependencies.moduleRegistry, input.packageName);
+		unregisterPackage(dependencies.moduleRegistry, input.packageName, input.packageVersion);
 
 		return undefined;
 	}

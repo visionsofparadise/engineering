@@ -9,7 +9,6 @@ export function usePackageLoader(
 	app: Snapshot<AppState>,
 	appStore: ProxyStore,
 	main: Main,
-	userDataPath: string,
 ): { isLoading: boolean } {
 	const [isLoading, setIsLoading] = useState(() =>
 		app.packages.some((entry) => entry.status !== "ready" && entry.status !== "error"),
@@ -25,11 +24,15 @@ export function usePackageLoader(
 				.filter(({ entry }) => entry.status === "pending")
 				.sort((left, right) => (left.entry.isBuiltIn === right.entry.isBuiltIn ? 0 : left.entry.isBuiltIn ? -1 : 1));
 
+			if (indices.length > 0) {
+				setIsLoading(true);
+			}
+
 			for (const { entry, index } of indices) {
 				if (cancelled) return;
 
 				try {
-					await runPackagePipeline(entry, index, app, appStore, main, userDataPath);
+					await runPackagePipeline(entry, index, app, appStore, main);
 				} catch (error) {
 					mutatePackageAt(appStore, app, index, (target) => {
 						target.status = "error";
@@ -48,7 +51,7 @@ export function usePackageLoader(
 		return () => {
 			cancelled = true;
 		};
-	}, [app._key, appStore, main, userDataPath]);
+	}, [app._key, appStore, main]);
 
 	return { isLoading };
 }

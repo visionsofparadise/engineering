@@ -7,11 +7,11 @@ interface Position {
 }
 
 interface GraphMutations {
-	addNode: (packageName: string, nodeName: string, position: Position) => void;
+	addNode: (packageName: string, packageVersion: string, nodeName: string, position: Position) => void;
 	removeNode: (nodeId: string) => void;
 	addEdge: (from: string, to: string) => void;
 	removeEdge: (from: string, to: string) => void;
-	insertNodeOnEdge: (edge: GraphEdge, packageName: string, nodeName: string) => void;
+	insertNodeOnEdge: (edge: GraphEdge, packageName: string, packageVersion: string, nodeName: string) => void;
 	toggleBypass: (nodeId: string) => void;
 	setGraphName: (name: string) => void;
 	updateNodeParameters: (nodeId: string, parameterName: string, value: unknown) => void;
@@ -20,12 +20,13 @@ interface GraphMutations {
 export function useGraphMutations(context: GraphContext): GraphMutations {
 	const { graphDefinition, mutateDefinition, pushHistory } = context;
 
-	function addNode(packageName: string, nodeName: string, position: Position): void {
+	function addNode(packageName: string, packageVersion: string, nodeName: string, position: Position): void {
 		const id = crypto.randomUUID();
 
 		const node: GraphNode = {
 			id,
 			packageName,
+			packageVersion,
 			nodeName,
 			parameters: {},
 		};
@@ -158,12 +159,13 @@ export function useGraphMutations(context: GraphContext): GraphMutations {
 		});
 	}
 
-	function insertNodeOnEdge(edge: GraphEdge, packageName: string, nodeName: string): void {
+	function insertNodeOnEdge(edge: GraphEdge, packageName: string, packageVersion: string, nodeName: string): void {
 		const id = crypto.randomUUID();
 
 		const node: GraphNode = {
 			id,
 			packageName,
+			packageVersion,
 			nodeName,
 			parameters: {},
 		};

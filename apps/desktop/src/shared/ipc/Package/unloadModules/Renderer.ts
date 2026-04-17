@@ -2,6 +2,7 @@ import { AsyncRendererIpc } from "../../../models/AsyncRendererIpc";
 
 export interface UnloadPackageModulesInput {
 	readonly packageName: string;
+	readonly packageVersion: string;
 }
 
 export type UnloadPackageModulesIpcParameters = [input: UnloadPackageModulesInput];

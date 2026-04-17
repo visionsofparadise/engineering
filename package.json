@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "turbo start",
     "check": "turbo check",
     "lint": "turbo lint",
     "unit": "turbo unit",
@@ -25,7 +26,7 @@
     "eslint-plugin-react": "^7.37.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "globals": "^15.0.0",
-    "turbo": "^2.0.0",
+    "turbo": "^2.9.6",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.0.0"
   }

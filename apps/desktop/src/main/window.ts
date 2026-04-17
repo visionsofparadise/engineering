@@ -27,6 +27,7 @@ const WINDOW_CONFIG = {
 export const createWindow = (logger: Logger): BrowserWindow => {
 	const browserWindow = new BrowserWindow({
 		...WINDOW_CONFIG,
+		icon: path.join(__dirname, "../../assets/icon.png"),
 		show: false,
 		webPreferences: {
 			preload: path.join(__dirname, "preload.js"),

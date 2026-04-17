@@ -5,7 +5,7 @@ import type { GraphNode } from "@e9g/buffered-audio-nodes-core";
 import type { SourceNode, TransformNode } from "@e9g/buffered-audio-nodes-core";
 import { ReadNode, WriteNode } from "@e9g/buffered-audio-nodes";
 import { AsyncMainIpc, type IpcHandlerDependencies } from "../../../models/AsyncMainIpc";
-import type { ModuleClass, ModuleRegistryMap } from "../../../models/ModuleRegistry";
+import { resolvePackageModules, type ModuleClass, type ModuleRegistryMap } from "../../../models/ModuleRegistry";
 import type { Logger } from "../../../models/Logger";
 import { contentHash } from "../../../utilities/contentHash";
 import { topologicalSort } from "../../../utilities/topologicalSort";
@@ -42,18 +42,18 @@ async function snapshotExists(filePath: string): Promise<boolean> {
 	}
 }
 
-/** Look up a module constructor from the registry by packageName and nodeName. */
-function resolveModule(registry: ModuleRegistryMap, packageName: string, nodeName: string): ModuleClass {
-	const packageModules = registry.get(packageName);
+/** Look up a module constructor from the registry by package identity and nodeName. */
+function resolveModule(registry: ModuleRegistryMap, packageName: string, packageVersion: string, nodeName: string): ModuleClass {
+	const packageModules = resolvePackageModules(registry, packageName, packageVersion);
 
 	if (!packageModules) {
-		throw new Error(`Package "${packageName}" not found in module registry`);
+		throw new Error(`Package "${packageName}@${packageVersion}" not found in module registry`);
 	}
 
 	const ModuleConstructor = packageModules.get(nodeName);
 
 	if (!ModuleConstructor) {
-		throw new Error(`Module "${nodeName}" not found in package "${packageName}"`);
+		throw new Error(`Module "${nodeName}" not found in package "${packageName}@${packageVersion}"`);
 	}
 
 	return ModuleConstructor;
@@ -134,7 +134,7 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 		moduleRegistry: ModuleRegistryMap,
 		jobManager: JobManager,
 	): Promise<void> {
-		const { bagId, graphDefinition, snapshotsDir, packageVersions } = input;
+		const { bagId, graphDefinition, snapshotsDir } = input;
 		const { nodes, edges } = graphDefinition;
 
 		try {
@@ -163,7 +163,7 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 			for (const layer of layers) {
 				for (const nodeId of layer) {
 					const node = getGraphNode(nodeMap, nodeId);
-					const packageVersion = packageVersions[node.packageName] ?? "0.0.0";
+					const packageVersion = typeof node.packageVersion === "string" ? node.packageVersion : "";
 					const upstreamHash = resolveUpstreamHash(nodeId, parentMap, bypassedSet, nodeHashes);
 					const hash = contentHash(
 						upstreamHash,
@@ -254,7 +254,13 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 
 						if (isSourceNode) {
 							// Source node: instantiate from registry, pipe to WriteNode
-							const SourceConstructor = resolveModule(moduleRegistry, node.packageName, node.nodeName);
+							const packageVersion = typeof node.packageVersion === "string" ? node.packageVersion : "";
+							const SourceConstructor = resolveModule(
+								moduleRegistry,
+								node.packageName,
+								packageVersion,
+								node.nodeName,
+							);
 							const sourceInstance = new SourceConstructor(node.parameters ?? {}) as SourceNode;
 							const writeInstance = new WriteNode({ path: outputPath, bitDepth: "32f" });
 
@@ -267,9 +273,15 @@ export class RenderGraphMainIpc extends AsyncMainIpc<RenderGraphIpcParameters, R
 								throw new Error(`No input path resolved for node "${nodeId}"`);
 							}
 
-							const readInstance = new ReadNode({ path: inputPath });
+							const readInstance = new ReadNode({ path: inputPath, ffmpegPath: "", ffprobePath: "" });
 
-							const TransformConstructor = resolveModule(moduleRegistry, node.packageName, node.nodeName);
+							const packageVersion = typeof node.packageVersion === "string" ? node.packageVersion : "";
+							const TransformConstructor = resolveModule(
+								moduleRegistry,
+								node.packageName,
+								packageVersion,
+								node.nodeName,
+							);
 							const transformInstance = new TransformConstructor(node.parameters ?? {}) as TransformNode;
 							const writeInstance = new WriteNode({ path: outputPath, bitDepth: "32f" });
 
