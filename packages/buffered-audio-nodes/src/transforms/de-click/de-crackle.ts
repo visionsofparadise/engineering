@@ -22,8 +22,10 @@ export class DeCrackleNode extends DeClickNode<DeCrackleProperties> {
 
 	override readonly type = ["buffered-audio-node", "transform", "de-click", "de-crackle"];
 
-	constructor(properties: BufferedAudioNodeInput<DeCrackleProperties>) {
-		super({ ...properties, ...schema.encode(properties) });
+	constructor(properties?: BufferedAudioNodeInput<DeCrackleProperties>) {
+		const parsed = schema.parse(properties ?? {});
+
+		super({ ...properties, ...parsed } as BufferedAudioNodeInput<DeCrackleProperties>);
 	}
 
 	override clone(overrides?: Partial<DeCrackleProperties>): DeCrackleNode {

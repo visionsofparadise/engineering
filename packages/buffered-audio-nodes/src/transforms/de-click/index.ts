@@ -85,8 +85,10 @@ export class DeClickNode<P extends DeClickProperties = DeClickProperties> extend
 
 	override readonly type = ["buffered-audio-node", "transform", "de-click"];
 
-	constructor(properties: BufferedAudioNodeInput<P>) {
-		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties, ...schema.encode(properties) });
+	constructor(properties?: BufferedAudioNodeInput<P>) {
+		const parsed = schema.parse(properties ?? {});
+
+		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties, ...parsed } as BufferedAudioNodeInput<P>);
 	}
 
 	override createStream(): DeClickStream {

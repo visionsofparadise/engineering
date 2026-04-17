@@ -21,8 +21,10 @@ export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 
 	override readonly type = ["buffered-audio-node", "transform", "de-click", "mouth-de-click"];
 
-	constructor(properties: BufferedAudioNodeInput<MouthDeClickProperties>) {
-		super({ ...properties, ...mouthDeClickSchema.encode(properties) });
+	constructor(properties?: BufferedAudioNodeInput<MouthDeClickProperties>) {
+		const parsed = mouthDeClickSchema.parse(properties ?? {});
+
+		super({ ...properties, ...parsed } as BufferedAudioNodeInput<MouthDeClickProperties>);
 	}
 
 	override clone(overrides?: Partial<MouthDeClickProperties>): MouthDeClickNode {
