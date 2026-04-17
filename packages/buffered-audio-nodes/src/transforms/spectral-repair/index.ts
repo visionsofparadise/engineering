@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { initFftBackend, istft, replaceChannel, stft, type FftBackend } from "@e9g/buffered-audio-nodes-utils";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { interpolateTfRegion, type SpectralRegion } from "./utils/interpolation";
 
 
@@ -92,7 +93,8 @@ export class SpectralRepairStream extends BufferedTransformStream<SpectralRepair
 
 export class SpectralRepairNode extends TransformNode<SpectralRepairProperties> {
 	static override readonly moduleName = "Spectral Repair";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Repair spectral artifacts by interpolating from surrounding content";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is SpectralRepairNode {

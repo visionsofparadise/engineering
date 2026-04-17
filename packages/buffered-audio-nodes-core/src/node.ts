@@ -40,6 +40,7 @@ export type BufferedAudioNodeInput<P extends BufferedAudioNodeProperties = Buffe
 
 export abstract class BufferedAudioNode<P extends BufferedAudioNodeProperties = BufferedAudioNodeProperties> {
 	static readonly packageName: string;
+	static readonly packageVersion: string = "0.0.0";
 	static readonly moduleName: string;
 	static readonly moduleDescription: string = "";
 	static readonly schema: z.ZodType = z.object({});

@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
 import { BufferedTargetStream, TargetNode, type AudioChunk, type StreamContext, type TargetNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { waitForDrain } from "../../utils/ffmpeg";
 import { getBytesPerSample, writeSample, buildWavHeader, buildRf64Header } from "./utils/wav";
 
@@ -213,7 +214,8 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 
 export class WriteNode extends TargetNode<WriteProperties> {
 	static override readonly moduleName = "Write";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Write audio to a file";
 	static override readonly schema = schema;
 	override readonly type = ["buffered-audio-node", "target", "write"] as const;

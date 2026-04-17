@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTargetStream, TargetNode, WHOLE_FILE, type AudioChunk, type TargetNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { applyKWeighting, computeBlockLoudness, computeIntegratedLoudness, computeLra } from "./utils/measurement";
 
 export const schema = z.object({});
@@ -88,7 +89,8 @@ export class LoudnessStatsStream extends BufferedTargetStream {
 
 export class LoudnessStatsNode extends TargetNode {
 	static override readonly moduleName = "Loudness Stats";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Measure integrated loudness, true peak, loudness range, and short-term/momentary loudness per EBU R128";
 	static override readonly schema = schema;
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 export const schema = z.object({
 	bitDepth: z
@@ -58,7 +59,8 @@ export class DitherStream extends BufferedTransformStream<DitherProperties> {
 
 export class DitherNode extends TransformNode<DitherProperties> {
 	static override readonly moduleName = "Dither";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Add shaped noise to reduce quantization distortion";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DitherNode {

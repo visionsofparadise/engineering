@@ -231,7 +231,7 @@ export abstract class TransformNode<P extends TransformNodeProperties = Transfor
 
 				context.visited.add(child);
 
-				if (child instanceof TransformNode || child instanceof TargetNode) return child.setup(stream, context);
+				if (TransformNode.is(child) || TargetNode.is(child)) return child.setup(stream, context);
 
 				throw new Error(`Unknown child node type`);
 			}),

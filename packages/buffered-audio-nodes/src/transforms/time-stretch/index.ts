@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { StreamContext } from "@e9g/buffered-audio-nodes-core";
 import { FfmpegNode, FfmpegStream, type FfmpegProperties } from "../ffmpeg";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 export const schema = z.object({
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
@@ -21,7 +22,8 @@ export class TimeStretchStream extends FfmpegStream<TimeStretchProperties> {
 
 export class TimeStretchNode extends FfmpegNode<TimeStretchProperties> {
 	static override readonly moduleName = "Time Stretch";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Change duration without affecting pitch";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is TimeStretchNode {

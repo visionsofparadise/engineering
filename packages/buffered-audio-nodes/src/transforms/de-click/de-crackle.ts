@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DeClickNode, type DeClickProperties } from ".";
 import type { BufferedAudioNodeInput } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 export const schema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
@@ -11,7 +12,8 @@ export interface DeCrackleProperties extends z.infer<typeof schema>, DeClickProp
 
 export class DeCrackleNode extends DeClickNode<DeCrackleProperties> {
 	static override readonly moduleName: string = "De-Crackle";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly schema = schema;
 
 	static override is(value: unknown): value is DeCrackleNode {

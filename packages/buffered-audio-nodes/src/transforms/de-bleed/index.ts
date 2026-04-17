@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { replaceChannel } from "@e9g/buffered-audio-nodes-utils";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { nlmsAdaptiveFilter } from "./utils/nlms";
 
@@ -50,7 +51,8 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 
 export class DeBleedNode extends TransformNode<DeBleedProperties> {
 	static override readonly moduleName = "De-Bleed";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Reduce microphone bleed between channels";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DeBleedNode {

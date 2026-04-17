@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ChunkBuffer, StreamContext } from "@e9g/buffered-audio-nodes-core";
 import { FfmpegNode, FfmpegStream, type FfmpegProperties } from "../ffmpeg";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 export const schema = z.object({
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
@@ -33,7 +34,8 @@ export class ResampleStream extends FfmpegStream<ResampleProperties> {
 
 export class ResampleNode extends FfmpegNode<ResampleProperties> {
 	static override readonly moduleName = "Resample";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Change sample rate";
 	static override readonly schema = schema;
 

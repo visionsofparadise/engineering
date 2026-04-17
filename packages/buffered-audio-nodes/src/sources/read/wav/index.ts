@@ -1,6 +1,7 @@
 import { open, stat, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
 import { BufferedSourceStream, SourceNode, type AudioChunk, type SourceMetadata, type SourceNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../../package-metadata";
 
 export const wavSchema = z.object({
 	path: z.string().default("").meta({ input: "file", mode: "open" }),
@@ -234,7 +235,8 @@ export class ReadWavStream<P extends ReadWavProperties = ReadWavProperties> exte
 
 export class ReadWavNode extends SourceNode<ReadWavProperties> {
 	static override readonly moduleName = "ReadWav";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Read audio from a WAV file";
 	static override readonly schema = wavSchema;
 	override readonly type = ["buffered-audio-node", "source", "read-wav"] as const;

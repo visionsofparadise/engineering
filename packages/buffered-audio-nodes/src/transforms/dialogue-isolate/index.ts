@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { bandpass, MixedRadixFft, resampleDirect } from "@e9g/buffered-audio-nodes-utils";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { buildTransitionWindow, createSegmentWorkspace, normalizeOverlapAdd, processSegment } from "./utils/segment";
@@ -122,7 +123,8 @@ export class DialogueIsolateStream extends BufferedTransformStream<DialogueIsola
 
 export class DialogueIsolateNode extends TransformNode<DialogueIsolateProperties> {
 	static override readonly moduleName = "Dialogue Isolate";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Isolate dialogue from background using MDX-Net vocal separation";
 	static override readonly schema = schema;
 

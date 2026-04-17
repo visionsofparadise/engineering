@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { buildGainEnvelope, computeBreathEnvelopes, expandBreathRegions } from "./utils/envelope";
 import { findRegions } from "./utils/regions";
 
@@ -64,7 +65,8 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 
 export class BreathControlNode extends TransformNode<BreathControlProperties> {
 	static override readonly moduleName = "Breath Control";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Attenuate or remove breath sounds between phrases";
 	static override readonly schema = schema;
 

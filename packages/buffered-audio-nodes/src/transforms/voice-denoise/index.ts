@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { initFftBackend, resampleDirect, type FftBackend } from "@e9g/buffered-audio-nodes-utils";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { processDtlnFrames } from "./utils/dtln";
@@ -104,7 +105,8 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 
 export class VoiceDenoiseNode extends TransformNode<VoiceDenoiseProperties> {
 	static override readonly moduleName = "Voice Denoise";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Remove background noise from speech using DTLN neural network";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is VoiceDenoiseNode {

@@ -7,11 +7,11 @@ export abstract class CompositeNode extends TransformNode {
 	abstract get tail(): BufferedAudioNode;
 
 	override to(child: BufferedAudioNode): void {
-		if (!(this.tail instanceof SourceNode) && !(this.tail instanceof TransformNode)) {
-			throw new Error("Cannot connect downstream from a TargetNode — this composite is a complete pipeline");
+		if (!SourceNode.is(this.tail) && !TransformNode.is(this.tail)) {
+			throw new Error("Cannot connect downstream from a target node; this composite is a complete pipeline");
 		}
 
-		(this.tail as SourceNode | TransformNode).to(child);
+		(this.tail).to(child);
 	}
 
 	override get children(): ReadonlyArray<BufferedAudioNode> {
@@ -19,16 +19,16 @@ export abstract class CompositeNode extends TransformNode {
 	}
 
 	override async setup(readable: ReadableStream<AudioChunk>, context: StreamContext): Promise<Array<Promise<void>>> {
-		if (!(this.head instanceof TransformNode)) {
-			throw new Error("Cannot setup a composite whose head is a SourceNode — use render() for complete pipelines");
+		if (!TransformNode.is(this.head)) {
+			throw new Error("Cannot setup a composite whose head is a source node; use render() for complete pipelines");
 		}
 
 		return this.head.setup(readable, context);
 	}
 
 	async render(options?: RenderOptions): Promise<void> {
-		if (!(this.head instanceof SourceNode)) {
-			throw new Error("Cannot render a composite whose head is not a SourceNode");
+		if (!SourceNode.is(this.head)) {
+			throw new Error("Cannot render a composite whose head is not a source node");
 		}
 
 		return this.head.render(options);

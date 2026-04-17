@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DeClickNode, type DeClickProperties } from ".";
 import type { BufferedAudioNodeInput } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 export const mouthDeClickSchema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.7).describe("Sensitivity"),
@@ -11,7 +12,8 @@ export interface MouthDeClickProperties extends z.infer<typeof mouthDeClickSchem
 
 export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 	static override readonly moduleName: string = "Mouth De-Click";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly schema = mouthDeClickSchema;
 	static override is(value: unknown): value is MouthDeClickNode {
 		return DeClickNode.is(value) && value.type[3] === "mouth-de-click";

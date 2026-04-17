@@ -3,6 +3,7 @@ import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
 import { BufferedTargetStream, TargetNode, WHOLE_FILE, type AudioChunk, type StreamContext, type TargetNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { detectFftBackend, getFftAddon, createFftWorkspace, hanningWindow, type FftWorkspace } from "@e9g/buffered-audio-nodes-utils";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { computeSpectrogramFrames } from "./utils/frames";
 import { FREQUENCY_SCALE_BYTE, computeMelBandMappings, computeErbBandMappings, computeLogBandMappings } from "./utils/frequency";
 
@@ -268,7 +269,8 @@ export class SpectrogramStream extends BufferedTargetStream<SpectrogramPropertie
 
 export class SpectrogramNode extends TargetNode<SpectrogramProperties> {
 	static override readonly moduleName = "Spectrogram";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Generate spectrogram visualization data";
 	static override readonly schema = schema;
 

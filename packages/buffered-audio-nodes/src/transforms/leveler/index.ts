@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { computeRms, computeTargetGain } from "./utils/rms";
 
 export const schema = z.object({
@@ -68,7 +69,8 @@ export class LevelerStream extends BufferedTransformStream<LevelerProperties> {
 
 export class LevelerNode extends TransformNode<LevelerProperties> {
 	static override readonly moduleName = "Leveler";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Smooth volume variations for consistent loudness";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is LevelerNode {

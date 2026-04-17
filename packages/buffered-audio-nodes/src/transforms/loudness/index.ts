@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ChunkBuffer, StreamContext } from "@e9g/buffered-audio-nodes-core";
 import { FfmpegNode, FfmpegStream, type FfmpegProperties } from "../ffmpeg";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { measureLoudness } from "./utils/measurement";
 
 export const schema = z.object({
@@ -68,7 +69,8 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 
 export class LoudnessNode extends FfmpegNode<LoudnessProperties> {
 	static override readonly moduleName = "Loudness";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Measure integrated, short-term, and momentary loudness";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is LoudnessNode {

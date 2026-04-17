@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type AudioChunk, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 const cutRegionSchema = z.object({
 	start: z.number().min(0).describe("Start (seconds)"),
@@ -92,7 +93,8 @@ export class CutStream extends BufferedTransformStream<CutProperties> {
 
 export class CutNode extends TransformNode<CutProperties> {
 	static override readonly moduleName = "Cut";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Remove a region of audio";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is CutNode {

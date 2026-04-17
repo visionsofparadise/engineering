@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { detectClippedRegions, reconstructClippedRegion } from "./utils/clip-detection";
 
 export const schema = z.object({
@@ -49,7 +50,8 @@ export class DeClipStream extends BufferedTransformStream<DeClipProperties> {
 
 export class DeClipNode extends TransformNode<DeClipProperties> {
 	static override readonly moduleName = "De-Clip";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Restore clipped audio peaks";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DeClipNode {

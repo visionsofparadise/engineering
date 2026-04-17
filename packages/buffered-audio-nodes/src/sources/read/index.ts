@@ -1,6 +1,7 @@
 import { extname } from "node:path";
 import { z } from "zod";
 import { SourceNode, type SourceNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { ReadFfmpegStream } from "./ffmpeg";
 import { ReadWavStream } from "./wav";
 
@@ -20,7 +21,8 @@ export interface ReadProperties extends z.infer<typeof schema>, SourceNodeProper
 
 export class ReadNode extends SourceNode<ReadProperties> {
 	static override readonly moduleName = "Read";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Read audio from a file";
 	static override readonly schema = schema;
 	override readonly type = ["buffered-audio-node", "source", "read"] as const;

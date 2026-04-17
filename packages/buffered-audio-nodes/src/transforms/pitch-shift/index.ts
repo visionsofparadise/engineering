@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { StreamContext } from "@e9g/buffered-audio-nodes-core";
 import { FfmpegNode, FfmpegStream, type FfmpegProperties } from "../ffmpeg";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 export const schema = z.object({
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
@@ -25,7 +26,8 @@ export class PitchShiftStream extends FfmpegStream<PitchShiftProperties> {
 
 export class PitchShiftNode extends FfmpegNode<PitchShiftProperties> {
 	static override readonly moduleName = "Pitch Shift";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Change pitch without affecting duration";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is PitchShiftNode {

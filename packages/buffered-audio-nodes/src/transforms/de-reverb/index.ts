@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { initFftBackend, istft, replaceChannel, stft, type FftBackend } from "@e9g/buffered-audio-nodes-utils";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { transposeToBinMajor, transposeToFrameMajor } from "./utils/transpose";
 import { applyWpePrediction, computeBinPowerAndEnergy, solveWpeFilter } from "./utils/wpe";
 
@@ -148,7 +149,8 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 
 export class DeReverbNode extends TransformNode<DeReverbProperties> {
 	static override readonly moduleName = "De-Reverb (WPE)";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Reduce room reverb using Weighted Prediction Error — classical DSP, fully tunable, no model required";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DeReverbNode {

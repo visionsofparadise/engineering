@@ -121,7 +121,7 @@ export abstract class SourceNode<P extends SourceNodeProperties = SourceNodeProp
 
 				context.visited.add(child);
 
-				if (child instanceof TargetNode || child instanceof TransformNode) return child.setup(stream, context);
+				if (TargetNode.is(child) || TransformNode.is(child)) return child.setup(stream, context);
 
 				throw new Error(`Unknown child node type`);
 			}),

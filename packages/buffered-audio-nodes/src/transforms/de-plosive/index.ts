@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { detectPlosive, removePlosive } from "./utils/plosive";
 
 export const schema = z.object({
@@ -52,7 +53,8 @@ export class DePlosiveStream extends BufferedTransformStream<DePlosiveProperties
 
 export class DePlosiveNode extends TransformNode<DePlosiveProperties> {
 	static override readonly moduleName = "De-Plosive";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Reduce plosive bursts (p, b, t, d sounds)";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is DePlosiveNode {

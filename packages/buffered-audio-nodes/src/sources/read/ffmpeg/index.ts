@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { z } from "zod";
 import { BufferedSourceStream, SourceNode, type AudioChunk, type SourceMetadata, type SourceNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { deinterleaveBuffer } from "@e9g/buffered-audio-nodes-utils";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../../package-metadata";
 
 export const ffmpegSchema = z.object({
 	path: z.string().default("").meta({ input: "file", mode: "open" }),
@@ -250,7 +251,8 @@ export class ReadFfmpegStream<P extends ReadFfmpegProperties = ReadFfmpegPropert
 
 export class ReadFfmpegNode extends SourceNode<ReadFfmpegProperties> {
 	static override readonly moduleName = "ReadFfmpeg";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Read audio from a file using FFmpeg";
 	static override readonly schema = ffmpegSchema;
 	override readonly type = ["buffered-audio-node", "source", "read-ffmpeg"] as const;

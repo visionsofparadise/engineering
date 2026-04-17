@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 export const schema = z.object({
 	before: z.number().min(0).multipleOf(0.001).default(0).describe("Before"),
@@ -48,7 +49,8 @@ export class PadStream extends BufferedTransformStream<PadProperties> {
 
 export class PadNode extends TransformNode<PadProperties> {
 	static override readonly moduleName = "Pad";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Add silence to start or end of audio";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is PadNode {

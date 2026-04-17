@@ -188,8 +188,8 @@ describe("Graph executor", () => {
 			id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 			name: "Test",
 			nodes: [
-				{ id: "a", packageName: "@e9g/buffered-audio-nodes", nodeName: "read" },
-				{ id: "b", packageName: "@e9g/buffered-audio-nodes", nodeName: "write" },
+				{ id: "a", packageName: "@e9g/buffered-audio-nodes", packageVersion: "1.0.0", nodeName: "read" },
+				{ id: "b", packageName: "@e9g/buffered-audio-nodes", packageVersion: "1.0.0", nodeName: "write" },
 			],
 			edges: [{ from: "a", to: "b" }],
 		});
@@ -202,7 +202,7 @@ describe("Graph executor", () => {
 	it("validates graph definition with default name", () => {
 		const valid = validateGraphDefinition({
 			id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-			nodes: [{ id: "a", packageName: "@e9g/buffered-audio-nodes", nodeName: "read" }],
+			nodes: [{ id: "a", packageName: "@e9g/buffered-audio-nodes", packageVersion: "1.0.0", nodeName: "read" }],
 			edges: [],
 		});
 
@@ -212,7 +212,7 @@ describe("Graph executor", () => {
 	it("rejects invalid graph definition", () => {
 		expect(() =>
 			validateGraphDefinition({
-				nodes: [{ id: "", packageName: "test", nodeName: "read" }],
+				nodes: [{ id: "", packageName: "test", packageVersion: "1.0.0", nodeName: "read" }],
 				edges: [],
 			}),
 		).toThrow();
@@ -223,7 +223,7 @@ describe("Graph executor", () => {
 		const valid = validateGraphDefinition({
 			id,
 			name: "Test",
-			nodes: [{ id: "a", packageName: "test", nodeName: "read" }],
+			nodes: [{ id: "a", packageName: "test", packageVersion: "1.0.0", nodeName: "read" }],
 			edges: [],
 		});
 
@@ -234,7 +234,7 @@ describe("Graph executor", () => {
 		expect(() =>
 			validateGraphDefinition({
 				id: "not-a-uuid",
-				nodes: [{ id: "a", packageName: "test", nodeName: "read" }],
+				nodes: [{ id: "a", packageName: "test", packageVersion: "1.0.0", nodeName: "read" }],
 				edges: [],
 			}),
 		).toThrow();
@@ -243,7 +243,7 @@ describe("Graph executor", () => {
 	it("rejects graph definition without id", () => {
 		expect(() =>
 			validateGraphDefinition({
-				nodes: [{ id: "a", packageName: "test", nodeName: "read" }],
+				nodes: [{ id: "a", packageName: "test", packageVersion: "1.0.0", nodeName: "read" }],
 				edges: [],
 			}),
 		).toThrow();

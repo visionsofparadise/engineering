@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type AudioChunk, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { readWavSamples } from "../../utils/read-to-buffer";
 
 export const schema = z.object({
@@ -106,7 +107,8 @@ export class SpliceStream extends BufferedTransformStream<SpliceProperties> {
 
 export class SpliceNode extends TransformNode<SpliceProperties> {
 	static override readonly moduleName = "Splice";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Replace a region of audio with processed content";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is SpliceNode {

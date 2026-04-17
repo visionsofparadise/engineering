@@ -1,6 +1,7 @@
 import { open, type FileHandle } from "node:fs/promises";
 import { z } from "zod";
 import { BufferedTargetStream, TargetNode, WHOLE_FILE, type AudioChunk, type StreamContext, type TargetNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { updateMinMax, writeMinMaxPoint } from "./utils/minmax";
 
 export const schema = z.object({
@@ -144,7 +145,8 @@ export class WaveformStream extends BufferedTargetStream<WaveformProperties> {
 
 export class WaveformNode extends TargetNode<WaveformProperties> {
 	static override readonly moduleName = "Waveform";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Generate waveform visualization data";
 	static override readonly schema = schema;
 

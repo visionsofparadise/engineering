@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type BufferedAudioNodeInput, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { lowPassCoefficients, zeroPhaseBiquadFilter } from "@e9g/buffered-audio-nodes-utils";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { detectClickMask, buildBlendEnvelope } from "./utils/click-detection";
 
 export const schema = z.object({
@@ -73,7 +74,8 @@ export class DeClickStream extends BufferedTransformStream<DeClickProperties> {
  */
 export class DeClickNode<P extends DeClickProperties = DeClickProperties> extends TransformNode<P> {
 	static override readonly moduleName: string = "De-Click";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Remove clicks, pops, and impulse artifacts";
 	static override readonly schema: z.ZodType = schema;
 

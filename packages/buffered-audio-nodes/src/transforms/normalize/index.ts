@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 export const schema = z.object({
 	ceiling: z.number().min(0).max(1).multipleOf(0.01).default(1.0).describe("Ceiling"),
@@ -50,7 +51,8 @@ export class NormalizeStream extends BufferedTransformStream<NormalizeProperties
 
 export class NormalizeNode extends TransformNode<NormalizeProperties> {
 	static override readonly moduleName = "Normalize";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Adjust peak or loudness level to a target ceiling";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is NormalizeNode {

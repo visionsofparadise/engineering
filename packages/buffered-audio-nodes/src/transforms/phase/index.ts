@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type AudioChunk, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
 export const schema = z.object({
 	invert: z.boolean().default(true).describe("Invert"),
@@ -70,7 +71,8 @@ export class PhaseStream extends BufferedTransformStream<PhaseProperties> {
 
 export class PhaseNode extends TransformNode<PhaseProperties> {
 	static override readonly moduleName = "Phase";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Invert or rotate signal phase";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is PhaseNode {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { initFftBackend, istft, replaceChannel, stft, type FftBackend } from "@e9g/buffered-audio-nodes-utils";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { computeAverageSpectrum, averageSpectrumFromStft, computeCorrection } from "./utils/spectrum";
 
@@ -118,7 +119,8 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 
 export class EqMatchNode extends TransformNode<EqMatchProperties> {
 	static override readonly moduleName = "EQ Match";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Match frequency response to a reference profile";
 	static override readonly schema = schema;
 	static override is(value: unknown): value is EqMatchNode {

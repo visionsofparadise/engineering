@@ -5,8 +5,11 @@ import {
 	SourceNode,
 	TransformNode,
 } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../package-metadata";
 
 export class ChainNode extends CompositeNode {
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	readonly type = ["buffered-audio-node", "transform", "composite", "chain"] as const;
 
 	private readonly _head: BufferedAudioNode;

@@ -7,6 +7,7 @@ import { TransformNode } from "./transform";
 const graphNodeSchema = z.object({
 	id: z.string().min(1),
 	packageName: z.string().min(1),
+	packageVersion: z.string().min(1),
 	nodeName: z.string().min(1),
 	parameters: z.record(z.string(), z.unknown()).optional(),
 	options: z
@@ -67,6 +68,7 @@ export function pack(sources: ReadonlyArray<SourceNode>, metadata?: { name?: str
 		const graphNode: GraphNode = {
 			id,
 			packageName: ctor.packageName,
+			packageVersion: ctor.packageVersion,
 			nodeName: ctor.moduleName,
 			...(Object.keys(parameters as Record<string, unknown>).length > 0 && { parameters: parameters as Record<string, unknown> }),
 			...(Object.keys(options).length > 0 && { options }),
@@ -117,7 +119,7 @@ export function unpack(definition: GraphDefinition, registry: NodeRegistry): Arr
 		if (!fromNode) throw new Error(`Edge references unknown node: "${edge.from}"`);
 		if (!toNode) throw new Error(`Edge references unknown node: "${edge.to}"`);
 
-		if (fromNode instanceof SourceNode || fromNode instanceof TransformNode) {
+		if (SourceNode.is(fromNode) || TransformNode.is(fromNode)) {
 			fromNode.to(toNode);
 		} else {
 			throw new Error(`Cannot connect from target node "${edge.from}"`);

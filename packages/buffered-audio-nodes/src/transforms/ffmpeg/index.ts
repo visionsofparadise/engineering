@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BufferedTransformStream, FileChunkBuffer, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { runFfmpeg, runFfmpegWithFile } from "./utils/process";
 
 export const schema = z.object({
@@ -68,7 +69,8 @@ export class FfmpegStream<P extends FfmpegProperties = FfmpegProperties> extends
 
 export class FfmpegNode<P extends FfmpegProperties = FfmpegProperties> extends TransformNode<P> {
 	static override readonly moduleName: string = "FFmpeg";
-	static override readonly packageName = "buffered-audio-nodes";
+	static override readonly packageName = PACKAGE_NAME;
+	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription: string = "Process audio through FFmpeg filters";
 	static override readonly schema: z.ZodType = schema;
 	static override is(value: unknown): value is FfmpegNode {
