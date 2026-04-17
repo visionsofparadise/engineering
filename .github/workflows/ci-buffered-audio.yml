@@ -1,0 +1,62 @@
+name: Buffered Audio CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-buffered-audio.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "packages/buffered-audio-nodes-core/**"
+      - "packages/buffered-audio-nodes-utils/**"
+      - "packages/buffered-audio-nodes/**"
+  pull_request:
+    paths:
+      - ".github/workflows/ci-buffered-audio.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "packages/buffered-audio-nodes-core/**"
+      - "packages/buffered-audio-nodes-utils/**"
+      - "packages/buffered-audio-nodes/**"
+  workflow_dispatch:
+
+jobs:
+  buffered-audio:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.14"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check core
+        run: npm run check --workspace=packages/buffered-audio-nodes-core
+
+      - name: Unit core
+        run: npm run unit --workspace=packages/buffered-audio-nodes-core
+
+      - name: Build core
+        run: npm run build --workspace=packages/buffered-audio-nodes-core
+
+      - name: Check utils
+        run: npm run check --workspace=packages/buffered-audio-nodes-utils
+
+      - name: Unit utils
+        run: npm run unit --workspace=packages/buffered-audio-nodes-utils
+
+      - name: Build utils
+        run: npm run build --workspace=packages/buffered-audio-nodes-utils
+
+      - name: Check nodes
+        run: npm run check --workspace=packages/buffered-audio-nodes
+
+      - name: Unit nodes
+        run: npm run unit --workspace=packages/buffered-audio-nodes
+
+      - name: Build nodes
+        run: npm run build --workspace=packages/buffered-audio-nodes
