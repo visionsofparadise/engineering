@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { runTransform } from "../../utils/test-pipeline";
 import { notSilent, somethingChanged, notAnomalous } from "../../utils/test-audio";
-import { audio, binaries } from "../../utils/test-binaries";
+import { audio, binaries, hasBinaryFixtures } from "../../utils/test-binaries";
 import { timeStretch } from ".";
 
 const testVoice = audio.testVoice;
+const describeIfFfmpegFixture = hasBinaryFixtures("ffmpeg") ? describe : describe.skip;
 
-describe("time-stretch", () => {
+describeIfFfmpegFixture("time-stretch", () => {
 	it("processes voice audio", async () => {
 		const transform = timeStretch(binaries.ffmpeg, 1.5);
 		const { input, output, context } = await runTransform(testVoice, transform);

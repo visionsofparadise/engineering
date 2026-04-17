@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { runTransform } from "../../utils/test-pipeline";
 import { notSilent, expectedDuration, somethingChanged, notAnomalous } from "../../utils/test-audio";
-import { audio, binaries } from "../../utils/test-binaries";
+import { audio, binaries, hasBinaryFixtures } from "../../utils/test-binaries";
 import { dialogueIsolate } from ".";
 
 const testVoice = audio.testVoice;
+const describeIfFixtureSet = hasBinaryFixtures("ffmpeg", "onnxAddon", "kimVocal2") ? describe : describe.skip;
 
-describe("dialogue-isolate", () => {
+describeIfFixtureSet("dialogue-isolate", () => {
 	it("processes voice audio", async () => {
 		const transform = dialogueIsolate({
 			modelPath: binaries.kimVocal2,

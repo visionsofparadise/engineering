@@ -1,7 +1,11 @@
+import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const fixturesDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../fixtures");
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = resolve(packageRoot, "../..");
+const fixturesDir = resolve(repoRoot, "../fixtures");
+const demoAudioDir = resolve(repoRoot, "apps/spectral-display-demo/public");
 const binariesDir = resolve(fixturesDir, "binaries");
 
 export const binaries = {
@@ -14,9 +18,18 @@ export const binaries = {
 	model2: resolve(binariesDir, "model_2.onnx"),
 	kimVocal2: resolve(binariesDir, "Kim_Vocal_2.onnx"),
 	htdemucs: resolve(binariesDir, "htdemucs.onnx"),
+	htdemucsData: resolve(binariesDir, "htdemucs.onnx.data"),
 } as const;
 
 export const audio = {
-	testVoice: resolve(fixturesDir, "audio/test-voice.wav"),
-	testMusic: resolve(fixturesDir, "audio/test-music.wav"),
+	testVoice: resolve(demoAudioDir, "test-voice.wav"),
+	testMusic: resolve(demoAudioDir, "test-music.wav"),
 } as const;
+
+export function hasAudioFixtures(...names: Array<keyof typeof audio>): boolean {
+	return names.every(name => existsSync(audio[name]));
+}
+
+export function hasBinaryFixtures(...names: Array<keyof typeof binaries>): boolean {
+	return names.every(name => existsSync(binaries[name]));
+}

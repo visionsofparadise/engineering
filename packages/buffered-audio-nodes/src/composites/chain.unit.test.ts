@@ -219,7 +219,7 @@ describe("chain()", () => {
 
 		const c = chain(source, target);
 
-		expect(() => c.to(target2)).toThrow("Cannot connect downstream from a TargetNode");
+		expect(() => c.to(target2)).toThrow("Cannot connect downstream from a target node; this composite is a complete pipeline");
 	});
 
 	it("throws on setup() when chain head is a SourceNode", async () => {
@@ -236,7 +236,7 @@ describe("chain()", () => {
 			visited: new Set(),
 		};
 
-		await expect(c.setup(fakeReadable, fakeContext)).rejects.toThrow("Cannot setup a composite whose head is a SourceNode");
+		await expect(c.setup(fakeReadable, fakeContext)).rejects.toThrow("Cannot setup a composite whose head is a source node; use render() for complete pipelines");
 	});
 
 	it("throws on render() when chain head is not a SourceNode", async () => {
@@ -245,6 +245,6 @@ describe("chain()", () => {
 
 		const c = chain(t1, t2);
 
-		await expect(c.render()).rejects.toThrow("Cannot render a composite whose head is not a SourceNode");
+		await expect(c.render()).rejects.toThrow("Cannot render a composite whose head is not a source node");
 	});
 });

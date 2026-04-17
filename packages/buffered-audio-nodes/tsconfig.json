@@ -1,8 +1,15 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "baseUrl": "../..",
     "lib": ["ES2020", "DOM"],
     "incremental": true,
+    "paths": {
+      "@e9g/buffered-audio-nodes-core": ["packages/buffered-audio-nodes-core/src/index.ts"],
+      "@e9g/buffered-audio-nodes-core/*": ["packages/buffered-audio-nodes-core/src/*"],
+      "@e9g/buffered-audio-nodes-utils": ["packages/buffered-audio-nodes-utils/src/index.ts"],
+      "@e9g/buffered-audio-nodes-utils/*": ["packages/buffered-audio-nodes-utils/src/*"]
+    },
     "tsBuildInfoFile": ".tsbuildinfo"
   },
   "include": ["src/**/*"],
