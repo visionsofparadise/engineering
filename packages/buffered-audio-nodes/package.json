@@ -22,7 +22,8 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/visionsofparadise/buffered-audio-nodes.git"
+    "url": "https://github.com/visionsofparadise/engineering",
+    "directory": "packages/buffered-audio-nodes"
   },
   "scripts": {
     "check": "concurrently \"eslint . --fix --cache --format ../../agent-eslint.js\" \"tsc --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\"",

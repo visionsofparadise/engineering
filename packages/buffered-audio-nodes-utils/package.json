@@ -17,6 +17,11 @@
   },
   "author": "Matt Cavender",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/visionsofparadise/engineering",
+    "directory": "packages/buffered-audio-nodes-utils"
+  },
   "scripts": {
     "check": "concurrently \"eslint . --fix --cache --format ../../agent-eslint.js\" \"tsc --noEmit --pretty false 2>&1 | node ../../agent-tsc.js\"",
     "check:verbose": "concurrently \"eslint .\" \"tsc --noEmit\"",
