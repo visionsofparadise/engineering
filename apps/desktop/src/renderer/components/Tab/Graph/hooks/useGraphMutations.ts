@@ -1,4 +1,5 @@
 import type { GraphEdge, GraphNode } from "@e9g/buffered-audio-nodes-core";
+import { useMemo, useRef } from "react";
 import type { GraphContext } from "../../../../models/Context";
 
 interface Position {
@@ -18,298 +19,327 @@ interface GraphMutations {
 }
 
 export function useGraphMutations(context: GraphContext): GraphMutations {
-	const { graphDefinition, mutateDefinition, pushHistory } = context;
+	// Stable mutations object: read latest context via ref so each method always sees
+	// current graphDefinition/mutateDefinition/pushHistory without churning identity.
+	// Without this, every render returned a new {} and cascaded into Canvas's setNodes
+	// effect, hitting React's "Maximum update depth exceeded".
+	const contextRef = useRef(context);
 
-	function addNode(packageName: string, packageVersion: string, nodeName: string, position: Position): void {
-		const id = crypto.randomUUID();
+	contextRef.current = context;
 
-		const node: GraphNode = {
-			id,
-			packageName,
-			packageVersion,
-			nodeName,
-			parameters: {},
-		};
+	return useMemo<GraphMutations>(() => {
+		function addNode(packageName: string, packageVersion: string, nodeName: string, position: Position): void {
+			const { mutateDefinition, pushHistory, graphStore, graph } = contextRef.current;
+			const id = crypto.randomUUID();
 
-		mutateDefinition((definition) => ({
-			...definition,
-			nodes: [...definition.nodes, node],
-		}));
+			const node: GraphNode = {
+				id,
+				packageName,
+				packageVersion,
+				nodeName,
+				parameters: {},
+			};
 
-		context.graphStore.mutate(context.graph, (proxy) => {
-			proxy.positions[id] = { x: position.x, y: position.y };
-		});
+			mutateDefinition((definition) => ({
+				...definition,
+				nodes: [...definition.nodes, node],
+			}));
 
-		pushHistory({
-			label: `Add ${nodeName}`,
-			undo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: definition.nodes.filter((node) => node.id !== id),
-				}));
-				context.graphStore.mutate(context.graph, (proxy) => {
-					const { [id]: _removedPosition, ...remainingPositions } = proxy.positions;
+			graphStore.mutate(graph, (proxy) => {
+				proxy.positions[id] = { x: position.x, y: position.y };
+			});
 
-					proxy.positions = remainingPositions;
-				});
-			},
-			redo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: [...definition.nodes, node],
-				}));
-				context.graphStore.mutate(context.graph, (proxy) => {
-					proxy.positions[id] = { x: position.x, y: position.y };
-				});
-			},
-		});
-	}
+			pushHistory({
+				label: `Add ${nodeName}`,
+				undo: () => {
+					const current = contextRef.current;
 
-	function removeNode(nodeId: string): void {
-		const removedNode = graphDefinition.nodes.find((node) => node.id === nodeId);
-		const removedEdges = graphDefinition.edges.filter((edge) => edge.from === nodeId || edge.to === nodeId);
-		const removedPosition = graphDefinition.nodes.find((node) => node.id === nodeId) ? context.graph.positions[nodeId] : undefined;
+					current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.filter((node) => node.id !== id),
+					}));
+					current.graphStore.mutate(current.graph, (proxy) => {
+						const { [id]: _removedPosition, ...remainingPositions } = proxy.positions;
 
-		mutateDefinition((definition) => ({
-			...definition,
-			nodes: definition.nodes.filter((node) => node.id !== nodeId),
-			edges: definition.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
-		}));
-
-		context.graphStore.mutate(context.graph, (proxy) => {
-			const { [nodeId]: _removedPosition, ...remainingPositions } = proxy.positions;
-
-			proxy.positions = remainingPositions;
-		});
-
-		pushHistory({
-			label: `Remove node`,
-			undo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: removedNode ? [...definition.nodes, removedNode] : definition.nodes,
-					edges: [...definition.edges, ...removedEdges],
-				}));
-				if (removedPosition) {
-					context.graphStore.mutate(context.graph, (proxy) => {
-						proxy.positions[nodeId] = { x: removedPosition.x, y: removedPosition.y };
+						proxy.positions = remainingPositions;
 					});
-				}
-			},
-			redo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: definition.nodes.filter((node) => node.id !== nodeId),
-					edges: definition.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
-				}));
-				context.graphStore.mutate(context.graph, (proxy) => {
-					const { [nodeId]: _removedPosition, ...remainingPositions } = proxy.positions;
+				},
+				redo: () => {
+					const current = contextRef.current;
 
-					proxy.positions = remainingPositions;
-				});
-			},
-		});
-	}
+					current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: [...definition.nodes, node],
+					}));
+					current.graphStore.mutate(current.graph, (proxy) => {
+						proxy.positions[id] = { x: position.x, y: position.y };
+					});
+				},
+			});
+		}
 
-	function addEdge(from: string, to: string): void {
-		const edge: GraphEdge = { from, to };
+		function removeNode(nodeId: string): void {
+			const { graphDefinition, mutateDefinition, pushHistory, graphStore, graph } = contextRef.current;
+			const removedNode = graphDefinition.nodes.find((node) => node.id === nodeId);
+			const removedEdges = graphDefinition.edges.filter((edge) => edge.from === nodeId || edge.to === nodeId);
+			const removedPosition = graphDefinition.nodes.find((node) => node.id === nodeId) ? graph.positions[nodeId] : undefined;
 
-		mutateDefinition((definition) => ({
-			...definition,
-			edges: [...definition.edges, edge],
-		}));
+			mutateDefinition((definition) => ({
+				...definition,
+				nodes: definition.nodes.filter((node) => node.id !== nodeId),
+				edges: definition.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
+			}));
 
-		pushHistory({
-			label: `Connect ${from} to ${to}`,
-			undo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					edges: definition.edges.filter((edge) => !(edge.from === from && edge.to === to)),
-				}));
-			},
-			redo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					edges: [...definition.edges, edge],
-				}));
-			},
-		});
-	}
+			graphStore.mutate(graph, (proxy) => {
+				const { [nodeId]: _removedPosition, ...remainingPositions } = proxy.positions;
 
-	function removeEdge(from: string, to: string): void {
-		mutateDefinition((definition) => ({
-			...definition,
-			edges: definition.edges.filter((edge) => !(edge.from === from && edge.to === to)),
-		}));
+				proxy.positions = remainingPositions;
+			});
 
-		pushHistory({
-			label: `Disconnect ${from} from ${to}`,
-			undo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					edges: [...definition.edges, { from, to }],
-				}));
-			},
-			redo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					edges: definition.edges.filter((edge) => !(edge.from === from && edge.to === to)),
-				}));
-			},
-		});
-	}
+			pushHistory({
+				label: `Remove node`,
+				undo: () => {
+					const current = contextRef.current;
 
-	function insertNodeOnEdge(edge: GraphEdge, packageName: string, packageVersion: string, nodeName: string): void {
-		const id = crypto.randomUUID();
+					current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: removedNode ? [...definition.nodes, removedNode] : definition.nodes,
+						edges: [...definition.edges, ...removedEdges],
+					}));
+					if (removedPosition) {
+						current.graphStore.mutate(current.graph, (proxy) => {
+							proxy.positions[nodeId] = { x: removedPosition.x, y: removedPosition.y };
+						});
+					}
+				},
+				redo: () => {
+					const current = contextRef.current;
 
-		const node: GraphNode = {
-			id,
-			packageName,
-			packageVersion,
-			nodeName,
-			parameters: {},
+					current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.filter((node) => node.id !== nodeId),
+						edges: definition.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
+					}));
+					current.graphStore.mutate(current.graph, (proxy) => {
+						const { [nodeId]: _removedPosition, ...remainingPositions } = proxy.positions;
+
+						proxy.positions = remainingPositions;
+					});
+				},
+			});
+		}
+
+		function addEdge(from: string, to: string): void {
+			const { mutateDefinition, pushHistory } = contextRef.current;
+			const edge: GraphEdge = { from, to };
+
+			mutateDefinition((definition) => ({
+				...definition,
+				edges: [...definition.edges, edge],
+			}));
+
+			pushHistory({
+				label: `Connect ${from} to ${to}`,
+				undo: () => {
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						edges: definition.edges.filter((edge) => !(edge.from === from && edge.to === to)),
+					}));
+				},
+				redo: () => {
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						edges: [...definition.edges, edge],
+					}));
+				},
+			});
+		}
+
+		function removeEdge(from: string, to: string): void {
+			const { mutateDefinition, pushHistory } = contextRef.current;
+
+			mutateDefinition((definition) => ({
+				...definition,
+				edges: definition.edges.filter((edge) => !(edge.from === from && edge.to === to)),
+			}));
+
+			pushHistory({
+				label: `Disconnect ${from} from ${to}`,
+				undo: () => {
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						edges: [...definition.edges, { from, to }],
+					}));
+				},
+				redo: () => {
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						edges: definition.edges.filter((edge) => !(edge.from === from && edge.to === to)),
+					}));
+				},
+			});
+		}
+
+		function insertNodeOnEdge(edge: GraphEdge, packageName: string, packageVersion: string, nodeName: string): void {
+			const { mutateDefinition, pushHistory, graphStore, graph } = contextRef.current;
+			const id = crypto.randomUUID();
+
+			const node: GraphNode = {
+				id,
+				packageName,
+				packageVersion,
+				nodeName,
+				parameters: {},
+			};
+
+			const fromPosition = graph.positions[edge.from];
+			const toPosition = graph.positions[edge.to];
+
+			const position: Position = fromPosition && toPosition ? { x: (fromPosition.x + toPosition.x) / 2, y: (fromPosition.y + toPosition.y) / 2 } : { x: 0, y: 0 };
+
+			mutateDefinition((definition) => ({
+				...definition,
+				nodes: [...definition.nodes, node],
+				edges: [...definition.edges.filter((graphEdge) => !(graphEdge.from === edge.from && graphEdge.to === edge.to)), { from: edge.from, to: id }, { from: id, to: edge.to }],
+			}));
+
+			graphStore.mutate(graph, (proxy) => {
+				proxy.positions[id] = { x: position.x, y: position.y };
+			});
+
+			pushHistory({
+				label: `Insert ${nodeName} on edge`,
+				undo: () => {
+					const current = contextRef.current;
+
+					current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.filter((node) => node.id !== id),
+						edges: [
+							...definition.edges.filter((graphEdge) => !(graphEdge.from === edge.from && graphEdge.to === id) && !(graphEdge.from === id && graphEdge.to === edge.to)),
+							{ from: edge.from, to: edge.to },
+						],
+					}));
+					current.graphStore.mutate(current.graph, (proxy) => {
+						const { [id]: _removedPosition, ...remainingPositions } = proxy.positions;
+
+						proxy.positions = remainingPositions;
+					});
+				},
+				redo: () => {
+					const current = contextRef.current;
+
+					current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: [...definition.nodes, node],
+						edges: [...definition.edges.filter((graphEdge) => !(graphEdge.from === edge.from && graphEdge.to === edge.to)), { from: edge.from, to: id }, { from: id, to: edge.to }],
+					}));
+					current.graphStore.mutate(current.graph, (proxy) => {
+						proxy.positions[id] = { x: position.x, y: position.y };
+					});
+				},
+			});
+		}
+
+		function toggleBypass(nodeId: string): void {
+			const { graphDefinition, mutateDefinition, pushHistory } = contextRef.current;
+			const currentNode = graphDefinition.nodes.find((node) => node.id === nodeId);
+			const wasBypassed = currentNode?.options?.bypass ?? false;
+
+			mutateDefinition((definition) => ({
+				...definition,
+				nodes: definition.nodes.map((node) => (node.id === nodeId ? { ...node, options: { ...node.options, bypass: !wasBypassed } } : node)),
+			}));
+
+			pushHistory({
+				label: `${wasBypassed ? "Enable" : "Bypass"} node`,
+				undo: () => {
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) => (node.id === nodeId ? { ...node, options: { ...node.options, bypass: wasBypassed } } : node)),
+					}));
+				},
+				redo: () => {
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) => (node.id === nodeId ? { ...node, options: { ...node.options, bypass: !wasBypassed } } : node)),
+					}));
+				},
+			});
+		}
+
+		function setGraphName(name: string): void {
+			const { graphDefinition, mutateDefinition, pushHistory } = contextRef.current;
+			const previousName = graphDefinition.name;
+
+			mutateDefinition((definition) => ({
+				...definition,
+				name,
+			}));
+
+			pushHistory({
+				label: `Rename graph to "${name}"`,
+				undo: () => {
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						name: previousName,
+					}));
+				},
+				redo: () => {
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						name,
+					}));
+				},
+			});
+		}
+
+		function updateNodeParameters(nodeId: string, parameterName: string, value: unknown): void {
+			const { graphDefinition, mutateDefinition, pushHistory } = contextRef.current;
+			const currentNode = graphDefinition.nodes.find((node) => node.id === nodeId);
+			const previousValue = currentNode?.parameters?.[parameterName];
+
+			mutateDefinition((definition) => ({
+				...definition,
+				nodes: definition.nodes.map((node) =>
+					node.id === nodeId
+						? { ...node, parameters: { ...node.parameters, [parameterName]: value } }
+						: node,
+				),
+			}));
+
+			pushHistory({
+				label: `Change ${parameterName}`,
+				undo: () =>
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) =>
+							node.id === nodeId
+								? { ...node, parameters: { ...node.parameters, [parameterName]: previousValue } }
+								: node,
+						),
+					})),
+				redo: () =>
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) =>
+							node.id === nodeId
+								? { ...node, parameters: { ...node.parameters, [parameterName]: value } }
+								: node,
+						),
+					})),
+			});
+		}
+
+		return {
+			addNode,
+			removeNode,
+			addEdge,
+			removeEdge,
+			insertNodeOnEdge,
+			toggleBypass,
+			setGraphName,
+			updateNodeParameters,
 		};
-
-		const fromPosition = context.graph.positions[edge.from];
-		const toPosition = context.graph.positions[edge.to];
-
-		const position: Position = fromPosition && toPosition ? { x: (fromPosition.x + toPosition.x) / 2, y: (fromPosition.y + toPosition.y) / 2 } : { x: 0, y: 0 };
-
-		mutateDefinition((definition) => ({
-			...definition,
-			nodes: [...definition.nodes, node],
-			edges: [...definition.edges.filter((graphEdge) => !(graphEdge.from === edge.from && graphEdge.to === edge.to)), { from: edge.from, to: id }, { from: id, to: edge.to }],
-		}));
-
-		context.graphStore.mutate(context.graph, (proxy) => {
-			proxy.positions[id] = { x: position.x, y: position.y };
-		});
-
-		pushHistory({
-			label: `Insert ${nodeName} on edge`,
-			undo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: definition.nodes.filter((node) => node.id !== id),
-					edges: [
-						...definition.edges.filter((graphEdge) => !(graphEdge.from === edge.from && graphEdge.to === id) && !(graphEdge.from === id && graphEdge.to === edge.to)),
-						{ from: edge.from, to: edge.to },
-					],
-				}));
-				context.graphStore.mutate(context.graph, (proxy) => {
-					const { [id]: _removedPosition, ...remainingPositions } = proxy.positions;
-
-					proxy.positions = remainingPositions;
-				});
-			},
-			redo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: [...definition.nodes, node],
-					edges: [...definition.edges.filter((graphEdge) => !(graphEdge.from === edge.from && graphEdge.to === edge.to)), { from: edge.from, to: id }, { from: id, to: edge.to }],
-				}));
-				context.graphStore.mutate(context.graph, (proxy) => {
-					proxy.positions[id] = { x: position.x, y: position.y };
-				});
-			},
-		});
-	}
-
-	function toggleBypass(nodeId: string): void {
-		const currentNode = graphDefinition.nodes.find((node) => node.id === nodeId);
-		const wasBypassed = currentNode?.options?.bypass ?? false;
-
-		mutateDefinition((definition) => ({
-			...definition,
-			nodes: definition.nodes.map((node) => (node.id === nodeId ? { ...node, options: { ...node.options, bypass: !wasBypassed } } : node)),
-		}));
-
-		pushHistory({
-			label: `${wasBypassed ? "Enable" : "Bypass"} node`,
-			undo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: definition.nodes.map((node) => (node.id === nodeId ? { ...node, options: { ...node.options, bypass: wasBypassed } } : node)),
-				}));
-			},
-			redo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: definition.nodes.map((node) => (node.id === nodeId ? { ...node, options: { ...node.options, bypass: !wasBypassed } } : node)),
-				}));
-			},
-		});
-	}
-
-	function setGraphName(name: string): void {
-		const previousName = graphDefinition.name;
-
-		mutateDefinition((definition) => ({
-			...definition,
-			name,
-		}));
-
-		pushHistory({
-			label: `Rename graph to "${name}"`,
-			undo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					name: previousName,
-				}));
-			},
-			redo: () => {
-				mutateDefinition((definition) => ({
-					...definition,
-					name,
-				}));
-			},
-		});
-	}
-
-	function updateNodeParameters(nodeId: string, parameterName: string, value: unknown): void {
-		const currentNode = graphDefinition.nodes.find((node) => node.id === nodeId);
-		const previousValue = currentNode?.parameters?.[parameterName];
-
-		mutateDefinition((definition) => ({
-			...definition,
-			nodes: definition.nodes.map((node) =>
-				node.id === nodeId
-					? { ...node, parameters: { ...node.parameters, [parameterName]: value } }
-					: node,
-			),
-		}));
-
-		pushHistory({
-			label: `Change ${parameterName}`,
-			undo: () =>
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: definition.nodes.map((node) =>
-						node.id === nodeId
-							? { ...node, parameters: { ...node.parameters, [parameterName]: previousValue } }
-							: node,
-					),
-				})),
-			redo: () =>
-				mutateDefinition((definition) => ({
-					...definition,
-					nodes: definition.nodes.map((node) =>
-						node.id === nodeId
-							? { ...node, parameters: { ...node.parameters, [parameterName]: value } }
-							: node,
-					),
-				})),
-		});
-	}
-
-	return {
-		addNode,
-		removeNode,
-		addEdge,
-		removeEdge,
-		insertNodeOnEdge,
-		toggleBypass,
-		setGraphName,
-		updateNodeParameters,
-	};
+	}, []);
 }

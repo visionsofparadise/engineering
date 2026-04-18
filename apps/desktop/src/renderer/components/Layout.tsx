@@ -7,6 +7,7 @@ import { usePackageLoader } from "../hooks/usePackageLoader";
 import { useWindowState } from "../hooks/useWindowState";
 import type { AppContext, HistoryState } from "../models/Context";
 import { main } from "../models/Main";
+import { MainEvents } from "../models/MainEvents";
 import type { ProxyStore } from "../models/ProxyStore/ProxyStore";
 import { useAppState, type AppState } from "../models/State/App";
 import { loadBag, newBag, openBag } from "../utilities/bagOperations";
@@ -28,7 +29,9 @@ interface Props {
 export function AppLayout({ initialState, windowId, userDataPath, appStore, queryClient, logger }: Props) {
 	const app = useAppState(initialState, appStore);
 
-	useWindowState(app, appStore, main);
+	const mainEvents = useMemo(() => new MainEvents(main), []);
+
+	useWindowState(app, appStore, main, mainEvents);
 	useAutosave(app, appStore, main, userDataPath);
 
 	const { isLoading } = usePackageLoader(app, appStore, main);
@@ -127,6 +130,7 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 			appStore,
 			logger,
 			main,
+			mainEvents,
 			queryClient,
 			userDataPath,
 			windowId,
@@ -139,7 +143,7 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 			renameTab,
 			importBagIntoActiveTab,
 		}),
-		[app, windowId, userDataPath, openBagTab, newBagTab, renameTab, importBagIntoActiveTab],
+		[app, mainEvents, windowId, userDataPath, openBagTab, newBagTab, renameTab, importBagIntoActiveTab],
 	);
 
 	useEffect(() => {

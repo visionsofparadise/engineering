@@ -1,4 +1,3 @@
-import type { IpcRendererEvent } from "electron";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AudioChainCompletePayload, AudioProgressPayload } from "../../../../../shared/utilities/emitToRenderer";
 import type { GraphContext } from "../../../../models/Context";
@@ -45,7 +44,7 @@ export function useRenderJob(context: GraphContext, refresh: () => void): UseRen
 
 	// Subscribe to audio:progress events
 	useEffect(() => {
-		const handler = (_event: IpcRendererEvent, payload: AudioProgressPayload): void => {
+		const handler = (payload: AudioProgressPayload): void => {
 			if (payload.jobId !== activeJobIdRef.current) return;
 
 			setProcessingNodes((previous) => {
@@ -57,16 +56,16 @@ export function useRenderJob(context: GraphContext, refresh: () => void): UseRen
 			});
 		};
 
-		context.main.events.on("audio:progress", handler);
+		context.mainEvents.on("audio:progress", handler);
 
 		return () => {
-			context.main.events.removeListener("audio:progress", handler);
+			context.mainEvents.off("audio:progress", handler);
 		};
-	}, [context.main]);
+	}, [context.mainEvents]);
 
 	// Subscribe to audio:chainComplete events
 	useEffect(() => {
-		const handler = (_event: IpcRendererEvent, payload: AudioChainCompletePayload): void => {
+		const handler = (payload: AudioChainCompletePayload): void => {
 			if (payload.jobId !== activeJobIdRef.current) return;
 
 			switch (payload.status) {
@@ -95,12 +94,12 @@ export function useRenderJob(context: GraphContext, refresh: () => void): UseRen
 			}
 		};
 
-		context.main.events.on("audio:chainComplete", handler);
+		context.mainEvents.on("audio:chainComplete", handler);
 
 		return () => {
-			context.main.events.removeListener("audio:chainComplete", handler);
+			context.mainEvents.off("audio:chainComplete", handler);
 		};
-	}, [context.main, refresh]);
+	}, [context.mainEvents, refresh]);
 
 	return { startRender, abortRender, activeJobId, processingNodes, errorNodes };
 }

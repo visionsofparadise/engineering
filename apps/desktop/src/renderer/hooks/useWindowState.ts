@@ -1,42 +1,41 @@
 import { useEffect } from "react";
-import type { IpcRendererEvent } from "electron";
 import type { Snapshot } from "valtio/vanilla";
 import type { Main } from "../models/Main";
+import type { MainEvents } from "../models/MainEvents";
 import type { ProxyStore } from "../models/ProxyStore/ProxyStore";
 import type { AppState, WindowBounds } from "../models/State/App";
 
-export function useWindowState(app: Snapshot<AppState>, appStore: ProxyStore, main: Main): void {
+export function useWindowState(app: Snapshot<AppState>, appStore: ProxyStore, main: Main, mainEvents: MainEvents): void {
 	useEffect(() => {
 		// Restore saved window bounds on mount
 		if (app.windowBounds) {
-			const bounds = app.windowBounds;
+			const { x, y, width, height } = app.windowBounds;
 
 			void main.getAllDisplays().then((displays) => {
 				const isVisible = displays.some(
 					(display) =>
-						bounds.x < display.x + display.width &&
-						bounds.x + bounds.width > display.x &&
-						bounds.y < display.y + display.height &&
-						bounds.y + bounds.height > display.y,
+						x < display.x + display.width &&
+						x + width > display.x &&
+						y < display.y + display.height &&
+						y + height > display.y,
 				);
 
 				if (isVisible) {
-					void main.setBounds(bounds);
+					void main.setBounds({ x, y, width, height });
 				}
 			});
 		}
 
-		// Subscribe to window bounds changes from main process
-		const listener = (_event: IpcRendererEvent, windowBounds: WindowBounds): void => {
+		const listener = (windowBounds: WindowBounds): void => {
 			appStore.mutate(app, (proxy) => {
 				proxy.windowBounds = windowBounds;
 			});
 		};
 
-		main.events.on("windowBoundsChanged", listener);
+		mainEvents.on("windowBoundsChanged", listener);
 
 		return () => {
-			main.events.removeListener("windowBoundsChanged", listener);
+			mainEvents.off("windowBoundsChanged", listener);
 		};
-	}, [app._key, appStore, main]);
+	}, [app._key, appStore, main, mainEvents]);
 }

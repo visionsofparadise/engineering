@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef } from "react";
 import type { FileChangedPayload } from "../../shared/utilities/emitToRenderer";
 import type { AppContext } from "../models/Context";
 
+
+
 async function sha256Hex(content: string): Promise<string> {
 	const encoded = new TextEncoder().encode(content);
 	const buffer = await crypto.subtle.digest("SHA-256", encoded);
@@ -25,7 +27,7 @@ export function useGraphDefinition(
 	isLoading: boolean;
 	error: Error | null;
 } {
-	const { main, queryClient } = context;
+	const { main, mainEvents, queryClient } = context;
 	const hashRef = useRef<string | null>(null);
 	const key = queryKey(bagPath);
 
@@ -74,7 +76,7 @@ export function useGraphDefinition(
 
 	// Reconcile external edits
 	useEffect(() => {
-		const handler = (_event: unknown, payload: FileChangedPayload): void => {
+		const handler = (payload: FileChangedPayload): void => {
 			if (payload.path !== bagPath) return;
 			if (hashRef.current === null) return;
 			if (payload.contentHash === hashRef.current) return;
@@ -82,12 +84,12 @@ export function useGraphDefinition(
 			void queryClient.invalidateQueries({ queryKey: key });
 		};
 
-		main.events.on("file:changed", handler);
+		mainEvents.on("file:changed", handler);
 
 		return () => {
-			main.events.removeListener("file:changed", handler);
+			mainEvents.off("file:changed", handler);
 		};
-	}, [bagPath, main, queryClient, key]);
+	}, [bagPath, mainEvents, queryClient, key]);
 
 	return { graphDefinition, mutateDefinition, isLoading, error };
 }
