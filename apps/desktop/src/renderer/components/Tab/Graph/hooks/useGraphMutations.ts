@@ -15,7 +15,14 @@ interface GraphMutations {
 	insertNodeOnEdge: (edge: GraphEdge, packageName: string, packageVersion: string, nodeName: string) => void;
 	toggleBypass: (nodeId: string) => void;
 	setGraphName: (name: string) => void;
-	updateNodeParameters: (nodeId: string, parameterName: string, value: unknown) => void;
+	/** Set a nested parameter value at a path. path[0] is the top-level parameter name. */
+	setParameterAtPath: (nodeId: string, path: ReadonlyArray<string | number>, value: unknown) => void;
+	/** Append a new item (plain JSON object) to an array parameter. */
+	addArrayRow: (nodeId: string, paramName: string, defaultItem: Record<string, unknown>) => void;
+	/** Remove an item from an array parameter by index. */
+	deleteArrayRow: (nodeId: string, paramName: string, rowIndex: number) => void;
+	/** Move an item in an array parameter from one index to another. */
+	reorderArrayRows: (nodeId: string, paramName: string, fromIndex: number, toIndex: number) => void;
 }
 
 export function useGraphMutations(context: GraphContext): GraphMutations {
@@ -294,28 +301,94 @@ export function useGraphMutations(context: GraphContext): GraphMutations {
 			});
 		}
 
-		function updateNodeParameters(nodeId: string, parameterName: string, value: unknown): void {
+		// ------------------------------------------------------------------
+		// Nested path helpers
+		// ------------------------------------------------------------------
+
+		/**
+		 * Deep-clone a plain JSON value.
+		 * Only handles the subset produced by BAG parameters: objects, arrays, primitives.
+		 */
+		function deepClone(value: unknown): unknown {
+			if (value === null || typeof value !== "object") return value;
+
+			if (Array.isArray(value)) return value.map(deepClone);
+
+			const cloned: Record<string, unknown> = {};
+
+			for (const [key, fieldValue] of Object.entries(value as Record<string, unknown>)) {
+				cloned[key] = deepClone(fieldValue);
+			}
+
+			return cloned;
+		}
+
+		/**
+		 * Return a deep-cloned copy of `root` with the nested location
+		 * described by `subPath` set to `newValue`.
+		 * `subPath` is the path after the top-level parameter name.
+		 */
+		function withNestedValue(
+			root: unknown,
+			subPath: ReadonlyArray<string | number>,
+			newValue: unknown,
+		): unknown {
+			if (subPath.length === 0) return newValue;
+
+			const head = subPath[0];
+			const tail = subPath.slice(1);
+
+			if (typeof head === "number") {
+				const arr: Array<unknown> = Array.isArray(root) ? [...(root as Array<unknown>)] : [];
+
+				arr[head] = withNestedValue(arr[head], tail, newValue);
+
+				return arr;
+			}
+
+			if (typeof head === "string") {
+				const record = root !== null && typeof root === "object" && !Array.isArray(root)
+					? { ...(root as Record<string, unknown>) }
+					: {};
+
+				record[head] = withNestedValue(record[head], tail, newValue);
+
+				return record;
+			}
+
+			return root;
+		}
+
+		function setParameterAtPath(nodeId: string, path: ReadonlyArray<string | number>, value: unknown): void {
+			if (path.length === 0) return;
+
 			const { graphDefinition, mutateDefinition, pushHistory } = contextRef.current;
 			const currentNode = graphDefinition.nodes.find((node) => node.id === nodeId);
-			const previousValue = currentNode?.parameters?.[parameterName];
+			const topLevelName = path[0];
+
+			if (typeof topLevelName !== "string") return;
+
+			const subPath = path.slice(1);
+			const previousTopValue = deepClone(currentNode?.parameters?.[topLevelName]);
+			const newTopValue = withNestedValue(previousTopValue, subPath, value);
 
 			mutateDefinition((definition) => ({
 				...definition,
 				nodes: definition.nodes.map((node) =>
 					node.id === nodeId
-						? { ...node, parameters: { ...node.parameters, [parameterName]: value } }
+						? { ...node, parameters: { ...node.parameters, [topLevelName]: newTopValue } }
 						: node,
 				),
 			}));
 
 			pushHistory({
-				label: `Change ${parameterName}`,
+				label: `Change ${topLevelName}`,
 				undo: () =>
 					contextRef.current.mutateDefinition((definition) => ({
 						...definition,
 						nodes: definition.nodes.map((node) =>
 							node.id === nodeId
-								? { ...node, parameters: { ...node.parameters, [parameterName]: previousValue } }
+								? { ...node, parameters: { ...node.parameters, [topLevelName]: previousTopValue } }
 								: node,
 						),
 					})),
@@ -324,7 +397,135 @@ export function useGraphMutations(context: GraphContext): GraphMutations {
 						...definition,
 						nodes: definition.nodes.map((node) =>
 							node.id === nodeId
-								? { ...node, parameters: { ...node.parameters, [parameterName]: value } }
+								? { ...node, parameters: { ...node.parameters, [topLevelName]: newTopValue } }
+								: node,
+						),
+					})),
+			});
+		}
+
+		function addArrayRow(nodeId: string, paramName: string, defaultItem: Record<string, unknown>): void {
+			const { graphDefinition, mutateDefinition, pushHistory } = contextRef.current;
+			const currentNode = graphDefinition.nodes.find((node) => node.id === nodeId);
+			const previousArray = Array.isArray(currentNode?.parameters?.[paramName])
+				? [...(currentNode.parameters[paramName] as Array<unknown>)]
+				: [];
+			const newArray = [...previousArray, defaultItem];
+
+			mutateDefinition((definition) => ({
+				...definition,
+				nodes: definition.nodes.map((node) =>
+					node.id === nodeId
+						? { ...node, parameters: { ...node.parameters, [paramName]: newArray } }
+						: node,
+				),
+			}));
+
+			pushHistory({
+				label: `Add ${paramName} row`,
+				undo: () =>
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) =>
+							node.id === nodeId
+								? { ...node, parameters: { ...node.parameters, [paramName]: previousArray } }
+								: node,
+						),
+					})),
+				redo: () =>
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) =>
+							node.id === nodeId
+								? { ...node, parameters: { ...node.parameters, [paramName]: newArray } }
+								: node,
+						),
+					})),
+			});
+		}
+
+		function deleteArrayRow(nodeId: string, paramName: string, rowIndex: number): void {
+			const { graphDefinition, mutateDefinition, pushHistory } = contextRef.current;
+			const currentNode = graphDefinition.nodes.find((node) => node.id === nodeId);
+			const previousArray = Array.isArray(currentNode?.parameters?.[paramName])
+				? [...(currentNode.parameters[paramName] as Array<unknown>)]
+				: [];
+			const newArray = previousArray.filter((_, index) => index !== rowIndex);
+
+			mutateDefinition((definition) => ({
+				...definition,
+				nodes: definition.nodes.map((node) =>
+					node.id === nodeId
+						? { ...node, parameters: { ...node.parameters, [paramName]: newArray } }
+						: node,
+				),
+			}));
+
+			pushHistory({
+				label: `Delete ${paramName} row`,
+				undo: () =>
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) =>
+							node.id === nodeId
+								? { ...node, parameters: { ...node.parameters, [paramName]: previousArray } }
+								: node,
+						),
+					})),
+				redo: () =>
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) =>
+							node.id === nodeId
+								? { ...node, parameters: { ...node.parameters, [paramName]: newArray } }
+								: node,
+						),
+					})),
+			});
+		}
+
+		function reorderArrayRows(nodeId: string, paramName: string, fromIndex: number, toIndex: number): void {
+			const { graphDefinition, mutateDefinition, pushHistory } = contextRef.current;
+			const currentNode = graphDefinition.nodes.find((node) => node.id === nodeId);
+			const previousArray = Array.isArray(currentNode?.parameters?.[paramName])
+				? [...(currentNode.parameters[paramName] as Array<unknown>)]
+				: [];
+
+			if (fromIndex < 0 || fromIndex >= previousArray.length || toIndex < 0 || toIndex >= previousArray.length) {
+				return;
+			}
+
+			const newArray = [...previousArray];
+			const [moved] = newArray.splice(fromIndex, 1);
+
+			newArray.splice(toIndex, 0, moved);
+
+			mutateDefinition((definition) => ({
+				...definition,
+				nodes: definition.nodes.map((node) =>
+					node.id === nodeId
+						? { ...node, parameters: { ...node.parameters, [paramName]: newArray } }
+						: node,
+				),
+			}));
+
+			pushHistory({
+				label: `Reorder ${paramName} rows`,
+				undo: () =>
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) =>
+							node.id === nodeId
+								? { ...node, parameters: { ...node.parameters, [paramName]: previousArray } }
+								: node,
+						),
+					})),
+				redo: () =>
+					contextRef.current.mutateDefinition((definition) => ({
+						...definition,
+						nodes: definition.nodes.map((node) =>
+							node.id === nodeId
+								? { ...node, parameters: { ...node.parameters, [paramName]: newArray } }
 								: node,
 						),
 					})),
@@ -339,7 +540,10 @@ export function useGraphMutations(context: GraphContext): GraphMutations {
 			insertNodeOnEdge,
 			toggleBypass,
 			setGraphName,
-			updateNodeParameters,
+			setParameterAtPath,
+			addArrayRow,
+			deleteArrayRow,
+			reorderArrayRows,
 		};
 	}, []);
 }

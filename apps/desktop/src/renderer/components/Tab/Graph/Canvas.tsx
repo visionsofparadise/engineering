@@ -17,14 +17,13 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ModuleJsonSchema } from "../../../../shared/ipc/Package/loadModules/Renderer";
 import type { GraphContext } from "../../../models/Context";
-import type { Parameter } from "./Node/utils/buildParameters";
-import { buildParameters } from "./Node/utils/buildParameters";
+import { buildDefaultArrayItem, buildParameters, type Parameter } from "./Node/utils/buildParameters";
+import { lookupModule, schemaPropertyAtPath } from "./Node/utils/moduleLookup";
 import { EdgeContainer } from "./EdgeContainer";
 import { GraphContextMenu, NODE_MENU_ITEMS, PANE_MENU_ITEMS, type ContextMenuAction, type ContextMenuPosition } from "./GraphContextMenu";
 import { useGraphMutations } from "./hooks/useGraphMutations";
-import type { NodeCategory, NodeContainerData, NodeState } from "./Node/Container";
+import type { NodeContainerData, NodeState } from "./Node/Container";
 import { NodeContainer } from "./Node/Container";
 import { NodePicker } from "./Node/Picker";
 import { useNodeStates } from "./hooks/useNodeStates";
@@ -42,29 +41,6 @@ interface NodePickerState {
 
 const NODE_TYPES: NodeTypes = { bufferedAudioNode: NodeContainer };
 const EDGE_TYPES: EdgeTypes = { bufferedAudioEdge: EdgeContainer };
-
-function lookupModule(
-	context: GraphContext,
-	packageName: string,
-	packageVersion: string,
-	nodeName: string,
-): { category: NodeCategory; moduleDescription: string; schema: ModuleJsonSchema | null } {
-	for (const modulePackage of context.app.packages) {
-		if (modulePackage.name === packageName && modulePackage.version === packageVersion) {
-			for (const mod of modulePackage.modules) {
-				if (mod.moduleName === nodeName) {
-					return {
-						category: mod.category,
-						moduleDescription: mod.moduleDescription,
-						schema: mod.schema as ModuleJsonSchema,
-					};
-				}
-			}
-		}
-	}
-
-	return { category: "transform", moduleDescription: "", schema: null };
-}
 
 function buildReactFlowNodes(
 	context: GraphContext,
@@ -170,8 +146,8 @@ export function GraphCanvas({ context }: Props) {
 	const { screenToFlowPosition, getNodes } = useReactFlow();
 	const mutations = useGraphMutations(context);
 
-	const handleParameterBrowse = useCallback(
-		async (nodeId: string, parameterName: string) => {
+	const handleParameterBrowseAtPath = useCallback(
+		async (nodeId: string, path: ReadonlyArray<string | number>) => {
 			const graphNode = context.graphDefinition.nodes.find((node) => node.id === nodeId);
 
 			if (!graphNode) return;
@@ -183,16 +159,16 @@ export function GraphCanvas({ context }: Props) {
 				packageVersion,
 				graphNode.nodeName,
 			);
-			const prop = schema?.properties?.[parameterName];
+			const prop = schemaPropertyAtPath(schema, path);
 			const isFolder = prop?.input === "folder";
 
 			const result = await context.main.showOpenDialog({
 				properties: [isFolder ? "openDirectory" : "openFile"],
 			});
 
-			if (result?.[0]) {
-				mutations.updateNodeParameters(nodeId, parameterName, result[0]);
-			}
+			if (!result?.[0]) return;
+
+			mutations.setParameterAtPath(nodeId, path, result[0]);
 		},
 		[context, mutations],
 	);
@@ -203,11 +179,37 @@ export function GraphCanvas({ context }: Props) {
 				...node,
 				data: {
 					...node.data,
-					onParameterChange: (name: string, value: unknown) => {
-						mutations.updateNodeParameters(node.id, name, value);
+					onParameterChangeAtPath: (path: ReadonlyArray<string | number>, value: unknown) => {
+						mutations.setParameterAtPath(node.id, path, value);
 					},
-					onParameterBrowse: (name: string) => {
-						void handleParameterBrowse(node.id, name);
+					onParameterBrowseAtPath: (path: ReadonlyArray<string | number>) => {
+						void handleParameterBrowseAtPath(node.id, path);
+					},
+					onArrayRowAdd: (paramName: string) => {
+						const graphNode = context.graphDefinition.nodes.find((gn) => gn.id === node.id);
+
+						if (!graphNode) return;
+
+						const packageVersion = typeof graphNode.packageVersion === "string" ? graphNode.packageVersion : "";
+						const { schema } = lookupModule(
+							context,
+							graphNode.packageName,
+							packageVersion,
+							graphNode.nodeName,
+						);
+						const arrayProp = schema?.properties?.[paramName];
+
+						if (arrayProp?.type !== "array" || !arrayProp.items?.properties) return;
+
+						const defaultItem = buildDefaultArrayItem(arrayProp.items.properties);
+
+						mutations.addArrayRow(node.id, paramName, defaultItem);
+					},
+					onArrayRowDelete: (paramName: string, rowIndex: number) => {
+						mutations.deleteArrayRow(node.id, paramName, rowIndex);
+					},
+					onArrayRowReorder: (paramName: string, fromIndex: number, toIndex: number) => {
+						mutations.reorderArrayRows(node.id, paramName, fromIndex, toIndex);
 					},
 					onRender: () => void startRender(),
 					onAbort: () => void abortRender(),
@@ -218,7 +220,7 @@ export function GraphCanvas({ context }: Props) {
 					},
 				},
 			})),
-		[mutations, handleParameterBrowse, startRender, abortRender],
+		[mutations, handleParameterBrowseAtPath, startRender, abortRender, context],
 	);
 
 	// Sync from graph definition (source of truth) into React Flow state

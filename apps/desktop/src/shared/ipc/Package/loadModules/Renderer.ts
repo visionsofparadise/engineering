@@ -11,6 +11,12 @@ export interface ModuleJsonSchemaProperty {
 	readonly description?: string;
 	readonly input?: "file" | "folder";
 	readonly binary?: string;
+	/** For type === "object": child properties of the nested object. */
+	readonly properties?: Readonly<Record<string, ModuleJsonSchemaProperty>>;
+	/** For type === "object": required child property names. */
+	readonly required?: ReadonlyArray<string>;
+	/** For type === "array": schema of each array item. Only array<object> is supported. */
+	readonly items?: ModuleJsonSchemaProperty;
 }
 
 /** The JSON Schema object produced by Zod v4's toJSONSchema() for a module's schema. */

@@ -60,11 +60,11 @@ export function zeroPhaseBiquadFilter(signal: Float32Array, coefficients: Biquad
 	}
 }
 
-export function lowPassCoefficients(sampleRate: number, frequency: number): BiquadCoefficients {
+export function lowPassCoefficients(sampleRate: number, frequency: number, quality: number = Math.SQRT1_2): BiquadCoefficients {
 	const w0 = (2 * Math.PI * frequency) / sampleRate;
 	const cosW0 = Math.cos(w0);
 	const sinW0 = Math.sin(w0);
-	const alpha = sinW0 / Math.SQRT2;
+	const alpha = sinW0 / (2 * quality);
 	const a0 = 1 + alpha;
 
 	return {
@@ -73,11 +73,11 @@ export function lowPassCoefficients(sampleRate: number, frequency: number): Biqu
 	};
 }
 
-export function highPassCoefficients(sampleRate: number, frequency: number): BiquadCoefficients {
+export function highPassCoefficients(sampleRate: number, frequency: number, quality: number = Math.SQRT1_2): BiquadCoefficients {
 	const w0 = (2 * Math.PI * frequency) / sampleRate;
 	const cosW0 = Math.cos(w0);
 	const sinW0 = Math.sin(w0);
-	const alpha = sinW0 / Math.SQRT2;
+	const alpha = sinW0 / (2 * quality);
 	const a0 = 1 + alpha;
 
 	return {
@@ -95,6 +95,92 @@ export function bandPassCoefficients(sampleRate: number, centerFreq: number, qua
 
 	return {
 		fb: [alpha / a0, 0, -alpha / a0],
+		fa: [1.0, (-2 * cosW0) / a0, (1 - alpha) / a0],
+	};
+}
+
+export function peakingCoefficients(sampleRate: number, frequency: number, quality: number, gainDb: number): BiquadCoefficients {
+	const w0 = (2 * Math.PI * frequency) / sampleRate;
+	const cosW0 = Math.cos(w0);
+	const sinW0 = Math.sin(w0);
+	const alpha = sinW0 / (2 * quality);
+	const amp = Math.pow(10, gainDb / 40);
+	const a0 = 1 + alpha / amp;
+
+	return {
+		fb: [(1 + alpha * amp) / a0, (-2 * cosW0) / a0, (1 - alpha * amp) / a0],
+		fa: [1.0, (-2 * cosW0) / a0, (1 - alpha / amp) / a0],
+	};
+}
+
+export function lowShelfCoefficients(sampleRate: number, frequency: number, quality: number, gainDb: number): BiquadCoefficients {
+	const w0 = (2 * Math.PI * frequency) / sampleRate;
+	const cosW0 = Math.cos(w0);
+	const sinW0 = Math.sin(w0);
+	const amp = Math.pow(10, gainDb / 40);
+	const alpha = (sinW0 / 2) * Math.sqrt((amp + 1 / amp) * (1 / quality - 1) + 2);
+	const sqrtA2 = 2 * Math.sqrt(amp) * alpha;
+	const a0 = (amp + 1) + (amp - 1) * cosW0 + sqrtA2;
+
+	return {
+		fb: [
+			(amp * ((amp + 1) - (amp - 1) * cosW0 + sqrtA2)) / a0,
+			(2 * amp * ((amp - 1) - (amp + 1) * cosW0)) / a0,
+			(amp * ((amp + 1) - (amp - 1) * cosW0 - sqrtA2)) / a0,
+		],
+		fa: [
+			1.0,
+			(-2 * ((amp - 1) + (amp + 1) * cosW0)) / a0,
+			((amp + 1) + (amp - 1) * cosW0 - sqrtA2) / a0,
+		],
+	};
+}
+
+export function highShelfCoefficients(sampleRate: number, frequency: number, quality: number, gainDb: number): BiquadCoefficients {
+	const w0 = (2 * Math.PI * frequency) / sampleRate;
+	const cosW0 = Math.cos(w0);
+	const sinW0 = Math.sin(w0);
+	const amp = Math.pow(10, gainDb / 40);
+	const alpha = (sinW0 / 2) * Math.sqrt((amp + 1 / amp) * (1 / quality - 1) + 2);
+	const sqrtA2 = 2 * Math.sqrt(amp) * alpha;
+	const a0 = (amp + 1) - (amp - 1) * cosW0 + sqrtA2;
+
+	return {
+		fb: [
+			(amp * ((amp + 1) + (amp - 1) * cosW0 + sqrtA2)) / a0,
+			(-2 * amp * ((amp - 1) + (amp + 1) * cosW0)) / a0,
+			(amp * ((amp + 1) + (amp - 1) * cosW0 - sqrtA2)) / a0,
+		],
+		fa: [
+			1.0,
+			(2 * ((amp - 1) - (amp + 1) * cosW0)) / a0,
+			((amp + 1) - (amp - 1) * cosW0 - sqrtA2) / a0,
+		],
+	};
+}
+
+export function notchCoefficients(sampleRate: number, centerFreq: number, quality: number): BiquadCoefficients {
+	const w0 = (2 * Math.PI * centerFreq) / sampleRate;
+	const cosW0 = Math.cos(w0);
+	const sinW0 = Math.sin(w0);
+	const alpha = sinW0 / (2 * quality);
+	const a0 = 1 + alpha;
+
+	return {
+		fb: [1 / a0, (-2 * cosW0) / a0, 1 / a0],
+		fa: [1.0, (-2 * cosW0) / a0, (1 - alpha) / a0],
+	};
+}
+
+export function allPassCoefficients(sampleRate: number, centerFreq: number, quality: number): BiquadCoefficients {
+	const w0 = (2 * Math.PI * centerFreq) / sampleRate;
+	const cosW0 = Math.cos(w0);
+	const sinW0 = Math.sin(w0);
+	const alpha = sinW0 / (2 * quality);
+	const a0 = 1 + alpha;
+
+	return {
+		fb: [(1 - alpha) / a0, (-2 * cosW0) / a0, 1.0],
 		fa: [1.0, (-2 * cosW0) / a0, (1 - alpha) / a0],
 	};
 }

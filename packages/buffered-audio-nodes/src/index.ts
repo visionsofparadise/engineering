@@ -25,6 +25,18 @@ export { ffmpeg, FfmpegNode, FfmpegStream, type FfmpegProperties } from "./trans
 export { loudness, LoudnessNode, LoudnessStream, type LoudnessProperties } from "./transforms/loudness";
 export { resample, ResampleNode, type ResampleProperties } from "./transforms/resample";
 
+// Transforms - utility/mastering
+export { downmixMono, DownmixMonoNode, DownmixMonoStream } from "./transforms/downmix-mono";
+export { duplicateChannels, DuplicateChannelsNode, DuplicateChannelsStream, type DuplicateChannelsProperties } from "./transforms/duplicate-channels";
+export { eq, EqNode, EqStream, type EqBand, type EqProperties } from "./transforms/eq";
+export { gain, GainNode, GainStream, type GainProperties } from "./transforms/gain";
+export { pan, PanNode, PanStream, type PanProperties } from "./transforms/pan";
+export { compressor, CompressorNode, type CompressorProperties } from "./transforms/compressor";
+export { dynamics, DynamicsNode, DynamicsStream, type DynamicsProperties } from "./transforms/dynamics";
+export { exciter, ExciterNode, ExciterStream, type ExciterProperties } from "./transforms/exciter";
+export { gate, GateNode, GateStream, type GateProperties } from "./transforms/gate";
+export { limiter, LimiterNode, type LimiterProperties } from "./transforms/limiter";
+
 // Transforms - engineering
 export { breathControl, BreathControlNode, BreathControlStream, type BreathControlProperties } from "./transforms/breath-control";
 export { deBleed, DeBleedNode, DeBleedStream, type DeBleedProperties } from "./transforms/de-bleed";

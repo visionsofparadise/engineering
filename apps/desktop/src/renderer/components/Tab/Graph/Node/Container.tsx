@@ -2,11 +2,8 @@ import { IconButton } from "@e9g/design-system";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { AlertTriangle } from "lucide-react";
 import { NodeMenu } from "./Menu";
-import { BooleanRow } from "./ParameterRow/Boolean";
-import { EnumRow } from "./ParameterRow/Enum";
-import { FileRow } from "./ParameterRow/File";
-import { NumberRow } from "./ParameterRow/Number";
-import { StringRow } from "./ParameterRow/String";
+import type { ParameterCallbacks } from "./ParameterRow/ParameterField";
+import { ParameterField } from "./ParameterRow/ParameterField";
 import type { Parameter } from "./utils/buildParameters";
 
 export type NodeState = "rendered" | "stale" | "processing" | "pending" | "error" | "bypassed";
@@ -23,8 +20,16 @@ export interface NodeContainerData {
 	readonly description?: string;
 	readonly error?: string;
 	readonly progress?: number;
-	readonly onParameterChange?: (name: string, value: unknown) => void;
-	readonly onParameterBrowse?: (name: string) => void;
+	/** Path-aware leaf value change — path is [topLevelName, ...nestedKeys]. */
+	readonly onParameterChangeAtPath?: (path: ReadonlyArray<string | number>, value: unknown) => void;
+	/** Path-aware browse dialog for file/folder parameters. */
+	readonly onParameterBrowseAtPath?: (path: ReadonlyArray<string | number>) => void;
+	/** Append a new default row to an array parameter. */
+	readonly onArrayRowAdd?: (paramName: string) => void;
+	/** Delete a row from an array parameter by index. */
+	readonly onArrayRowDelete?: (paramName: string, rowIndex: number) => void;
+	/** Reorder array rows. */
+	readonly onArrayRowReorder?: (paramName: string, fromIndex: number, toIndex: number) => void;
 	readonly onRender?: () => void;
 	readonly onAbort?: () => void;
 	readonly onView?: () => void;
@@ -45,9 +50,15 @@ export function NodeContainer({ data, selected, children }: NodeProps & { readon
 	const hasError = nodeData.error !== undefined;
 	const progress = nodeData.progress;
 
-	const onParameterChange = nodeData.onParameterChange;
-	const onParameterBrowse = nodeData.onParameterBrowse;
-	const disabled = !onParameterChange;
+	const disabled = !nodeData.onParameterChangeAtPath;
+	const callbacks: ParameterCallbacks = {
+		onParameterChangeAtPath: nodeData.onParameterChangeAtPath,
+		onParameterBrowseAtPath: nodeData.onParameterBrowseAtPath,
+		onArrayRowAdd: nodeData.onArrayRowAdd,
+		onArrayRowDelete: nodeData.onArrayRowDelete,
+		onArrayRowReorder: nodeData.onArrayRowReorder,
+		disabled,
+	};
 
 	let renderLabel: string | null = null;
 
@@ -106,56 +117,15 @@ export function NodeContainer({ data, selected, children }: NodeProps & { readon
 				{/* Parameters */}
 				{nodeData.parameters.length > 0 && (
 					<div className="flex flex-col gap-3 px-3 pb-3">
-						{nodeData.parameters.map((param) => {
-							switch (param.kind) {
-								case "number":
-									return (
-										<NumberRow
-											key={param.name}
-											param={param}
-											dimmed={isBypassed}
-											disabled={disabled}
-											onParameterChange={onParameterChange}
-										/>
-									);
-								case "boolean":
-									return (
-										<BooleanRow
-											key={param.name}
-											param={param}
-											dimmed={isBypassed}
-											onParameterChange={onParameterChange}
-										/>
-									);
-								case "enum":
-									return (
-										<EnumRow
-											key={param.name}
-											param={param}
-											dimmed={isBypassed}
-											onParameterChange={onParameterChange}
-										/>
-									);
-								case "file":
-									return (
-										<FileRow
-											key={param.name}
-											param={param}
-											dimmed={isBypassed}
-											onParameterBrowse={onParameterBrowse}
-										/>
-									);
-								case "string":
-									return (
-										<StringRow
-											key={param.name}
-											param={param}
-											dimmed={isBypassed}
-											onParameterChange={onParameterChange}
-										/>
-									);
-							}
-						})}
+						{nodeData.parameters.map((param) => (
+							<ParameterField
+								key={param.name}
+								param={param}
+								basePath={[]}
+								dimmed={isBypassed}
+								callbacks={callbacks}
+							/>
+						))}
 					</div>
 				)}
 
