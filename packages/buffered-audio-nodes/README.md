@@ -73,342 +73,533 @@ npx @e9g/buffered-audio-nodes render --bag pipeline.bag
 
 ## Nodes
 
-### Sources
+### Breath Control
 
-#### `read(path, options?)`
+Attenuate or remove breath sounds between phrases
 
-Read audio from a file. WAV files are read natively. Other formats are transcoded via FFmpeg.
+[Source](./src/transforms/breath-control/index.ts)
 
-| Parameter     | Type       | Default | Description                                                                      |
-| ------------- | ---------- | ------- | -------------------------------------------------------------------------------- |
-| `path`        | `string`   |         | File path                                                                        |
-| `channels`    | `number[]` | all     | Channel indices to extract                                                       |
-| `ffmpegPath`  | `string`   |         | Path to [ffmpeg](https://ffmpeg.org/download.html). Required for non-WAV files.  |
-| `ffprobePath` | `string`   |         | Path to [ffprobe](https://ffmpeg.org/download.html). Required for non-WAV files. |
+| Parameter     | Type                       | Default       | Description |
+| ------------- | -------------------------- | ------------- | ----------- |
+| `sensitivity` | number (0 to 1, step 0.01) | `0.5`         | Sensitivity |
+| `reduction`   | number (-60 to 0, step 1)  | `-12`         | Reduction   |
+| `mode`        | "remove" \| "attenuate"    | `"attenuate"` | Mode        |
 
-#### `readWav(path, options?)`
+### Compressor
 
-Read a WAV file natively.
+Dynamic range compressor
 
-| Parameter  | Type       | Default | Description                |
-| ---------- | ---------- | ------- | -------------------------- |
-| `path`     | `string`   |         | File path                  |
-| `channels` | `number[]` | all     | Channel indices to extract |
+[Source](./src/transforms/compressor/index.ts)
 
-#### `readFfmpeg(path, options)`
+| Parameter    | Type                         | Default     | Description      |
+| ------------ | ---------------------------- | ----------- | ---------------- |
+| `threshold`  | number (-60 to 0, step 0.1)  | `-24`       | Threshold (dBFS) |
+| `ratio`      | number (1 to 20, step 0.1)   | `4`         | Ratio            |
+| `attack`     | number (0 to 500, step 0.1)  | `10`        | Attack (ms)      |
+| `release`    | number (0 to 5000, step 1)   | `100`       | Release (ms)     |
+| `knee`       | number (0 to 24, step 0.1)   | `6`         | Knee (dB)        |
+| `makeupGain` | number (-24 to 24, step 0.1) | `0`         | Makeup Gain (dB) |
+| `detection`  | "peak" \| "rms"              | `"peak"`    | Detection mode   |
+| `stereoLink` | "average" \| "max" \| "none" | `"average"` | Stereo link      |
 
-Read an audio file via FFmpeg transcoding.
+### Cut
 
-| Parameter     | Type       | Default | Description                |
-| ------------- | ---------- | ------- | -------------------------- |
-| `path`        | `string`   |         | File path                  |
-| `channels`    | `number[]` | all     | Channel indices to extract |
-| `ffmpegPath`  | `string`   |         | Path to ffmpeg             |
-| `ffprobePath` | `string`   |         | Path to ffprobe            |
+Remove a region of audio
 
-### Targets
+[Source](./src/transforms/cut/index.ts)
 
-#### `write(path, options?)`
+| Parameter         | Type           | Default | Description     |
+| ----------------- | -------------- | ------- | --------------- |
+| `regions`         | Object[]       | `[]`    | Regions         |
+| `regions[].start` | number (min 0) | —       | Start (seconds) |
+| `regions[].end`   | number (min 0) | —       | End (seconds)   |
 
-Write audio to a file. Writes WAV natively. Other formats are encoded via FFmpeg.
+### De-Bleed
 
-| Parameter    | Type                            | Default | Description                                                                       |
-| ------------ | ------------------------------- | ------- | --------------------------------------------------------------------------------- |
-| `path`       | `string`                        |         | Output file path                                                                  |
-| `bitDepth`   | `"16" \| "24" \| "32" \| "32f"` | `"16"`  | WAV bit depth                                                                     |
-| `encoding`   | `EncodingOptions`               |         | Non-WAV encoding (format, bitrate, vbr)                                           |
-| `ffmpegPath` | `string`                        |         | Path to [ffmpeg](https://ffmpeg.org/download.html). Required for non-WAV formats. |
+Reduce microphone bleed between channels
 
-#### `waveform(outputPath, options?)`
+[Source](./src/transforms/de-bleed/index.ts)
 
-Extract waveform data to a file.
+| Parameter       | Type                            | Default | Description    |
+| --------------- | ------------------------------- | ------- | -------------- |
+| `referencePath` | string                          | `""`    | Reference Path |
+| `filterLength`  | number (64 to 8192, step 64)    | `1024`  | Filter Length  |
+| `stepSize`      | number (0.001 to 1, step 0.001) | `0.1`   | Step Size      |
 
-| Parameter    | Type     | Default | Description                           |
-| ------------ | -------- | ------- | ------------------------------------- |
-| `outputPath` | `string` |         | Output file path                      |
-| `resolution` | `number` | `1000`  | Number of waveform points (100–10000) |
+### De-Click
 
-#### `spectrogram(outputPath, options?)`
+Remove clicks, pops, and impulse artifacts
 
-Generate spectrogram data file.
+[Source](./src/transforms/de-click/index.ts)
 
-| Parameter    | Type     | Default | Description      |
-| ------------ | -------- | ------- | ---------------- |
-| `outputPath` | `string` |         | Output file path |
+| Parameter          | Type                       | Default | Description        |
+| ------------------ | -------------------------- | ------- | ------------------ |
+| `sensitivity`      | number (0 to 1, step 0.01) | `0.5`   | Sensitivity        |
+| `maxClickDuration` | number (1 to 1000, step 1) | `200`   | Max Click Duration |
 
-#### `loudnessStats(options?)`
+### De-Clip
 
-Measure loudness statistics. Access results via `.stats` after render.
+Restore clipped audio peaks
 
-### Composites
+[Source](./src/transforms/de-clip/index.ts)
 
-#### `chain(...nodes)`
+| Parameter   | Type                       | Default | Description |
+| ----------- | -------------------------- | ------- | ----------- |
+| `threshold` | number (0 to 1, step 0.01) | `0.99`  | Threshold   |
+| `method`    | "ar" \| "sparse"           | `"ar"`  | Method      |
 
-Wire nodes into a linear pipeline. Returns a `ChainNode`.
+### De-Crackle
 
-### Transforms — Basic
+Remove clicks, pops, and impulse artifacts
 
-#### `normalize(options?)`
+[Source](./src/transforms/de-click/de-crackle.ts)
 
-Adjust peak level to a target ceiling.
+| Parameter          | Type                       | Default | Description        |
+| ------------------ | -------------------------- | ------- | ------------------ |
+| `sensitivity`      | number (0 to 1, step 0.01) | `0.5`   | Sensitivity        |
+| `maxClickDuration` | number (1 to 1000, step 1) | `20`    | Max Click Duration |
 
-| Parameter | Type     | Default | Description             |
-| --------- | -------- | ------- | ----------------------- |
-| `ceiling` | `number` | `1.0`   | Target peak level (0–1) |
+### De-Plosive
 
-#### `trim(options?)`
+Reduce plosive bursts (p, b, t, d sounds)
 
-Remove silence from start and end.
+[Source](./src/transforms/de-plosive/index.ts)
 
-| Parameter   | Type      | Default | Description                         |
-| ----------- | --------- | ------- | ----------------------------------- |
-| `threshold` | `number`  | `0.001` | Silence threshold (0–1)             |
-| `margin`    | `number`  | `0.01`  | Margin to keep around content (0–1) |
-| `start`     | `boolean` | `true`  | Trim start                          |
-| `end`       | `boolean` | `true`  | Trim end                            |
+| Parameter     | Type                        | Default | Description |
+| ------------- | --------------------------- | ------- | ----------- |
+| `sensitivity` | number (0 to 1, step 0.01)  | `0.5`   | Sensitivity |
+| `frequency`   | number (50 to 500, step 10) | `200`   | Frequency   |
 
-#### `cut(regions, options?)`
+### De-Reverb (WPE)
 
-Remove regions from audio.
+Reduce room reverb using Weighted Prediction Error — classical DSP, fully tunable, no model required
 
-| Parameter | Type          | Default | Description                                     |
-| --------- | ------------- | ------- | ----------------------------------------------- |
-| `regions` | `CutRegion[]` |         | Regions to remove (`{ start, end }` in samples) |
+[Source](./src/transforms/de-reverb/index.ts)
 
-#### `pad(options)`
+| Parameter         | Type                     | Default | Description                                                                                                         |
+| ----------------- | ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------- |
+| `predictionDelay` | number (1 to 10, step 1) | `4`     | Prediction Delay                                                                                                    |
+| `filterLength`    | number (5 to 30, step 1) | `12`    | Filter Length                                                                                                       |
+| `iterations`      | number (1 to 10, step 1) | `4`     | Iterations                                                                                                          |
+| `vkfftAddonPath`  | string                   | `""`    | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
+| `fftwAddonPath`   | string                   | `""`    | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon)    |
 
-Add silence to start or end.
+### Dialogue Isolate
 
-| Parameter | Type     | Default | Description                     |
-| --------- | -------- | ------- | ------------------------------- |
-| `before`  | `number` | `0`     | Samples of silence before audio |
-| `after`   | `number` | `0`     | Samples of silence after audio  |
+Isolate dialogue from background using MDX-Net vocal separation
 
-#### `splice(insertPath, insertAt, options?)`
+[Source](./src/transforms/dialogue-isolate/index.ts)
 
-Insert audio at a position.
+| Parameter       | Type                             | Default | Description                                                                                               |
+| --------------- | -------------------------------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `modelPath`     | string                           | `""`    | MDX-Net vocal isolation model (.onnx) Download: [Kim_Vocal_2](https://huggingface.co/seanghay/uvr_models) |
+| `ffmpegPath`    | string                           | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html)                 |
+| `onnxAddonPath` | string                           | `""`    | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon) |
+| `highPass`      | number (20 to 500, step 10)      | `80`    | High Pass                                                                                                 |
+| `lowPass`       | number (1000 to 22050, step 100) | `20000` | Low Pass                                                                                                  |
 
-| Parameter    | Type     | Default | Description                |
-| ------------ | -------- | ------- | -------------------------- |
-| `insertPath` | `string` |         | WAV file to insert         |
-| `insertAt`   | `number` | `0`     | Insert position in samples |
+### Dither
 
-#### `reverse(options?)`
+Add shaped noise to reduce quantization distortion
 
-Reverse audio.
+[Source](./src/transforms/dither/index.ts)
 
-#### `phase(options?)` / `invert(options?)`
+| Parameter      | Type     | Default | Description   |
+| -------------- | -------- | ------- | ------------- |
+| `bitDepth`     | 16 \| 24 | `16`    | Bit Depth     |
+| `noiseShaping` | boolean  | `false` | Noise Shaping |
 
-Invert polarity or shift phase.
+### Downmix Mono
 
-#### `dither(options)`
+Mix all input channels to a single mono channel by averaging
 
-Add dither noise before bit-depth reduction.
+[Source](./src/transforms/downmix-mono/index.ts)
 
-| Parameter      | Type           | Default | Description         |
-| -------------- | -------------- | ------- | ------------------- |
-| `bitDepth`     | `"16" \| "24"` | `"16"`  | Target bit depth    |
-| `noiseShaping` | `boolean`      | `false` | Apply noise shaping |
+### Duplicate Channels
 
-#### `resample(ffmpegPath, sampleRate, options?)`
+Duplicate a mono signal into multiple identical output channels
 
-Change sample rate.
+[Source](./src/transforms/duplicate-channels/index.ts)
 
-| Parameter    | Type                                   | Default        | Description                      |
-| ------------ | -------------------------------------- | -------------- | -------------------------------- |
-| `ffmpegPath` | `string`                               |                | Path to ffmpeg                   |
-| `sampleRate` | `number`                               | `44100`        | Target sample rate (8000–192000) |
-| `dither`     | `"triangular" \| "lipshitz" \| "none"` | `"triangular"` | Dither method                    |
+| Parameter  | Type            | Default | Description          |
+| ---------- | --------------- | ------- | -------------------- |
+| `channels` | number (2 to 8) | `2`     | Output channel count |
 
-### Transforms — FFmpeg
+### Dynamics
 
-These transforms require an [ffmpeg](https://ffmpeg.org/download.html) binary.
+Full-featured dynamics processor — compress or expand audio
 
-#### `ffmpeg(options)`
+[Source](./src/transforms/dynamics/index.ts)
 
-Run arbitrary FFmpeg filters.
+| Parameter      | Type                         | Default      | Description                                                                                                                                                              |
+| -------------- | ---------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `threshold`    | number (-60 to 0, step 0.1)  | `-24`        | Threshold (dBFS)                                                                                                                                                         |
+| `ratio`        | number (1 to 100, step 0.1)  | `4`          | Ratio                                                                                                                                                                    |
+| `attack`       | number (0 to 500, step 0.1)  | `10`         | Attack (ms)                                                                                                                                                              |
+| `release`      | number (0 to 5000, step 1)   | `100`        | Release (ms)                                                                                                                                                             |
+| `knee`         | number (0 to 24, step 0.1)   | `6`          | Knee (dB)                                                                                                                                                                |
+| `makeupGain`   | number (-24 to 24, step 0.1) | `0`          | Makeup Gain (dB)                                                                                                                                                         |
+| `lookahead`    | number (0 to 100, step 0.1)  | `0`          | Lookahead (ms)                                                                                                                                                           |
+| `detection`    | "peak" \| "rms"              | `"peak"`     | Detection mode                                                                                                                                                           |
+| `mode`         | "downward" \| "upward"       | `"downward"` | Dynamics mode                                                                                                                                                            |
+| `stereoLink`   | "average" \| "max" \| "none" | `"average"`  | Stereo link                                                                                                                                                              |
+| `oversampling` | 1 \| 2 \| 4 \| 8             | `1`          | Oversampling factor for true-peak detection (1 = off, 2/4/8 = inter-sample peak recovery). Envelope timing is unaffected — coefficients are always at the original rate. |
 
-| Parameter    | Type                            | Default | Description             |
-| ------------ | ------------------------------- | ------- | ----------------------- |
-| `ffmpegPath` | `string`                        |         | Path to ffmpeg          |
-| `args`       | `string[] \| (ctx) => string[]` | `[]`    | FFmpeg filter arguments |
+### EQ
 
-#### `loudness(ffmpegPath, options?)`
+Arbitrary multiband parametric equalizer
 
-Adjust loudness to EBU R128 target.
+[Source](./src/transforms/eq/index.ts)
 
-| Parameter    | Type     | Default | Description                     |
-| ------------ | -------- | ------- | ------------------------------- |
-| `ffmpegPath` | `string` |         | Path to ffmpeg                  |
-| `target`     | `number` | `-14`   | Target LUFS (-50 to 0)          |
-| `truePeak`   | `number` | `-1`    | True peak limit dBTP (-10 to 0) |
-| `lra`        | `number` | `0`     | Loudness range target (0–20)    |
+| Parameter           | Type                                                                                                    | Default     | Description                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------- |
+| `bands`             | Object[]                                                                                                | `[]`        | EQ bands                           |
+| `bands[].type`      | "lowpass" \| "highpass" \| "bandpass" \| "peaking" \| "lowshelf" \| "highshelf" \| "notch" \| "allpass" | `"peaking"` | Filter type                        |
+| `bands[].frequency` | number (20 to 20000, step 1)                                                                            | `1000`      | Frequency (Hz)                     |
+| `bands[].quality`   | number (0.1 to 100, step 0.01)                                                                          | `0.71`      | Q / Bandwidth                      |
+| `bands[].gain`      | number (-24 to 24, step 0.1), optional                                                                  | —           | Gain (dB) — peaking and shelf only |
+| `bands[].enabled`   | boolean                                                                                                 | `true`      | Enabled                            |
 
-### Transforms — Audio Engineering
+### EQ Match
 
-#### `breathControl(options?)`
+Match frequency response to a reference profile
 
-Reduce or remove breath sounds.
+[Source](./src/transforms/eq-match/index.ts)
 
-| Parameter     | Type                      | Default       | Description                 |
-| ------------- | ------------------------- | ------------- | --------------------------- |
-| `sensitivity` | `number`                  | `0.5`         | Detection sensitivity (0–1) |
-| `reduction`   | `number`                  | `-12`         | Reduction in dB (-60 to 0)  |
-| `mode`        | `"remove" \| "attenuate"` | `"attenuate"` | Processing mode             |
+| Parameter        | Type                       | Default              | Description                                                                                                         |
+| ---------------- | -------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `referencePath`  | string                     | `""`                 | Reference Path                                                                                                      |
+| `smoothing`      | number (0 to 1, step 0.01) | `0.3333333333333333` | Smoothing                                                                                                           |
+| `vkfftAddonPath` | string                     | `""`                 | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
+| `fftwAddonPath`  | string                     | `""`                 | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon)    |
 
-#### `deBleed(referencePath, options?)`
+### Exciter
 
-Remove microphone bleed using a reference signal.
+Harmonic exciter — adds upper-harmonic content via band-limited saturation
 
-| Parameter       | Type     | Default | Description                      |
-| --------------- | -------- | ------- | -------------------------------- |
-| `referencePath` | `string` |         | Path to reference WAV            |
-| `filterLength`  | `number` | `1024`  | Adaptive filter length (64–8192) |
-| `stepSize`      | `number` | `0.1`   | Adaptation step size (0.001–1)   |
+[Source](./src/transforms/exciter/index.ts)
 
-#### `deClick(options?)`
+| Parameter      | Type                         | Default  | Description                                                                                         |
+| -------------- | ---------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `mode`         | "soft" \| "tube" \| "fold"   | `"soft"` | Saturation mode                                                                                     |
+| `frequency`    | number (20 to 20000, step 1) | `3000`   | Crossover frequency (Hz)                                                                            |
+| `drive`        | number (0 to 24, step 0.1)   | `6`      | Drive (dB)                                                                                          |
+| `mix`          | number (0 to 1, step 0.01)   | `0.5`    | Wet/dry mix (0 = dry, 1 = wet)                                                                      |
+| `harmonics`    | number (0.5 to 2, step 0.01) | `1`      | Harmonic emphasis multiplier                                                                        |
+| `oversampling` | 1 \| 2 \| 4 \| 8             | `2`      | Oversampling factor (1 = off, 2/4/8 = internal-rate multiplier for alias-free nonlinear processing) |
 
-Remove clicks and pops.
+### FFmpeg
 
-| Parameter          | Type     | Default | Description                            |
-| ------------------ | -------- | ------- | -------------------------------------- |
-| `sensitivity`      | `number` | `0.5`   | Detection sensitivity (0–1)            |
-| `maxClickDuration` | `number` | `200`   | Max click duration in samples (1–1000) |
+Process audio through FFmpeg filters
 
-#### `deCrackle(options?)`
+[Source](./src/transforms/ffmpeg/index.ts)
 
-Remove crackle noise.
+| Parameter    | Type     | Default | Description                                                                               |
+| ------------ | -------- | ------- | ----------------------------------------------------------------------------------------- |
+| `ffmpegPath` | string   | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
+| `args`       | string[] | `[]`    |                                                                                           |
 
-| Parameter     | Type     | Default | Description                 |
-| ------------- | -------- | ------- | --------------------------- |
-| `sensitivity` | `number` | `0.5`   | Detection sensitivity (0–1) |
+### Gain
 
-#### `mouthDeClick(options?)`
+Adjust signal level by a fixed amount in dB
 
-Remove mouth clicks.
+[Source](./src/transforms/gain/index.ts)
 
-| Parameter     | Type     | Default | Description                 |
-| ------------- | -------- | ------- | --------------------------- |
-| `sensitivity` | `number` | `0.7`   | Detection sensitivity (0–1) |
+| Parameter | Type                         | Default | Description |
+| --------- | ---------------------------- | ------- | ----------- |
+| `gain`    | number (-60 to 24, step 0.1) | `0`     | Gain (dB)   |
 
-#### `deClip(options?)`
+### Gate
 
-Repair clipped audio.
+Noise gate — attenuates signal below threshold
 
-| Parameter   | Type               | Default | Description                        |
-| ----------- | ------------------ | ------- | ---------------------------------- |
-| `threshold` | `number`           | `0.99`  | Clipping detection threshold (0–1) |
-| `method`    | `"ar" \| "sparse"` | `"ar"`  | Repair method                      |
+[Source](./src/transforms/gate/index.ts)
 
-#### `dePlosive(options?)`
+| Parameter    | Type                        | Default | Description                                      |
+| ------------ | --------------------------- | ------- | ------------------------------------------------ |
+| `threshold`  | number (-80 to 0, step 0.1) | `-40`   | Threshold (dBFS)                                 |
+| `range`      | number (-80 to 0, step 1)   | `-80`   | Range (dB) — attenuation when gate is closed     |
+| `attack`     | number (0 to 500, step 0.1) | `1`     | Attack (ms)                                      |
+| `hold`       | number (0 to 2000, step 1)  | `100`   | Hold (ms)                                        |
+| `release`    | number (0 to 5000, step 1)  | `200`   | Release (ms)                                     |
+| `hysteresis` | number (0 to 24, step 0.1)  | `6`     | Hysteresis (dB) — separate open/close thresholds |
 
-Reduce plosive sounds.
+### Leveler
 
-| Parameter     | Type     | Default | Description                             |
-| ------------- | -------- | ------- | --------------------------------------- |
-| `sensitivity` | `number` | `0.5`   | Detection sensitivity (0–1)             |
-| `frequency`   | `number` | `200`   | Plosive frequency cutoff in Hz (50–500) |
+Smooth volume variations for consistent loudness
 
-#### `deReverb(options?)`
+[Source](./src/transforms/leveler/index.ts)
 
-Reduce reverb and room tone using WPE dereverberation.
+| Parameter | Type                          | Default | Description |
+| --------- | ----------------------------- | ------- | ----------- |
+| `target`  | number (-60 to 0, step 1)     | `-20`   | Target      |
+| `window`  | number (0.01 to 5, step 0.01) | `0.5`   | Window      |
+| `speed`   | number (0.01 to 1, step 0.01) | `0.1`   | Speed       |
+| `maxGain` | number (0 to 40, step 1)      | `12`    | Max Gain    |
+| `maxCut`  | number (0 to 40, step 1)      | `12`    | Max Cut     |
 
-| Parameter         | Type     | Default | Description                                                                       |
-| ----------------- | -------- | ------- | --------------------------------------------------------------------------------- |
-| `sensitivity`     | `number` | `0.5`   | Controls prediction delay, filter length, and iterations (0–1)                    |
-| `predictionDelay` | `number` |         | Prediction delay in frames (1–10)                                                 |
-| `filterLength`    | `number` |         | Filter length in frames (5–30)                                                    |
-| `iterations`      | `number` |         | WPE iterations (1–10)                                                             |
-| `vkfftAddonPath`  | `string` |         | Path to [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) (GPU FFT) |
-| `fftwAddonPath`   | `string` |         | Path to [fftw-addon](https://github.com/visionsofparadise/fftw-addon) (CPU FFT)   |
+### Limiter
 
-#### `dialogueIsolate(options)`
+Brick-wall limiter — prevents signal from exceeding threshold
 
-Isolate dialogue using MDX-Net vocal separation.
+[Source](./src/transforms/limiter/index.ts)
 
-| Parameter       | Type     | Default | Description                                                                           |
-| --------------- | -------- | ------- | ------------------------------------------------------------------------------------- |
-| `modelPath`     | `string` |         | Path to [Kim_Vocal_2.onnx](https://huggingface.co/seanghay/uvr_models)                |
-| `ffmpegPath`    | `string` |         | Path to ffmpeg                                                                        |
-| `onnxAddonPath` | `string` |         | Path to [onnx-runtime-addon](https://github.com/visionsofparadise/onnx-runtime-addon) |
-| `highPass`      | `number` | `80`    | High pass filter in Hz (20–500)                                                       |
-| `lowPass`       | `number` | `20000` | Low pass filter in Hz (1000–22050)                                                    |
+| Parameter      | Type                         | Default | Description                                                                                         |
+| -------------- | ---------------------------- | ------- | --------------------------------------------------------------------------------------------------- |
+| `threshold`    | number (-60 to 0, step 0.1)  | `-1`    | Threshold (dBFS)                                                                                    |
+| `attack`       | number (0 to 100, step 0.1)  | `1`     | Attack (ms)                                                                                         |
+| `release`      | number (0 to 5000, step 1)   | `50`    | Release (ms)                                                                                        |
+| `makeupGain`   | number (-24 to 24, step 0.1) | `0`     | Makeup Gain (dB)                                                                                    |
+| `stereoLink`   | "average" \| "max" \| "none" | `"max"` | Stereo link                                                                                         |
+| `oversampling` | 1 \| 2 \| 4 \| 8             | `2`     | Oversampling factor (1 = off, 2/4/8 = internal-rate multiplier for alias-free nonlinear processing) |
 
-#### `eqMatch(referencePath, options?)`
+### Loudness
 
-Match EQ profile to a reference recording.
+Measure integrated, short-term, and momentary loudness
 
-| Parameter        | Type     | Default | Description                                                             |
-| ---------------- | -------- | ------- | ----------------------------------------------------------------------- |
-| `referencePath`  | `string` |         | Path to reference WAV                                                   |
-| `smoothing`      | `number` | `0.33`  | Spectral smoothing (0–1)                                                |
-| `vkfftAddonPath` | `string` |         | Path to [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
-| `fftwAddonPath`  | `string` |         | Path to [fftw-addon](https://github.com/visionsofparadise/fftw-addon)   |
+[Source](./src/transforms/loudness/index.ts)
 
-#### `leveler(options?)`
+| Parameter    | Type                        | Default | Description                                                                               |
+| ------------ | --------------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `ffmpegPath` | string                      | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
+| `target`     | number (-50 to 0, step 0.1) | `-14`   | Target                                                                                    |
+| `truePeak`   | number (-10 to 0, step 0.1) | `-1`    | True Peak                                                                                 |
+| `lra`        | number (0 to 20, step 0.1)  | `0`     | LRA                                                                                       |
 
-Automatic level control.
+### Loudness Stats
 
-| Parameter | Type     | Default | Description                         |
-| --------- | -------- | ------- | ----------------------------------- |
-| `target`  | `number` | `-20`   | Target level in dB (-60 to 0)       |
-| `window`  | `number` | `0.5`   | Analysis window in seconds (0.01–5) |
-| `speed`   | `number` | `0.1`   | Adjustment speed (0.01–1)           |
-| `maxGain` | `number` | `12`    | Maximum gain in dB (0–40)           |
-| `maxCut`  | `number` | `12`    | Maximum cut in dB (0–40)            |
+Measure integrated loudness, true peak, loudness range, and short-term/momentary loudness per EBU R128
 
-#### `musicRebalance(modelPath, stems, options?)`
+[Source](./src/targets/loudness-stats/index.ts)
 
-Adjust stem levels using HTDemucs source separation.
+### Mouth De-Click
 
-| Parameter       | Type                 | Default | Description                                                                                              |
-| --------------- | -------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
-| `modelPath`     | `string`             |         | Path to [htdemucs.onnx](https://github.com/facebookresearch/demucs) (requires .onnx.data file alongside) |
-| `stems`         | `Partial<StemGains>` |         | Gain per stem: `{ vocals, drums, bass, other }`                                                          |
-| `onnxAddonPath` | `string`             |         | Path to [onnx-runtime-addon](https://github.com/visionsofparadise/onnx-runtime-addon)                    |
+Remove clicks, pops, and impulse artifacts
 
-#### `pitchShift(ffmpegPath, semitones, options?)`
+[Source](./src/transforms/de-click/mouth-de-click.ts)
 
-Shift pitch without changing duration.
+| Parameter          | Type                       | Default | Description        |
+| ------------------ | -------------------------- | ------- | ------------------ |
+| `sensitivity`      | number (0 to 1, step 0.01) | `0.7`   | Sensitivity        |
+| `maxClickDuration` | number (1 to 1000, step 1) | `50`    | Max Click Duration |
 
-| Parameter    | Type     | Default | Description                    |
-| ------------ | -------- | ------- | ------------------------------ |
-| `ffmpegPath` | `string` |         | Path to ffmpeg                 |
-| `semitones`  | `number` |         | Semitones to shift (-24 to 24) |
-| `cents`      | `number` | `0`     | Cents to shift (-100 to 100)   |
+### Music Rebalance
 
-#### `spectralRepair(regions, options?)`
+Rebalance stem volumes using HTDemucs source separation
 
-Repair spectral regions.
+[Source](./src/transforms/music-rebalance/index.ts)
 
-| Parameter        | Type               | Default | Description                                                             |
-| ---------------- | ------------------ | ------- | ----------------------------------------------------------------------- |
-| `regions`        | `SpectralRegion[]` |         | Regions to repair (`{ startTime, endTime, startFreq, endFreq }`)        |
-| `method`         | `"ar" \| "nmf"`    | `"ar"`  | Repair method                                                           |
-| `vkfftAddonPath` | `string`           |         | Path to [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
-| `fftwAddonPath`  | `string`           |         | Path to [fftw-addon](https://github.com/visionsofparadise/fftw-addon)   |
+| Parameter       | Type                          | Default | Description                                                                                                                                    |
+| --------------- | ----------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `modelPath`     | string                        | `""`    | HTDemucs source separation model (.onnx) — requires .onnx.data file alongside Download: [htdemucs](https://github.com/facebookresearch/demucs) |
+| `ffmpegPath`    | string                        | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html)                                                      |
+| `onnxAddonPath` | string                        | `""`    | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon)                                      |
+| `highPass`      | number (0 to 500, step 10)    | `0`     | High Pass                                                                                                                                      |
+| `lowPass`       | number (0 to 22050, step 100) | `0`     | Low Pass                                                                                                                                       |
 
-#### `timeStretch(ffmpegPath, rate, options?)`
+### Normalize
 
-Change duration without affecting pitch.
+Adjust peak or loudness level to a target ceiling
 
-| Parameter    | Type     | Default | Description                |
-| ------------ | -------- | ------- | -------------------------- |
-| `ffmpegPath` | `string` |         | Path to ffmpeg             |
-| `rate`       | `number` |         | Time stretch rate (0.25–4) |
+[Source](./src/transforms/normalize/index.ts)
 
-#### `voiceDenoise(options)`
+| Parameter | Type                       | Default | Description |
+| --------- | -------------------------- | ------- | ----------- |
+| `ceiling` | number (0 to 1, step 0.01) | `1`     | Ceiling     |
 
-Remove background noise from speech using DTLN.
+### Pad
 
-| Parameter        | Type     | Default | Description                                                                              |
-| ---------------- | -------- | ------- | ---------------------------------------------------------------------------------------- |
-| `modelPath1`     | `string` |         | Path to [DTLN model_1.onnx](https://github.com/breizhn/DTLN) (magnitude mask estimation) |
-| `modelPath2`     | `string` |         | Path to [DTLN model_2.onnx](https://github.com/breizhn/DTLN) (signal reconstruction)     |
-| `ffmpegPath`     | `string` |         | Path to ffmpeg                                                                           |
-| `onnxAddonPath`  | `string` |         | Path to [onnx-runtime-addon](https://github.com/visionsofparadise/onnx-runtime-addon)    |
-| `vkfftAddonPath` | `string` |         | Path to [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon)                  |
-| `fftwAddonPath`  | `string` |         | Path to [fftw-addon](https://github.com/visionsofparadise/fftw-addon)                    |
+Add silence to start or end of audio
+
+[Source](./src/transforms/pad/index.ts)
+
+| Parameter | Type                       | Default | Description |
+| --------- | -------------------------- | ------- | ----------- |
+| `before`  | number (min 0, step 0.001) | `0`     | Before      |
+| `after`   | number (min 0, step 0.001) | `0`     | After       |
+
+### Pan
+
+Position mono signal in stereo field or adjust stereo balance
+
+[Source](./src/transforms/pan/index.ts)
+
+| Parameter | Type                        | Default | Description                                      |
+| --------- | --------------------------- | ------- | ------------------------------------------------ |
+| `pan`     | number (-1 to 1, step 0.01) | `0`     | Pan (-1 = full left, 0 = center, 1 = full right) |
+
+### Phase
+
+Invert or rotate signal phase
+
+[Source](./src/transforms/phase/index.ts)
+
+| Parameter | Type                                   | Default | Description |
+| --------- | -------------------------------------- | ------- | ----------- |
+| `invert`  | boolean                                | `true`  | Invert      |
+| `angle`   | number (-180 to 180, step 1), optional | —       | Angle       |
+
+### Pitch Shift
+
+Change pitch without affecting duration
+
+[Source](./src/transforms/pitch-shift/index.ts)
+
+| Parameter    | Type                         | Default | Description                                                                               |
+| ------------ | ---------------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `ffmpegPath` | string                       | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
+| `semitones`  | number (-24 to 24, step 1)   | `0`     | Semitones                                                                                 |
+| `cents`      | number (-100 to 100, step 1) | `0`     | Cents                                                                                     |
+
+### Read
+
+Read audio from a file
+
+[Source](./src/sources/read/index.ts)
+
+| Parameter     | Type   | Default | Description                                                                                                |
+| ------------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `path`        | string | `""`    |                                                                                                            |
+| `ffmpegPath`  | string | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html)                  |
+| `ffprobePath` | string | `""`    | FFprobe — media file analyzer (included with FFmpeg) Download: [ffprobe](https://ffmpeg.org/download.html) |
+
+### ReadFfmpeg
+
+Read audio from a file using FFmpeg
+
+[Source](./src/sources/read/ffmpeg/index.ts)
+
+| Parameter     | Type   | Default | Description                                                                                                |
+| ------------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `path`        | string | `""`    |                                                                                                            |
+| `ffmpegPath`  | string | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html)                  |
+| `ffprobePath` | string | `""`    | FFprobe — media file analyzer (included with FFmpeg) Download: [ffprobe](https://ffmpeg.org/download.html) |
+
+### ReadWav
+
+Read audio from a WAV file
+
+[Source](./src/sources/read/wav/index.ts)
+
+| Parameter | Type   | Default | Description |
+| --------- | ------ | ------- | ----------- |
+| `path`    | string | `""`    |             |
+
+### Resample
+
+Change sample rate
+
+[Source](./src/transforms/resample/index.ts)
+
+| Parameter    | Type                                 | Default        | Description                                                                               |
+| ------------ | ------------------------------------ | -------------- | ----------------------------------------------------------------------------------------- |
+| `ffmpegPath` | string                               | `""`           | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
+| `sampleRate` | number (8000 to 192000, step 100)    | `44100`        | Sample Rate                                                                               |
+| `dither`     | "triangular" \| "lipshitz" \| "none" | `"triangular"` | Dither                                                                                    |
+
+### Reverse
+
+Reverse audio playback direction
+
+[Source](./src/transforms/reverse/index.ts)
+
+### Spectral Repair
+
+Repair spectral artifacts by interpolating from surrounding content
+
+[Source](./src/transforms/spectral-repair/index.ts)
+
+| Parameter        | Type          | Default | Description                                                                                                         |
+| ---------------- | ------------- | ------- | ------------------------------------------------------------------------------------------------------------------- |
+| `method`         | "ar" \| "nmf" | `"ar"`  | Method                                                                                                              |
+| `vkfftAddonPath` | string        | `""`    | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
+| `fftwAddonPath`  | string        | `""`    | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon)    |
+
+### Spectrogram
+
+Generate spectrogram visualization data
+
+[Source](./src/targets/spectrogram/index.ts)
+
+| Parameter       | Type                           | Default | Description |
+| --------------- | ------------------------------ | ------- | ----------- |
+| `outputPath`    | string                         | `""`    | Output Path |
+| `fftSize`       | number (256 to 8192, step 256) | `2048`  | FFT Size    |
+| `hopSize`       | number (64 to 8192, step 64)   | `512`   | Hop Size    |
+| `fftwAddonPath` | string                         | `""`    | FFTW Addon  |
+
+### Splice
+
+Replace a region of audio with processed content
+
+[Source](./src/transforms/splice/index.ts)
+
+| Parameter    | Type           | Default | Description        |
+| ------------ | -------------- | ------- | ------------------ |
+| `insertPath` | string         | `""`    | Insert File Path   |
+| `insertAt`   | number (min 0) | `0`     | Insert At (frames) |
+
+### Time Stretch
+
+Change duration without affecting pitch
+
+[Source](./src/transforms/time-stretch/index.ts)
+
+| Parameter    | Type                          | Default | Description                                                                               |
+| ------------ | ----------------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `ffmpegPath` | string                        | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
+| `rate`       | number (0.25 to 4, step 0.01) | `1`     | Rate                                                                                      |
+
+### Trim
+
+Remove silence from start and end
+
+[Source](./src/transforms/trim/index.ts)
+
+| Parameter   | Type                        | Default | Description |
+| ----------- | --------------------------- | ------- | ----------- |
+| `threshold` | number (0 to 1, step 0.001) | `0.001` | Threshold   |
+| `margin`    | number (0 to 1, step 0.001) | `0.01`  | Margin      |
+| `start`     | boolean                     | `true`  | Start       |
+| `end`       | boolean                     | `true`  | End         |
+
+### Voice Denoise
+
+Remove background noise from speech using DTLN neural network
+
+[Source](./src/transforms/voice-denoise/index.ts)
+
+| Parameter        | Type   | Default | Description                                                                                                         |
+| ---------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------- |
+| `modelPath1`     | string | `""`    | DTLN magnitude mask model (.onnx) Download: [dtln-model_1](https://github.com/breizhn/DTLN)                         |
+| `modelPath2`     | string | `""`    | DTLN time-domain model (.onnx) Download: [dtln-model_2](https://github.com/breizhn/DTLN)                            |
+| `ffmpegPath`     | string | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html)                           |
+| `onnxAddonPath`  | string | `""`    | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon)           |
+| `vkfftAddonPath` | string | `""`    | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
+| `fftwAddonPath`  | string | `""`    | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon)    |
+
+### Waveform
+
+Generate waveform visualization data
+
+[Source](./src/targets/waveform/index.ts)
+
+| Parameter    | Type                            | Default | Description |
+| ------------ | ------------------------------- | ------- | ----------- |
+| `outputPath` | string                          | `""`    | Output Path |
+| `resolution` | number (100 to 10000, step 100) | `1000`  | Resolution  |
+
+### Write
+
+Write audio to a file
+
+[Source](./src/targets/write/index.ts)
+
+| Parameter    | Type                          | Default | Description                                                                               |
+| ------------ | ----------------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `path`       | string                        | `""`    |                                                                                           |
+| `ffmpegPath` | string                        | `""`    | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
+| `bitDepth`   | "16" \| "24" \| "32" \| "32f" | `"16"`  |                                                                                           |
 
 ## Creating Nodes
 

@@ -20,6 +20,11 @@
     "start": {},
     "lint": {
       "dependsOn": []
+    },
+    "docs": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "scripts/**", "README.md"],
+      "outputs": ["README.md"]
     }
   }
 }

@@ -46,3 +46,8 @@ jobs:
 
       - name: Build (topo-ordered)
         run: npx turbo build --filter=@e9g/buffered-audio-nodes
+
+      - name: Docs (drift check)
+        run: |
+          npx turbo docs --filter=@e9g/buffered-audio-nodes
+          git diff --exit-code packages/buffered-audio-nodes/README.md
