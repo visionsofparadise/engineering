@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "@engineering/design-system/css/tokens.css";
-@import "@engineering/design-system/css/base.css";
-@import "@engineering/design-system/css/utilities.css";
-@import "@engineering/design-system/styles.css";
+@import "@e9g/design-system/css/tokens.css";
+@import "@e9g/design-system/css/base.css";
+@import "@e9g/design-system/css/utilities.css";

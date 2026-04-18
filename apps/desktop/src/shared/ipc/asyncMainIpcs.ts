@@ -21,7 +21,9 @@ import { UnloadPackageModulesMainIpc } from "./Package/unloadModules/Main";
 import { GetAllDisplaysMainIpc } from "./System/getAllDisplays/Main";
 import { GetAppVersionMainIpc } from "./System/getAppVersion/Main";
 import { GetUserDataPathMainIpc } from "./System/getUserDataPath/Main";
+import { ListBundledBinariesMainIpc } from "./System/listBundledBinaries/Main";
 import { GetWindowIdMainIpc } from "./System/getWindowId/Main";
+import { QuitAppMainIpc } from "./System/quitApp/Main";
 import { SetBoundsMainIpc } from "./System/setBounds/Main";
 
 export const ASYNC_MAIN_IPCS = [
@@ -49,5 +51,7 @@ export const ASYNC_MAIN_IPCS = [
 	GetUserDataPathMainIpc,
 	GetWindowIdMainIpc,
 	GetAppVersionMainIpc,
+	ListBundledBinariesMainIpc,
+	QuitAppMainIpc,
 	SetBoundsMainIpc,
 ];

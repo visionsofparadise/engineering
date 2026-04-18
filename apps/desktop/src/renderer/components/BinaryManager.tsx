@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@e9g/design-system";
 import type { AppContext } from "../models/Context";
 import type { ModuleJsonSchema } from "../../shared/ipc/Package/loadModules/Renderer";
@@ -42,6 +42,21 @@ function extractBinaries(context: AppContext): Array<BinaryInfo> {
 export function BinaryManager({ context, isOpen, onClose }: Props) {
 	const { app, appStore, main } = context;
 	const binaries = extractBinaries(context);
+	const [bundledPaths, setBundledPaths] = useState<ReadonlySet<string>>(() => new Set());
+
+	useEffect(() => {
+		let cancelled = false;
+
+		void main.listBundledBinaries().then((bundled) => {
+			if (cancelled) return;
+
+			setBundledPaths(new Set(Object.values(bundled)));
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [main]);
 
 	const handleEscape = useCallback(
 		(event: KeyboardEvent) => {
@@ -114,27 +129,38 @@ export function BinaryManager({ context, isOpen, onClose }: Props) {
 					)}
 
 					<ul className="flex flex-col gap-2">
-						{binaries.map((binary) => (
-							<li key={binary.name} className="flex items-center gap-2">
-								<span className="font-technical text-chrome-text text-sm w-32">
-									{binary.name}
-								</span>
-								<span className="font-body text-sm flex-1 truncate">
-									{binary.currentPath ? (
-										<span className="text-chrome-text-secondary">{binary.currentPath}</span>
-									) : (
-										<span className="text-chrome-text-dim">Not configured</span>
-									)}
-								</span>
-								<Button
-									variant="secondary"
-									size="sm"
-									onClick={() => void handleBrowse(binary.name)}
-								>
-									Browse
-								</Button>
-							</li>
-						))}
+						{binaries.map((binary) => {
+							const isBundled = binary.currentPath !== undefined && bundledPaths.has(binary.currentPath);
+
+							return (
+								<li key={binary.name} className="flex items-center gap-2">
+									<span className="font-technical text-chrome-text text-sm w-32">
+										{binary.name}
+									</span>
+									<span className="font-body text-sm flex-1 truncate flex items-center gap-2">
+										{binary.currentPath ? (
+											<>
+												<span className="text-chrome-text-secondary truncate">{binary.currentPath}</span>
+												{isBundled && (
+													<span className="font-technical text-[length:var(--text-xs)] uppercase tracking-[0.06em] text-chrome-text-dim bg-chrome-raised px-1.5 shrink-0">
+														Bundled default
+													</span>
+												)}
+											</>
+										) : (
+											<span className="text-chrome-text-dim">Not configured</span>
+										)}
+									</span>
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={() => void handleBrowse(binary.name)}
+									>
+										Browse
+									</Button>
+								</li>
+							);
+						})}
 					</ul>
 				</div>
 			</div>

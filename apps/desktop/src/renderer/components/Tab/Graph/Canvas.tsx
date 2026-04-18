@@ -1,7 +1,6 @@
 import {
 	Background,
 	BackgroundVariant,
-	Controls,
 	MiniMap,
 	ReactFlow,
 	useEdgesState,
@@ -18,6 +17,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GraphContext } from "../../../models/Context";
+import { computeAutoLayout } from "../../../utilities/autoLayout";
 import { buildDefaultArrayItem, buildParameters, type Parameter } from "./Node/utils/buildParameters";
 import { lookupModule, schemaPropertyAtPath } from "./Node/utils/moduleLookup";
 import { EdgeContainer } from "./EdgeContainer";
@@ -28,6 +28,9 @@ import { NodeContainer } from "./Node/Container";
 import { NodePicker } from "./Node/Picker";
 import { useNodeStates } from "./hooks/useNodeStates";
 import { useRenderJob } from "./hooks/useRenderJob";
+import { BottomRightOverlay } from "./Overlays/BottomRightOverlay";
+import { TopLeftOverlay } from "./Overlays/TopLeftOverlay";
+import { TopRightOverlay } from "./Overlays/TopRightOverlay";
 
 interface AudioEdgeData {
 	readonly state: "idle" | "active" | "complete";
@@ -271,6 +274,34 @@ export function GraphCanvas({ context }: Props) {
 		setNodePicker(null);
 	}, []);
 
+	const handleAutoOrganize = useCallback(() => {
+		const previousPositions = structuredClone(context.graph.positions as Record<string, { x: number; y: number }>);
+		const nextPositions = computeAutoLayout(context.graphDefinition.nodes, context.graphDefinition.edges);
+
+		context.graphStore.mutate(context.graph, (proxy) => {
+			proxy.positions = nextPositions;
+		});
+
+		context.pushHistory({
+			label: "Auto-organize",
+			undo: () => {
+				context.graphStore.mutate(context.graph, (proxy) => {
+					proxy.positions = structuredClone(previousPositions);
+				});
+			},
+			redo: () => {
+				context.graphStore.mutate(context.graph, (proxy) => {
+					proxy.positions = structuredClone(nextPositions);
+				});
+			},
+		});
+	}, [context]);
+
+	const handleAddNode = useCallback(() => {
+		setContextMenu(null);
+		setNodePicker({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+	}, []);
+
 	const closeContextMenu = useCallback(() => {
 		setContextMenu(null);
 	}, []);
@@ -374,6 +405,9 @@ export function GraphCanvas({ context }: Props) {
 	}, [context, getNodes, mutations]);
 
 	const contextMenuItems = contextMenu?.nodeId ? NODE_MENU_ITEMS : PANE_MENU_ITEMS;
+	const canUndo = context.history.cursor > 0;
+	const canRedo = context.history.cursor < context.history.entries.length;
+	const isRendering = processingNodes.size > 0;
 
 	return (
 		<div className="relative h-full w-full">
@@ -479,12 +513,20 @@ export function GraphCanvas({ context }: Props) {
 					pannable
 					zoomable
 				/>
-				<Controls
-					showInteractive={false}
-					position="bottom-left"
-					style={{ marginLeft: 220 }}
-				/>
 			</ReactFlow>
+
+			<TopLeftOverlay context={context} />
+			<TopRightOverlay
+				onAutoOrganize={handleAutoOrganize}
+				onUndo={context.undo}
+				onRedo={context.redo}
+				onRender={() => void startRender()}
+				onAbort={() => void abortRender()}
+				canUndo={canUndo}
+				canRedo={canRedo}
+				isRendering={isRendering}
+			/>
+			<BottomRightOverlay onAddNode={handleAddNode} />
 
 			{contextMenu && (
 				<GraphContextMenu

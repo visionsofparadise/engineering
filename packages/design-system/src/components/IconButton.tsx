@@ -1,6 +1,9 @@
 import { Icon } from "@iconify/react";
+import type { ComponentPropsWithoutRef } from "react";
 
-interface IconButtonProps {
+type ButtonProps = ComponentPropsWithoutRef<"button">;
+
+interface IconButtonProps extends Omit<ButtonProps, "children" | "aria-label"> {
   readonly icon: string;
   readonly label: string;
   readonly size?: number;
@@ -8,8 +11,6 @@ interface IconButtonProps {
   readonly active?: boolean;
   readonly activeVariant?: "raised" | "primary" | "secondary";
   readonly dim?: boolean;
-  readonly onClick?: () => void;
-  readonly className?: string;
 }
 
 export function IconButton({
@@ -20,10 +21,14 @@ export function IconButton({
   active,
   activeVariant = "raised",
   dim,
-  onClick,
+  disabled,
   className,
+  type = "button",
+  ...buttonProps
 }: IconButtonProps) {
-  const textColor = dim
+  const isDimmed = dim === true || disabled === true;
+
+  const textColor = isDimmed
     ? "text-chrome-text-dim"
     : active
       ? (activeVariant === "primary" ? "text-void" : "text-chrome-text")
@@ -33,12 +38,15 @@ export function IconButton({
     ? (activeVariant === "primary" ? "bg-primary" : activeVariant === "secondary" ? "bg-secondary" : "bg-chrome-raised")
     : variant === "raised" ? "bg-chrome-raised" : "";
 
+  const disabledClass = disabled ? " cursor-not-allowed" : "";
+
   return (
     <button
-      type="button"
-      className={`flex items-center justify-center px-1 py-1.5 ${textColor}${className ? ` ${className}` : ""}`}
+      {...buttonProps}
+      type={type}
+      disabled={disabled}
       aria-label={label}
-      onClick={onClick}
+      className={`flex items-center justify-center px-1 py-1.5 ${textColor}${disabledClass}${className ? ` ${className}` : ""}`}
     >
       <span className={`flex items-center justify-center py-1 ${bgClass}`}>
         <Icon icon={icon} width={size} height={size} />

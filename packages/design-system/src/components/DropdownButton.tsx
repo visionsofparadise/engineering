@@ -18,9 +18,10 @@ export interface DropdownButtonProps {
   readonly items: ReadonlyArray<MenuItem>;
   readonly align?: "left" | "right";
   readonly className?: string;
+  readonly menuClassName?: string;
 }
 
-export function DropdownButton({ trigger, items, align = "left", className }: DropdownButtonProps) {
+export function DropdownButton({ trigger, items, align = "left", className, menuClassName }: DropdownButtonProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -51,7 +52,7 @@ export function DropdownButton({ trigger, items, align = "left", className }: Dr
       <div onClick={() => setOpen(!open)}>{trigger}</div>
       {open && (
         <div
-          className={`absolute top-full z-50 mt-1 flex min-w-72 flex-col bg-chrome-raised py-1 ${align === "right" ? "right-0" : "left-0"}`}
+          className={`absolute top-full z-50 mt-1 flex min-w-72 flex-col bg-chrome-raised py-1 ${menuClassName ? `${menuClassName} ` : ""}${align === "right" ? "right-0" : "left-0"}`}
         >
           {items.map((item, index) => {
             if (item.kind === "separator") {

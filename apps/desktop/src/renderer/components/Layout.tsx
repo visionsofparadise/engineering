@@ -1,7 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
+import type { MenuItem } from "@e9g/design-system";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Logger } from "../../shared/models/Logger";
 import { useAutosave } from "../hooks/useAutosave";
+import { useBinaryDefaults } from "../hooks/useBinaryDefaults";
 import { ensureGraphPackagesInstalled } from "../hooks/packagePipeline";
 import { usePackageLoader } from "../hooks/usePackageLoader";
 import { useWindowState } from "../hooks/useWindowState";
@@ -15,6 +17,7 @@ import { LoadingScreen } from "./LoadingScreen";
 import { BinaryManager } from "./BinaryManager";
 import { ModuleManager } from "./ModuleManager";
 import { AppTabBar } from "./TabBar";
+import { TitleBar } from "./TitleBar";
 import { TabContent } from "./Tab";
 
 interface Props {
@@ -32,6 +35,7 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 	const mainEvents = useMemo(() => new MainEvents(main), []);
 
 	useWindowState(app, appStore, main, mainEvents);
+	useBinaryDefaults(app, appStore, main);
 	useAutosave(app, appStore, main, userDataPath);
 
 	const { isLoading } = usePackageLoader(app, appStore, main);
@@ -49,6 +53,8 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 	const tabNamesRef = useRef(new Map<string, string>());
 	const renameCallbacksRef = useRef(new Map<string, (name: string) => void>());
 	const importCallbacksRef = useRef(new Map<string, () => Promise<void>>());
+	const undoCallbacksRef = useRef(new Map<string, () => void>());
+	const redoCallbacksRef = useRef(new Map<string, () => void>());
 
 	const addTab = useCallback(
 		(bagId: string, bagPath: string, name: string) => {
@@ -73,28 +79,35 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 		[app, appStore],
 	);
 
+	const openBagByPath = useCallback(
+		async (bagPath: string) => {
+			const definition = await loadBag(main, bagPath);
+
+			setHasPassedLoading(false);
+
+			try {
+				await ensureGraphPackagesInstalled(definition, app, appStore, main);
+			} catch (error) {
+				logger.error("Failed to install exact package versions required by bag", error as Error, {
+					namespace: "packages",
+					bagPath,
+				});
+			} finally {
+				setHasPassedLoading(true);
+			}
+
+			addTab(definition.id, bagPath, definition.name);
+		},
+		[addTab, app, appStore, logger],
+	);
+
 	const openBagTab = useCallback(async () => {
 		const bagPath = await openBag(main);
 
 		if (!bagPath) return;
 
-		const definition = await loadBag(main, bagPath);
-
-		setHasPassedLoading(false);
-
-		try {
-			await ensureGraphPackagesInstalled(definition, app, appStore, main);
-		} catch (error) {
-			logger.error("Failed to install exact package versions required by bag", error as Error, {
-				namespace: "packages",
-				bagPath,
-			});
-		} finally {
-			setHasPassedLoading(true);
-		}
-
-		addTab(definition.id, bagPath, definition.name);
-	}, [addTab, app, appStore, logger, main]);
+		await openBagByPath(bagPath);
+	}, [openBagByPath]);
 
 	const newBagTab = useCallback(async () => {
 		const result = await newBag(main);
@@ -138,12 +151,104 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 			tabNames: tabNamesRef.current,
 			renameCallbacks: renameCallbacksRef.current,
 			importCallbacks: importCallbacksRef.current,
+			undoCallbacks: undoCallbacksRef.current,
+			redoCallbacks: redoCallbacksRef.current,
 			openBagTab,
+			openBagByPath,
 			newBagTab,
 			renameTab,
 			importBagIntoActiveTab,
 		}),
-		[app, mainEvents, windowId, userDataPath, openBagTab, newBagTab, renameTab, importBagIntoActiveTab],
+		[app, mainEvents, windowId, userDataPath, openBagTab, openBagByPath, newBagTab, renameTab, importBagIntoActiveTab],
+	);
+
+	const hasActiveGraphTab = app.activeTabId !== null;
+
+	const menuItems: ReadonlyArray<MenuItem> = useMemo(
+		() => [
+			{
+				kind: "action",
+				icon: "lucide:file-plus",
+				label: "New Graph",
+				shortcut: "Ctrl+N",
+				onClick: () => void context.newBagTab(),
+			},
+			{
+				kind: "action",
+				icon: "lucide:folder-open",
+				label: "Open Graph",
+				shortcut: "Ctrl+O",
+				onClick: () => void context.openBagTab(),
+			},
+			{
+				kind: "action",
+				icon: "lucide:import",
+				label: "Import Bag",
+				shortcut: "Ctrl+Shift+O",
+				onClick: () => void context.importBagIntoActiveTab(),
+				disabled: !hasActiveGraphTab,
+			},
+			{
+				kind: "action",
+				icon: "lucide:save",
+				label: "Save",
+				shortcut: "Ctrl+S",
+				disabled: !hasActiveGraphTab,
+			},
+			{
+				kind: "action",
+				icon: "lucide:save-all",
+				label: "Save As\u2026",
+				shortcut: "Ctrl+Shift+S",
+				disabled: !hasActiveGraphTab,
+			},
+			{ kind: "separator" },
+			{
+				kind: "action",
+				icon: "lucide:undo-2",
+				label: "Undo",
+				shortcut: "Ctrl+Z",
+				onClick: () => context.undoCallbacks.get(app.activeTabId ?? "")?.(),
+				disabled: !hasActiveGraphTab,
+			},
+			{
+				kind: "action",
+				icon: "lucide:redo-2",
+				label: "Redo",
+				shortcut: "Ctrl+Shift+Z",
+				onClick: () => context.redoCallbacks.get(app.activeTabId ?? "")?.(),
+				disabled: !hasActiveGraphTab,
+			},
+			{ kind: "separator" },
+			{
+				kind: "action",
+				icon: "lucide:blocks",
+				label: "Package Manager",
+				onClick: openModuleManager,
+			},
+			{
+				kind: "action",
+				icon: "lucide:hard-drive",
+				label: "Binaries Manager",
+				onClick: openBinaryManager,
+			},
+			{ kind: "separator" },
+			{
+				kind: "action",
+				icon: "lucide:settings",
+				label: "Settings",
+				shortcut: "Ctrl+,",
+			},
+			{ kind: "separator" },
+			{
+				kind: "action",
+				icon: "lucide:x",
+				label: "Close",
+				shortcut: "Ctrl+Q",
+				onClick: () => void main.quitApp(),
+			},
+		],
+		[app.activeTabId, context, hasActiveGraphTab, openModuleManager, openBinaryManager],
 	);
 
 	useEffect(() => {
@@ -167,7 +272,8 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 
 	return (
 		<div className="flex flex-col h-screen">
-			<AppTabBar context={context} onOpenModuleManager={openModuleManager} onOpenBinaryManager={openBinaryManager} />
+			<TitleBar context={context} menuItems={menuItems} />
+			<AppTabBar context={context} />
 			<TabContent context={context} />
 			<ModuleManager context={context} isOpen={moduleManagerOpen} onClose={closeModuleManager} />
 			<BinaryManager context={context} isOpen={binaryManagerOpen} onClose={closeBinaryManager} />

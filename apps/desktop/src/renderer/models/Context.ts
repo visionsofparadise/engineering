@@ -38,7 +38,10 @@ export interface AppContext {
 	readonly tabNames: Map<string, string>;
 	readonly renameCallbacks: Map<string, (name: string) => void>;
 	readonly importCallbacks: Map<string, () => Promise<void>>;
+	readonly undoCallbacks: Map<string, () => void>;
+	readonly redoCallbacks: Map<string, () => void>;
 	readonly openBagTab: () => Promise<void>;
+	readonly openBagByPath: (bagPath: string) => Promise<void>;
 	readonly newBagTab: () => Promise<void>;
 	readonly renameTab: (tabId: string, newName: string) => void;
 	readonly importBagIntoActiveTab: () => Promise<void>;

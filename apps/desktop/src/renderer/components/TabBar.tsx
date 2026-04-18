@@ -1,33 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DropdownButton, IconButton, type MenuItem } from "@e9g/design-system";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { IconButton } from "@e9g/design-system";
 import type { AppContext } from "../models/Context";
 
 interface Props {
 	readonly context: AppContext;
-	readonly onOpenModuleManager: () => void;
-	readonly onOpenBinaryManager: () => void;
 }
 
-export function AppTabBar({ context, onOpenModuleManager, onOpenBinaryManager }: Props) {
+export function AppTabBar({ context }: Props) {
 	const { app, appStore } = context;
 
 	const [editingTabId, setEditingTabId] = useState<string | null>(null);
 	const [editingName, setEditingName] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);
-
-	const menuItems: ReadonlyArray<MenuItem> = useMemo(
-		() => [
-			{ kind: "action", icon: "lucide:file-plus", label: "New Session", shortcut: "Ctrl+N", onClick: () => void context.newBagTab() },
-			{ kind: "action", icon: "lucide:folder-open", label: "Open Session", shortcut: "Ctrl+O", onClick: () => void context.openBagTab() },
-			{ kind: "action", icon: "lucide:import", label: "Import Bag", shortcut: "Ctrl+Shift+O", onClick: () => void context.importBagIntoActiveTab() },
-			{ kind: "action", icon: "lucide:save", label: "Save", shortcut: "Ctrl+S" },
-			{ kind: "action", icon: "lucide:save-all", label: "Save As\u2026", shortcut: "Ctrl+Shift+S" },
-			{ kind: "separator" },
-			{ kind: "action", icon: "lucide:undo-2", label: "Undo", shortcut: "Ctrl+Z" },
-			{ kind: "action", icon: "lucide:redo-2", label: "Redo", shortcut: "Ctrl+Shift+Z" },
-		],
-		[context],
-	);
 
 	const tabs = app.tabs.map((tab) => ({
 		id: tab.id,
@@ -56,6 +40,8 @@ export function AppTabBar({ context, onOpenModuleManager, onOpenBinaryManager }:
 		context.tabNames.delete(id);
 		context.renameCallbacks.delete(id);
 		context.importCallbacks.delete(id);
+		context.undoCallbacks.delete(id);
+		context.redoCallbacks.delete(id);
 	};
 
 	const startEditing = useCallback((tabId: string, currentLabel: string) => {
@@ -87,14 +73,6 @@ export function AppTabBar({ context, onOpenModuleManager, onOpenBinaryManager }:
 
 	return (
 		<div className="flex h-9 shrink-0 items-center gap-2 bg-void px-2">
-			<DropdownButton
-				trigger={<IconButton icon="lucide:menu" label="Menu" size={16} />}
-				items={menuItems}
-			/>
-
-			<IconButton icon="lucide:blocks" label="Module Manager" size={16} onClick={onOpenModuleManager} />
-			<IconButton icon="lucide:hard-drive" label="Binary Manager" size={16} onClick={onOpenBinaryManager} />
-
 			<div className="h-4 w-px bg-chrome-border-subtle" />
 
 			{tabs.map((tab) => {
@@ -146,10 +124,14 @@ export function AppTabBar({ context, onOpenModuleManager, onOpenBinaryManager }:
 
 			<IconButton
 				icon="lucide:plus"
-				label="New tab"
-				active={!tabs.some((tab) => tab.id === (app.activeTabId ?? ""))}
+				label="Home"
+				active={app.activeTabId === null}
 				activeVariant="primary"
-				onClick={() => void context.newBagTab()}
+				onClick={() =>
+					appStore.mutate(app, (proxy) => {
+						proxy.activeTabId = null;
+					})
+				}
 			/>
 		</div>
 	);

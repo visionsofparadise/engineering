@@ -55,6 +55,16 @@ export function GraphSession({ initialGraphState, context, tab, graphDefinition,
 	}, [context.renameCallbacks, tab.id, mutateDefinition]);
 
 	useEffect(() => {
+		context.undoCallbacks.set(tab.id, undo);
+		context.redoCallbacks.set(tab.id, redo);
+
+		return () => {
+			context.undoCallbacks.delete(tab.id);
+			context.redoCallbacks.delete(tab.id);
+		};
+	}, [context.undoCallbacks, context.redoCallbacks, tab.id, undo, redo]);
+
+	useEffect(() => {
 		context.importCallbacks.set(tab.id, async () => {
 			const imported = await importBag(context.main);
 
