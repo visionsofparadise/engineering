@@ -1,5 +1,4 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { MenuItem } from "@e9g/design-system";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Logger } from "../../shared/models/Logger";
 import { useAutosave } from "../hooks/useAutosave";
@@ -12,7 +11,7 @@ import { main } from "../models/Main";
 import { MainEvents } from "../models/MainEvents";
 import type { ProxyStore } from "../models/ProxyStore/ProxyStore";
 import { useAppState, type AppState } from "../models/State/App";
-import { loadBag, newBag, openBag } from "../utilities/bagOperations";
+import { loadBag, newBag, openBag, saveBagDefinition } from "../utilities/bagOperations";
 import { LoadingScreen } from "./LoadingScreen";
 import { BinaryManager } from "./BinaryManager";
 import { ModuleManager } from "./ModuleManager";
@@ -114,8 +113,29 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 
 		if (!result) return;
 
+		const readyBufferedAudioNodes = app.packages.filter(
+			(entry) => entry.name === "@e9g/buffered-audio-nodes" && entry.status === "ready" && entry.version !== null,
+		);
+
+		if (readyBufferedAudioNodes.length > 0) {
+			const latest = readyBufferedAudioNodes.reduce((winner, candidate) =>
+				(candidate.version ?? "").localeCompare(winner.version ?? "", undefined, { numeric: true, sensitivity: "base" }) > 0
+					? candidate
+					: winner,
+			);
+
+			result.definition.nodes.push({
+				id: crypto.randomUUID(),
+				packageName: "@e9g/buffered-audio-nodes",
+				packageVersion: latest.version ?? "",
+				nodeName: "Read",
+			});
+
+			await saveBagDefinition(main, result.bagPath, result.definition);
+		}
+
 		addTab(result.definition.id, result.bagPath, result.definition.name);
-	}, [addTab]);
+	}, [addTab, app.packages]);
 
 	const renameTab = useCallback((tabId: string, newName: string) => {
 		const callback = renameCallbacksRef.current.get(tabId);
@@ -158,97 +178,10 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 			newBagTab,
 			renameTab,
 			importBagIntoActiveTab,
+			openModuleManager,
+			openBinaryManager,
 		}),
-		[app, mainEvents, windowId, userDataPath, openBagTab, openBagByPath, newBagTab, renameTab, importBagIntoActiveTab],
-	);
-
-	const hasActiveGraphTab = app.activeTabId !== null;
-
-	const menuItems: ReadonlyArray<MenuItem> = useMemo(
-		() => [
-			{
-				kind: "action",
-				icon: "lucide:file-plus",
-				label: "New Graph",
-				shortcut: "Ctrl+N",
-				onClick: () => void context.newBagTab(),
-			},
-			{
-				kind: "action",
-				icon: "lucide:folder-open",
-				label: "Open Graph",
-				shortcut: "Ctrl+O",
-				onClick: () => void context.openBagTab(),
-			},
-			{
-				kind: "action",
-				icon: "lucide:import",
-				label: "Import Bag",
-				shortcut: "Ctrl+Shift+O",
-				onClick: () => void context.importBagIntoActiveTab(),
-				disabled: !hasActiveGraphTab,
-			},
-			{
-				kind: "action",
-				icon: "lucide:save",
-				label: "Save",
-				shortcut: "Ctrl+S",
-				disabled: !hasActiveGraphTab,
-			},
-			{
-				kind: "action",
-				icon: "lucide:save-all",
-				label: "Save As\u2026",
-				shortcut: "Ctrl+Shift+S",
-				disabled: !hasActiveGraphTab,
-			},
-			{ kind: "separator" },
-			{
-				kind: "action",
-				icon: "lucide:undo-2",
-				label: "Undo",
-				shortcut: "Ctrl+Z",
-				onClick: () => context.undoCallbacks.get(app.activeTabId ?? "")?.(),
-				disabled: !hasActiveGraphTab,
-			},
-			{
-				kind: "action",
-				icon: "lucide:redo-2",
-				label: "Redo",
-				shortcut: "Ctrl+Shift+Z",
-				onClick: () => context.redoCallbacks.get(app.activeTabId ?? "")?.(),
-				disabled: !hasActiveGraphTab,
-			},
-			{ kind: "separator" },
-			{
-				kind: "action",
-				icon: "lucide:blocks",
-				label: "Package Manager",
-				onClick: openModuleManager,
-			},
-			{
-				kind: "action",
-				icon: "lucide:hard-drive",
-				label: "Binaries Manager",
-				onClick: openBinaryManager,
-			},
-			{ kind: "separator" },
-			{
-				kind: "action",
-				icon: "lucide:settings",
-				label: "Settings",
-				shortcut: "Ctrl+,",
-			},
-			{ kind: "separator" },
-			{
-				kind: "action",
-				icon: "lucide:x",
-				label: "Close",
-				shortcut: "Ctrl+Q",
-				onClick: () => void main.quitApp(),
-			},
-		],
-		[app.activeTabId, context, hasActiveGraphTab, openModuleManager, openBinaryManager],
+		[app, mainEvents, windowId, userDataPath, openBagTab, openBagByPath, newBagTab, renameTab, importBagIntoActiveTab, openModuleManager, openBinaryManager],
 	);
 
 	useEffect(() => {
@@ -272,7 +205,7 @@ export function AppLayout({ initialState, windowId, userDataPath, appStore, quer
 
 	return (
 		<div className="flex flex-col h-screen">
-			<TitleBar context={context} menuItems={menuItems} />
+			<TitleBar context={context} />
 			<AppTabBar context={context} />
 			<TabContent context={context} />
 			<ModuleManager context={context} isOpen={moduleManagerOpen} onClose={closeModuleManager} />

@@ -13,8 +13,19 @@ export type { InputProps } from "./components/Input";
 export { Select } from "./components/Select";
 export type { SelectProps } from "./components/Select";
 export { Toggle } from "./components/Toggle";
-export { DropdownButton } from "./components/DropdownButton";
-export type { DropdownButtonProps, MenuItem } from "./components/DropdownButton";
+export {
+	DropdownMenu,
+	DropdownMenuTrigger,
+	DropdownMenuGroup,
+	DropdownMenuPortal,
+	DropdownMenuSub,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuSubTrigger,
+	DropdownMenuSubContent,
+} from "./components/DropdownMenu";
 export { IconButton } from "./components/IconButton";
 export { TerrainShader } from "./components/TerrainShader";
 

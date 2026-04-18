@@ -87,7 +87,7 @@ export function HomeScreen({ context }: Props) {
 						<button
 							type="button"
 							onClick={() => void context.newBagTab()}
-							className="flex w-fit items-center gap-2 px-2 py-1 font-technical text-[length:var(--text-sm)] uppercase tracking-[0.06em] text-void transition-colors hover:brightness-110"
+							className="flex w-fit items-center gap-2 font-technical text-[length:var(--text-sm)] uppercase tracking-[0.06em] text-void transition-colors hover:brightness-110"
 						>
 							<span className="flex items-center gap-2 bg-primary">
 								<Icon icon="lucide:plus" width={16} />
@@ -97,7 +97,7 @@ export function HomeScreen({ context }: Props) {
 						<button
 							type="button"
 							onClick={() => void context.openBagTab()}
-							className="flex w-fit items-center gap-2 px-2 py-1 font-technical text-[length:var(--text-sm)] uppercase tracking-[0.06em] text-chrome-text transition-colors hover:brightness-125"
+							className="flex w-fit items-center gap-2 font-technical text-[length:var(--text-sm)] uppercase tracking-[0.06em] text-chrome-text transition-colors hover:brightness-125"
 						>
 							<span className="flex items-center gap-2 bg-secondary">
 								<Icon icon="lucide:folder-open" width={16} />

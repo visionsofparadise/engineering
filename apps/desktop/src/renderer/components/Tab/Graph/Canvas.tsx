@@ -21,11 +21,10 @@ import { computeAutoLayout } from "../../../utilities/autoLayout";
 import { buildDefaultArrayItem, buildParameters, type Parameter } from "./Node/utils/buildParameters";
 import { lookupModule, schemaPropertyAtPath } from "./Node/utils/moduleLookup";
 import { EdgeContainer } from "./EdgeContainer";
-import { GraphContextMenu, NODE_MENU_ITEMS, PANE_MENU_ITEMS, type ContextMenuAction, type ContextMenuPosition } from "./GraphContextMenu";
+import { GraphContextMenu, type ContextMenuAction, type ContextMenuPosition } from "./GraphContextMenu";
 import { useGraphMutations } from "./hooks/useGraphMutations";
 import type { NodeContainerData, NodeState } from "./Node/Container";
 import { NodeContainer } from "./Node/Container";
-import { NodePicker } from "./Node/Picker";
 import { useNodeStates } from "./hooks/useNodeStates";
 import { useRenderJob } from "./hooks/useRenderJob";
 import { BottomRightOverlay } from "./Overlays/BottomRightOverlay";
@@ -35,11 +34,6 @@ import { TopRightOverlay } from "./Overlays/TopRightOverlay";
 interface AudioEdgeData {
 	readonly state: "idle" | "active" | "complete";
 	[key: string]: unknown;
-}
-
-interface NodePickerState {
-	readonly x: number;
-	readonly y: number;
 }
 
 const NODE_TYPES: NodeTypes = { bufferedAudioNode: NodeContainer };
@@ -144,7 +138,6 @@ export function GraphCanvas({ context }: Props) {
 	const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
 	const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 	const [contextMenu, setContextMenu] = useState<ContextMenuPosition | null>(null);
-	const [nodePicker, setNodePicker] = useState<NodePickerState | null>(null);
 
 	const { screenToFlowPosition, getNodes } = useReactFlow();
 	const mutations = useGraphMutations(context);
@@ -259,19 +252,16 @@ export function GraphCanvas({ context }: Props) {
 
 	const handleNodeContextMenu: NodeMouseHandler<Node> = useCallback((event, node) => {
 		event.preventDefault();
-		setNodePicker(null);
 		setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
 	}, []);
 
 	const handlePaneContextMenu = useCallback((event: React.MouseEvent | MouseEvent) => {
 		event.preventDefault();
-		setNodePicker(null);
 		setContextMenu({ x: event.clientX, y: event.clientY });
 	}, []);
 
 	const handlePaneClick = useCallback(() => {
 		setContextMenu(null);
-		setNodePicker(null);
 	}, []);
 
 	const handleAutoOrganize = useCallback(() => {
@@ -297,11 +287,6 @@ export function GraphCanvas({ context }: Props) {
 		});
 	}, [context]);
 
-	const handleAddNode = useCallback(() => {
-		setContextMenu(null);
-		setNodePicker({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-	}, []);
-
 	const closeContextMenu = useCallback(() => {
 		setContextMenu(null);
 	}, []);
@@ -311,12 +296,6 @@ export function GraphCanvas({ context }: Props) {
 			if (!contextMenu) return;
 
 			switch (action) {
-				case "add": {
-					setNodePicker({ x: contextMenu.x, y: contextMenu.y });
-					setContextMenu(null);
-					break;
-				}
-
 				case "delete": {
 					if (contextMenu.nodeId) {
 						mutations.removeNode(contextMenu.nodeId);
@@ -345,21 +324,26 @@ export function GraphCanvas({ context }: Props) {
 		[contextMenu, mutations, startRender],
 	);
 
-	const handleNodePickerSelect = useCallback(
+	const handleAddNodeFromContextMenu = useCallback(
 		(packageName: string, packageVersion: string, nodeName: string) => {
-			if (!nodePicker) return;
+			if (!contextMenu) return;
 
-			const flowPosition = screenToFlowPosition({ x: nodePicker.x, y: nodePicker.y });
+			const flowPosition = screenToFlowPosition({ x: contextMenu.x, y: contextMenu.y });
 
 			mutations.addNode(packageName, packageVersion, nodeName, flowPosition);
-			setNodePicker(null);
+			setContextMenu(null);
 		},
-		[nodePicker, screenToFlowPosition, mutations],
+		[contextMenu, mutations, screenToFlowPosition],
 	);
 
-	const closeNodePicker = useCallback(() => {
-		setNodePicker(null);
-	}, []);
+	const handleAddNodeFromButton = useCallback(
+		(packageName: string, packageVersion: string, nodeName: string) => {
+			const flowPosition = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+
+			mutations.addNode(packageName, packageVersion, nodeName, flowPosition);
+		},
+		[mutations, screenToFlowPosition],
+	);
 
 	// Keyboard shortcuts: undo/redo, delete selected nodes
 	useEffect(() => {
@@ -404,7 +388,6 @@ export function GraphCanvas({ context }: Props) {
 		};
 	}, [context, getNodes, mutations]);
 
-	const contextMenuItems = contextMenu?.nodeId ? NODE_MENU_ITEMS : PANE_MENU_ITEMS;
 	const canUndo = context.history.cursor > 0;
 	const canRedo = context.history.cursor < context.history.entries.length;
 	const isRendering = processingNodes.size > 0;
@@ -502,7 +485,7 @@ export function GraphCanvas({ context }: Props) {
 					variant={BackgroundVariant.Dots}
 					gap={20}
 					size={1}
-					color="var(--chrome-border-subtle)"
+					color="var(--color-chrome-surface)"
 				/>
 				<MiniMap
 					nodeColor="var(--chrome-raised)"
@@ -526,23 +509,15 @@ export function GraphCanvas({ context }: Props) {
 				canRedo={canRedo}
 				isRendering={isRendering}
 			/>
-			<BottomRightOverlay onAddNode={handleAddNode} />
+			<BottomRightOverlay app={context.app} onAddNode={handleAddNodeFromButton} />
 
 			{contextMenu && (
 				<GraphContextMenu
 					position={contextMenu}
-					items={contextMenuItems}
-					onAction={handleContextMenuAction}
-					onClose={closeContextMenu}
-				/>
-			)}
-
-			{nodePicker && (
-				<NodePicker
 					app={context.app}
-					onSelect={handleNodePickerSelect}
-					onClose={closeNodePicker}
-					position={nodePicker}
+					onAction={handleContextMenuAction}
+					onAddNode={handleAddNodeFromContextMenu}
+					onClose={closeContextMenu}
 				/>
 			)}
 		</div>

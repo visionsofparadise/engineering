@@ -45,6 +45,8 @@ export interface AppContext {
 	readonly newBagTab: () => Promise<void>;
 	readonly renameTab: (tabId: string, newName: string) => void;
 	readonly importBagIntoActiveTab: () => Promise<void>;
+	readonly openModuleManager: () => void;
+	readonly openBinaryManager: () => void;
 }
 
 export interface GraphContext extends AppContext {

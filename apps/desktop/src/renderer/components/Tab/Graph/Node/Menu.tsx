@@ -1,5 +1,12 @@
-import { IconButton, DropdownButton } from "@e9g/design-system";
-import type { MenuItem } from "@e9g/design-system";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+	IconButton,
+} from "@e9g/design-system";
+import { Icon } from "@iconify/react";
 
 export function NodeMenu({ isSource, isProcessing, isPending, isBypassed, isInspected, isRendered, onRender, onAbort, onView }: {
 	readonly isSource: boolean;
@@ -18,56 +25,46 @@ export function NodeMenu({ isSource, isProcessing, isPending, isBypassed, isInsp
 	if (isProcessing) { renderLabel = "Abort"; renderColor = "text-state-error"; }
 	else if (isPending) { renderLabel = "Pending"; renderColor = "text-chrome-text-dim"; }
 
-	const items: Array<MenuItem> = [];
-
-	items.push({
-		kind: "action",
-		label: "View",
-		icon: "lucide:eye",
-		disabled: !isRendered,
-		onClick: onView,
-	});
-
-	if (isSource) {
-		items.push({
-			kind: "action",
-			label: "Inspect",
-			icon: "lucide:eye",
-			color: isInspected ? "text-primary" : undefined,
-		});
-	}
-
-	if (!isSource) {
-		items.push({
-			kind: "action",
-			label: renderLabel,
-			icon: isProcessing ? "lucide:square" : "lucide:play",
-			color: renderColor,
-			onClick: isProcessing ? onAbort : onRender,
-		});
-	}
-
-	items.push({
-		kind: "action",
-		label: isBypassed ? "Enable" : "Bypass",
-		icon: "lucide:power",
-		color: isBypassed ? "text-secondary" : undefined,
-	});
-
-	items.push({ kind: "separator" });
-
-	items.push({
-		kind: "action",
-		label: "Delete",
-		icon: "lucide:trash-2",
-		color: "text-state-error",
-	});
-
 	return (
-		<DropdownButton
-			trigger={<IconButton icon="lucide:ellipsis-vertical" label="Node menu" dim />}
-			items={items}
-			align="right"
-		/>
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<IconButton icon="lucide:ellipsis-vertical" label="Node menu" dim />
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end">
+				<DropdownMenuItem disabled={!isRendered} onSelect={() => onView?.()}>
+					<Icon icon="lucide:eye" width={12} height={12} className="shrink-0" />
+					<span>View</span>
+				</DropdownMenuItem>
+
+				{isSource && (
+					<DropdownMenuItem className={isInspected ? "text-primary" : undefined}>
+						<Icon icon="lucide:eye" width={12} height={12} className="shrink-0" />
+						<span>Inspect</span>
+					</DropdownMenuItem>
+				)}
+
+				{!isSource && (
+					<DropdownMenuItem
+						className={renderColor}
+						onSelect={() => (isProcessing ? onAbort?.() : onRender?.())}
+					>
+						<Icon icon={isProcessing ? "lucide:square" : "lucide:play"} width={12} height={12} className="shrink-0" />
+						<span>{renderLabel}</span>
+					</DropdownMenuItem>
+				)}
+
+				<DropdownMenuItem className={isBypassed ? "text-secondary" : undefined}>
+					<Icon icon="lucide:power" width={12} height={12} className="shrink-0" />
+					<span>{isBypassed ? "Enable" : "Bypass"}</span>
+				</DropdownMenuItem>
+
+				<DropdownMenuSeparator />
+
+				<DropdownMenuItem className="text-state-error">
+					<Icon icon="lucide:trash-2" width={12} height={12} className="shrink-0" />
+					<span>Delete</span>
+				</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }

@@ -17,4 +17,8 @@
     color: var(--color-chrome-text);
     background-color: var(--color-chrome-base);
   }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
 }
