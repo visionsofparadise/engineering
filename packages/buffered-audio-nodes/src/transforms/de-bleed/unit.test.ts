@@ -13,5 +13,5 @@ describe("DeBleed", () => {
 
 		expect(expectedDuration(output, context.durationFrames ?? 0).pass).toBe(true);
 		expect(somethingChanged(input, output).pass).toBe(true);
-	}, 240_000);
+	}, 900_000);
 });

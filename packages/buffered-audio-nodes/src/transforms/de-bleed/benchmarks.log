@@ -1,1 +1,3 @@
 2026-03-20T17:43:44.673Z | deBleed                        |    13681.3ms |              0 samples/sec |     2.23x RT | Node v22.20.0 win32
+2026-04-20T16:04:35.989Z | deBleed                        |   188551.9ms |              0 samples/sec |     0.16x RT | Node v22.20.0 win32
+2026-04-20T16:21:19.502Z | deBleed                        |   124754.0ms |              0 samples/sec |     0.24x RT | Node v22.20.0 win32

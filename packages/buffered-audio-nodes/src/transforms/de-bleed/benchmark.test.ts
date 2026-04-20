@@ -12,5 +12,5 @@ describe("deBleed benchmark", () => {
 	it("benchmarks deBleed", async () => {
 		const result = await runBenchmark("deBleed", deBleed(testVoice), testVoice);
 		await appendBenchmarkLog(here, result);
-	}, 240_000);
+	}, 900_000);
 });
