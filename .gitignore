@@ -6,4 +6,5 @@ dist/
 out/
 .turbo/
 test-output/
-binaries/
+/apps/desktop/binaries/
+/.binaries-cache/

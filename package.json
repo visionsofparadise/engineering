@@ -12,9 +12,14 @@
     "check": "turbo check",
     "lint": "turbo lint",
     "unit": "turbo unit",
-    "build": "turbo build"
+    "build": "turbo build",
+    "binaries:fetch": "tsx scripts/binaries/fetch.ts",
+    "binaries:install": "tsx scripts/binaries/install.ts",
+    "binaries:seed": "tsx scripts/binaries/seed.ts"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1032.0",
+    "@aws-sdk/credential-providers": "^3.1032.0",
     "@eslint/js": "^9.0.0",
     "@stylistic/eslint-plugin": "^5.10.0",
     "check-dependency-version-consistency": "^4.1.0",

@@ -1,0 +1,214 @@
+{
+  "version": 1,
+  "bucket": "engineering-binaries-345340320424",
+  "region": "us-east-1",
+  "assets": [
+    {
+      "key": null,
+      "platform": "all",
+      "arch": "all",
+      "filename": "htdemucs.onnx.data",
+      "sha256": "e523708037d55151ac03feae48c9dbeab9908c086ed8e655e40b70dfaa66a3b8",
+      "size": 177995776,
+      "source": "https://github.com/facebookresearch/demucs"
+    },
+    {
+      "key": null,
+      "platform": "darwin",
+      "arch": "arm64",
+      "filename": "onnxruntime-darwin-arm64.dylib",
+      "sha256": "2b885992d3d6fa4130d39ec84a80d7504ff52750027c547bb22c86165f19406a",
+      "size": 33481272,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+    },
+    {
+      "key": null,
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "onnxruntime-linux-x64.so",
+      "sha256": "3da6146e14e7b8aaec625dde11d6114c7457c87a5f93d744897da8781e35c673",
+      "size": 21042416,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+    },
+    {
+      "key": null,
+      "platform": "win32",
+      "arch": "x64",
+      "filename": "onnxruntime-win32-x64.dll",
+      "sha256": "579b636403983254346a5c1d80bd28f1519cd1e284cd204f8d4ff41f8d711559",
+      "size": 12418080,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+    },
+    {
+      "key": "Kim_Vocal_2",
+      "platform": "all",
+      "arch": "all",
+      "filename": "Kim_Vocal_2.onnx",
+      "sha256": "ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b",
+      "size": 66759214,
+      "source": "https://huggingface.co/seanghay/uvr_models"
+    },
+    {
+      "key": "dtln-model_1",
+      "platform": "all",
+      "arch": "all",
+      "filename": "dtln-model_1.onnx",
+      "sha256": "22b91cae3855e5a0620e66a917ca6c82c58db0e842c770f58d86751c5e8d4ae3",
+      "size": 1458237,
+      "source": "https://github.com/breizhn/DTLN"
+    },
+    {
+      "key": "dtln-model_2",
+      "platform": "all",
+      "arch": "all",
+      "filename": "dtln-model_2.onnx",
+      "sha256": "e20c92f9233fccf29cddf86970d0d0161a03aebccc26d6f4d5639c4d5ec2e639",
+      "size": 2510010,
+      "source": "https://github.com/breizhn/DTLN"
+    },
+    {
+      "key": "ffmpeg",
+      "platform": "darwin",
+      "arch": "arm64",
+      "filename": "ffmpeg-darwin-arm64",
+      "sha256": "1dda5d1bdde134222dd02a00be649a8e7d0190922e4104b017d995c60f261926",
+      "size": 62582864,
+      "source": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1774549676_8.1/ffmpeg.zip"
+    },
+    {
+      "key": "ffmpeg",
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "ffmpeg-linux-x64",
+      "sha256": "16b2424fe5b616617f142d19c0d5f3281d77f951c3f31722dd8012913d99f96e",
+      "size": 109947080,
+      "source": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-04-18-13-04"
+    },
+    {
+      "key": "ffmpeg",
+      "platform": "win32",
+      "arch": "x64",
+      "filename": "ffmpeg-win32-x64.exe",
+      "sha256": "59d847f4cc6067e86a66b03333022d6726c29663daea1cd80778d18bff5b8b79",
+      "size": 107993600,
+      "source": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-04-18-13-04"
+    },
+    {
+      "key": "ffprobe",
+      "platform": "darwin",
+      "arch": "arm64",
+      "filename": "ffprobe-darwin-arm64",
+      "sha256": "780d3e7fae1fd524a40b915eba0b3e23ed4b9372a21ba32394776494c45f293b",
+      "size": 62407968,
+      "source": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1774549676_8.1/ffprobe.zip"
+    },
+    {
+      "key": "ffprobe",
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "ffprobe-linux-x64",
+      "sha256": "968bbaac01b0bfd30d17f81822c7fda248ea6706265aa68dccf0b617ecdbcaf8",
+      "size": 109811272,
+      "source": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-04-18-13-04"
+    },
+    {
+      "key": "ffprobe",
+      "platform": "win32",
+      "arch": "x64",
+      "filename": "ffprobe-win32-x64.exe",
+      "sha256": "97f4cfc0d9970970ba284bbe732812028d90fb07d6eed4dd03d025ebe12158ff",
+      "size": 107856896,
+      "source": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-04-18-13-04"
+    },
+    {
+      "key": "fftw-addon",
+      "platform": "darwin",
+      "arch": "arm64",
+      "filename": "fftw-darwin-arm64.node",
+      "sha256": "e86645cf217ca14945a0e43da288b46d4f93c18eab2466410d1dc84a3d42d260",
+      "size": 694144,
+      "source": "https://github.com/visionsofparadise/fftw-addon/releases/tag/v1.0.0"
+    },
+    {
+      "key": "fftw-addon",
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "fftw-linux-x64.node",
+      "sha256": "fb89d3b655556b6060fffc40ace4c13d061e1a421f0166e85f81b7622ce3b4ac",
+      "size": 1255240,
+      "source": "https://github.com/visionsofparadise/fftw-addon/releases/tag/v1.0.0"
+    },
+    {
+      "key": "fftw-addon",
+      "platform": "win32",
+      "arch": "x64",
+      "filename": "fftw-win32-x64.node",
+      "sha256": "51623f216b4960ec9a03bfe1a2b0415a244bbe0f46941d50fe4b7e493ce2a0c8",
+      "size": 1091072,
+      "source": "https://github.com/visionsofparadise/fftw-addon/releases/tag/v1.0.0"
+    },
+    {
+      "key": "htdemucs",
+      "platform": "all",
+      "arch": "all",
+      "filename": "htdemucs.onnx",
+      "sha256": "be6fa125c457bc4fcdba43b0506270b5ed2113872748e8163de817f418db17bb",
+      "size": 2399845,
+      "source": "https://github.com/facebookresearch/demucs"
+    },
+    {
+      "key": "onnx-addon",
+      "platform": "darwin",
+      "arch": "arm64",
+      "filename": "onnx-runtime-addon-darwin-arm64.node",
+      "sha256": "a6d702486a1c78cd799c88da3613b6bea134fa19f28eb51e295a8961732518d8",
+      "size": 106208,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+    },
+    {
+      "key": "onnx-addon",
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "onnx-runtime-addon-linux-x64.node",
+      "sha256": "9b6491e14bffc2275c2918d27e8b4061b9fabecf3a9cce62e516b98bb71042d5",
+      "size": 103984,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+    },
+    {
+      "key": "onnx-addon",
+      "platform": "win32",
+      "arch": "x64",
+      "filename": "onnx-runtime-addon-win32-x64.node",
+      "sha256": "d9fd34248eb294d967b6283162205b3a3a83e9e8c7d24d6925a634934b17fdf2",
+      "size": 470016,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+    },
+    {
+      "key": "vkfft-addon",
+      "platform": "darwin",
+      "arch": "arm64",
+      "filename": "vkfft-darwin-arm64.node",
+      "sha256": "cb4a0954dc16159b60fdec55f5f3652219c33aedd7d95b990977ab3259a93b9b",
+      "size": 557168,
+      "source": "https://github.com/visionsofparadise/vkfft-addon/releases/tag/v1.0.0"
+    },
+    {
+      "key": "vkfft-addon",
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "vkfft-linux-x64.node",
+      "sha256": "220f3aec87ab8c3c1422c66b0f20d7dd1011ea1774babb67e8d50a5a29f0948b",
+      "size": 10756056,
+      "source": "https://github.com/visionsofparadise/vkfft-addon/releases/tag/v1.0.0"
+    },
+    {
+      "key": "vkfft-addon",
+      "platform": "win32",
+      "arch": "x64",
+      "filename": "vkfft-win32-x64.node",
+      "sha256": "d33b21bda67f2699774b2b354bdb8a73d4b2b9ef7166e812685bc066e2be5a28",
+      "size": 4899328,
+      "source": "https://github.com/visionsofparadise/vkfft-addon/releases/tag/v1.0.0"
+    }
+  ]
+}

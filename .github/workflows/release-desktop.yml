@@ -40,10 +40,13 @@ jobs:
         include:
           - os: windows-latest
             platform: win32
+            arch: x64
           - os: macos-latest
             platform: darwin
+            arch: arm64
           - os: ubuntu-latest
             platform: linux
+            arch: x64
 
     runs-on: ${{ matrix.os }}
 
@@ -56,6 +59,16 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - uses: actions/cache@v4
+        with:
+          path: .binaries-cache
+          key: binaries-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('binaries.manifest.json') }}
+          restore-keys: |
+            binaries-${{ matrix.platform }}-${{ matrix.arch }}-
+
+      - name: Fetch and install binaries
+        run: npm run binaries:install -- --target=${{ matrix.platform }}-${{ matrix.arch }}
 
       - run: npm run make --workspace desktop
 

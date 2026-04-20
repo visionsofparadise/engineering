@@ -1,6 +1,7 @@
 import { app } from "electron";
 import { promises as fs, type Dirent } from "node:fs";
 import path from "node:path";
+import { z } from "zod";
 
 /**
  * Returns the absolute path to the bundled binaries directory.
@@ -54,4 +55,73 @@ export async function listBundledBinaryFiles(): Promise<Record<string, string>> 
 	}
 
 	return map;
+}
+
+const bundledBinariesManifestSchema = z.object({
+	target: z.string(),
+	binaries: z.record(z.string(), z.string()),
+});
+
+/**
+ * Reads `<bundledBinariesPath>/manifest.json` (written by the binary
+ * pipeline's install step — see
+ * `projects/code/engineering/desktop/design-binary-pipeline.md`) and
+ * returns a map of schema-binary key to absolute on-disk path.
+ *
+ * Entries whose resolved path does not exist on disk are skipped.
+ *
+ * On any failure (missing manifest, malformed JSON, schema violation),
+ * returns an empty map and logs a warning. Callers treat `{}` as "no
+ * bundled defaults available" — consistent with `listBundledBinaryFiles`.
+ *
+ * Intentionally uncached: reading on every invocation lets a manifest
+ * swap during dev take effect without restarting the app.
+ */
+export async function readBundledBinaryDefaults(): Promise<Record<string, string>> {
+	const directory = getBundledBinariesPath();
+	const manifestPath = path.join(directory, "manifest.json");
+
+	let raw: string;
+
+	try {
+		raw = await fs.readFile(manifestPath, "utf8");
+	} catch (error) {
+		console.warn(`[bundledBinaries] Failed to read manifest at ${manifestPath}:`, error);
+
+		return {};
+	}
+
+	let parsed: unknown;
+
+	try {
+		parsed = JSON.parse(raw);
+	} catch (error) {
+		console.warn(`[bundledBinaries] Malformed JSON in manifest at ${manifestPath}:`, error);
+
+		return {};
+	}
+
+	const result = bundledBinariesManifestSchema.safeParse(parsed);
+
+	if (!result.success) {
+		console.warn(`[bundledBinaries] Manifest at ${manifestPath} failed schema validation:`, result.error);
+
+		return {};
+	}
+
+	const resolved: Record<string, string> = {};
+
+	for (const [key, filename] of Object.entries(result.data.binaries)) {
+		const absolutePath = path.join(directory, filename);
+
+		try {
+			await fs.stat(absolutePath);
+		} catch {
+			continue;
+		}
+
+		resolved[key] = absolutePath;
+	}
+
+	return resolved;
 }

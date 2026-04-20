@@ -22,6 +22,7 @@ import { UnloadPackageModulesRendererIpc } from "./Package/unloadModules/Rendere
 import { GetAllDisplaysRendererIpc } from "./System/getAllDisplays/Renderer";
 import { GetAppVersionRendererIpc } from "./System/getAppVersion/Renderer";
 import { GetUserDataPathRendererIpc } from "./System/getUserDataPath/Renderer";
+import { GetBundledBinaryDefaultsRendererIpc } from "./System/getBundledBinaryDefaults/Renderer";
 import { ListBundledBinariesRendererIpc } from "./System/listBundledBinaries/Renderer";
 import { GetWindowIdRendererIpc } from "./System/getWindowId/Renderer";
 import { QuitAppRendererIpc } from "./System/quitApp/Renderer";
@@ -52,6 +53,7 @@ export const ASYNC_RENDERER_IPCS = [
 	GetUserDataPathRendererIpc,
 	GetWindowIdRendererIpc,
 	GetAppVersionRendererIpc,
+	GetBundledBinaryDefaultsRendererIpc,
 	ListBundledBinariesRendererIpc,
 	QuitAppRendererIpc,
 	SetBoundsRendererIpc,
