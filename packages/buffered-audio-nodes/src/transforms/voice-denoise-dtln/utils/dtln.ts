@@ -34,25 +34,23 @@ export function processDtlnFrames(
 	const maskedReal = new Float32Array(FFT_BINS);
 	const maskedImag = new Float32Array(FFT_BINS);
 	const maskedStft = {
-		real: [maskedReal],
-		imag: [maskedImag],
+		real: maskedReal,
+		imag: maskedImag,
 		frames: 1,
 		fftSize: BLOCK_LEN,
 	};
-	const stftOutput = { real: [new Float32Array(FFT_BINS)], imag: [new Float32Array(FFT_BINS)] };
+	const stftOutput = { real: new Float32Array(FFT_BINS), imag: new Float32Array(FFT_BINS) };
 
 	for (let offset = 0; offset + BLOCK_LEN <= totalFrames; offset += BLOCK_SHIFT) {
 		inputBuffer.set(signal.subarray(offset, offset + BLOCK_LEN));
 
 		const stftResult = stft(inputBuffer, BLOCK_LEN, BLOCK_LEN, stftOutput, fftBackend, fftAddonOptions);
-		const realFrame = stftResult.real[0];
-		const imagFrame = stftResult.imag[0];
 
-		if (!realFrame || !imagFrame) continue;
+		if (stftResult.frames < 1) continue;
 
 		for (let bin = 0; bin < FFT_BINS; bin++) {
-			const re = realFrame[bin] ?? 0;
-			const im = imagFrame[bin] ?? 0;
+			const re = stftResult.real[bin] ?? 0;
+			const im = stftResult.imag[bin] ?? 0;
 
 			magnitude[bin] = Math.log(Math.sqrt(re * re + im * im) + 1e-7);
 		}
@@ -71,8 +69,8 @@ export function processDtlnFrames(
 		for (let bin = 0; bin < FFT_BINS; bin++) {
 			const maskVal = mask.data[bin] ?? 0;
 
-			maskedReal[bin] = (realFrame[bin] ?? 0) * maskVal;
-			maskedImag[bin] = (imagFrame[bin] ?? 0) * maskVal;
+			maskedReal[bin] = (stftResult.real[bin] ?? 0) * maskVal;
+			maskedImag[bin] = (stftResult.imag[bin] ?? 0) * maskVal;
 		}
 
 		const maskedTimeDomain = istft(maskedStft, BLOCK_LEN, BLOCK_LEN, fftBackend, fftAddonOptions);

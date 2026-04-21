@@ -136,12 +136,7 @@ describe("stft output shape", () => {
 		const result = stft(signal, fftSize, hopSize);
 
 		expect(result.frames).toBe(expectedFrames);
-		expect(result.real).toHaveLength(expectedFrames);
-		expect(result.imag).toHaveLength(expectedFrames);
-
-		for (let f = 0; f < expectedFrames; f++) {
-			expect(result.real[f]).toHaveLength(halfSize);
-			expect(result.imag[f]).toHaveLength(halfSize);
-		}
+		expect(result.real).toHaveLength(expectedFrames * halfSize);
+		expect(result.imag).toHaveLength(expectedFrames * halfSize);
 	});
 });

@@ -8,14 +8,11 @@ export function computeAverageSpectrum(signal: Float32Array, _sampleRate: number
 	const avgMagnitude = new Float32Array(halfSize);
 
 	for (let frame = 0; frame < result.frames; frame++) {
-		const re = result.real[frame];
-		const im = result.imag[frame];
-
-		if (!re || !im) continue;
+		const frameOffset = frame * halfSize;
 
 		for (let bin = 0; bin < halfSize; bin++) {
-			const rVal = re[bin] ?? 0;
-			const iVal = im[bin] ?? 0;
+			const rVal = result.real[frameOffset + bin] ?? 0;
+			const iVal = result.imag[frameOffset + bin] ?? 0;
 
 			avgMagnitude[bin] = (avgMagnitude[bin] ?? 0) + Math.sqrt(rVal * rVal + iVal * iVal);
 		}
@@ -30,18 +27,15 @@ export function computeAverageSpectrum(signal: Float32Array, _sampleRate: number
 	return avgMagnitude;
 }
 
-export function averageSpectrumFromStft(result: { real: Array<Float32Array>; imag: Array<Float32Array>; frames: number }, halfSize: number): Float32Array {
+export function averageSpectrumFromStft(result: { real: Float32Array; imag: Float32Array; frames: number }, halfSize: number): Float32Array {
 	const avgMagnitude = new Float32Array(halfSize);
 
 	for (let frame = 0; frame < result.frames; frame++) {
-		const re = result.real[frame];
-		const im = result.imag[frame];
-
-		if (!re || !im) continue;
+		const frameOffset = frame * halfSize;
 
 		for (let bin = 0; bin < halfSize; bin++) {
-			const rVal = re[bin] ?? 0;
-			const iVal = im[bin] ?? 0;
+			const rVal = result.real[frameOffset + bin] ?? 0;
+			const iVal = result.imag[frameOffset + bin] ?? 0;
 
 			avgMagnitude[bin] = (avgMagnitude[bin] ?? 0) + Math.sqrt(rVal * rVal + iVal * iVal);
 		}

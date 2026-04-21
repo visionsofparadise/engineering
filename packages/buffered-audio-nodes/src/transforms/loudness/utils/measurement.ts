@@ -29,6 +29,8 @@ export async function measureLoudness(
 		const stdin = proc.stdin;
 		const stderrStream = proc.stderr;
 
+		stdin.on("error", () => {});
+
 		const stderrChunks: Array<Buffer> = [];
 
 		stderrStream.on("data", (chunk: Buffer) => {
@@ -67,7 +69,7 @@ export async function measureLoudness(
 			});
 		});
 
-		void writeToStdin(stdin, buffer, channels);
+		writeToStdin(stdin, buffer, channels).catch(() => {});
 	});
 }
 

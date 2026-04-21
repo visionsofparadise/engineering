@@ -18,3 +18,4 @@
 2026-03-17T04:26:21.277Z | leveler                        |     2353.0ms |         572377 samples/sec |    12.98x RT | Node v22.20.0 win32
 2026-03-17T05:07:54.032Z | leveler                        |      223.0ms |        6039783 samples/sec |   136.96x RT | Node v22.20.0 win32
 2026-03-17T05:13:59.038Z | leveler                        |      311.5ms |        4323294 samples/sec |    98.03x RT | Node v22.20.0 win32
+2026-04-21T01:01:37.281Z | leveler                        |      192.8ms |              0 samples/sec |   158.41x RT | Node v22.20.0 win32

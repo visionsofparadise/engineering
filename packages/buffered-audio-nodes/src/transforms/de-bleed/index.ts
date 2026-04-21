@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loops with bounds-checked typed array access */
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
-import { initFftBackend, istft, replaceChannel, stft, type FftBackend, type StftOutput } from "@e9g/buffered-audio-nodes-utils";
+import { getFftAddon, initFftBackend, istft, replaceChannel, stft, type FftBackend, type StftOutput } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { accumulateTransferChunk, createTransferAccumulator, findMaxRefPower, finalizeTransferFunction } from "./utils/cross-spectral";
@@ -10,7 +10,7 @@ import { applyNlmSmoothing } from "./utils/nlm-smoothing";
 import { applyDfttSmoothing } from "./utils/dftt-smoothing";
 
 export const schema = z.object({
-	referencePath: z.string().default("").describe("Reference Path"),
+	references: z.array(z.string()).default([]).describe("References"),
 	reductionStrength: z.number().min(0).max(8).multipleOf(0.1).default(3).describe("Reduction Strength"),
 	artifactSmoothing: z.number().min(0).max(15).multipleOf(0.1).default(4).describe("Artifact Smoothing"),
 	fftSize: z.number().min(512).max(16384).multipleOf(256).default(4096).describe("FFT Size"),
@@ -25,16 +25,20 @@ export const schema = z.object({
 		.default("")
 		.meta({ input: "file", mode: "open", binary: "fftw-addon", download: "https://github.com/visionsofparadise/fftw-addon" })
 		.describe("FFTW native addon — CPU FFT acceleration"),
+	dfttBackend: z.enum(["", "js", "fftw", "vkfft"]).default("").describe("DFTT Backend Override"),
 });
 
 export interface DeBleedProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 // Streaming chunked two-pass `_process` budget and carry constants. See
-// design-de-bleed.md "Streaming chunked two-pass `_process`" 2026-04-21.
-const BUDGET_BYTES = 32 * 1024 * 1024;
+// design-de-bleed.md 2026-04-21 "Streaming chunked two-pass `_process`" for the
+// per-chunk STFT matrix budget and 2026-04-21 "DFTT batched via addon 2D FFT"
+// for the DFTT batched-buffer peak (~73 MB at default params) that motivates
+// the 96 MB ceiling.
+const BUDGET_BYTES = Number(process.env.DEBLEED_BUDGET_BYTES) || 96 * 1024 * 1024;
 const MATRIX_COUNT = 5;
 const FLOOR_FRAMES = 256;
-const CEILING_FRAMES = 4096;
+const CEILING_FRAMES = Number(process.env.DEBLEED_CEILING_FRAMES) || 4096;
 const MAX_CARRY_FRAMES = 32;
 
 function computeChunkFrames(numBins: number): number {
@@ -45,8 +49,8 @@ function computeChunkFrames(numBins: number): number {
 
 function allocateStftOutput(frames: number, numBins: number): StftOutput {
 	return {
-		real: Array.from({ length: frames }, () => new Float32Array(numBins)),
-		imag: Array.from({ length: frames }, () => new Float32Array(numBins)),
+		real: new Float32Array(frames * numBins),
+		imag: new Float32Array(frames * numBins),
 	};
 }
 
@@ -84,21 +88,27 @@ async function readChunkIntoPadded(
 }
 
 /**
- * Reduces reference-microphone bleed from a target microphone using spectral-domain
- * cross-talk cancellation. Three stages:
+ * Reduces bleed from one or more reference microphone signals into a target
+ * microphone using spectral-domain cross-talk cancellation. References are
+ * fused into a single combined-bleed prediction — see design-de-bleed.md
+ * "Multi-reference fused node" 2026-04-21. Three stages:
  *
- * 1. Learn pass — estimate complex transfer function H(f) from cross-spectral density
- *    of target and reference STFTs over the whole file. Uncorrelated target speech
- *    averages out, leaving the bleed path.
- * 2. Process pass — predict bleed B = H·R, compute Wiener-style gain mask via
- *    Boll (1979) spectral subtraction with oversubtraction factor α.
- * 3. Artifact smoothing — 2D Non-Local Means + DFT-thresholding smoothing of the
- *    gain mask to suppress musical noise (chirpy / watery FFT-processing artifacts).
+ * 1. Learn pass — estimate the complex transfer function Hᵢ(f) per reference
+ *    from the energy-ratio-weighted cross-spectral density of the target and
+ *    that reference's STFT over the whole file. Each Hᵢ is learned
+ *    independently; uncorrelated target speech averages out per pair.
+ * 2. Process pass — predict combined bleed as the complex sum
+ *    B_total = Σᵢ Hᵢ·Rᵢ (bleed components interfere coherently, so complex
+ *    summation is the correct physical model). Compute one Wiener-style gain
+ *    mask via Boll (1979) spectral subtraction with oversubtraction factor α.
+ * 3. Artifact smoothing — 2D Non-Local Means + DFT-thresholding smoothing of
+ *    the single combined mask to suppress musical noise. NLM+DFTT runs once
+ *    per chunk regardless of reference count.
  *
  * Both passes stream the target in N-frame chunks (N derived from BUDGET_BYTES)
  * with `MAX_CARRY_FRAMES` frames of carry on each side in Pass 2 so NLM/DFTT see
- * enough context. The reference `ChunkBuffer` stays open for the lifetime of the
- * stream and is closed in `_teardown`.
+ * enough context. Each reference `ChunkBuffer` stays open for the lifetime of
+ * the stream and is closed in `_teardown`.
  *
  * @see Welch, P. (1967). "The use of fast Fourier transform for the estimation of
  *   power spectra." IEEE Trans. Audio Electroacoustics, 15(2), 70–73.
@@ -113,7 +123,9 @@ async function readChunkIntoPadded(
 export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
-	private referenceBuffer?: ChunkBuffer;
+	private dfttFftBackend?: FftBackend;
+	private dfttFftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
+	private referenceBuffers: Array<ChunkBuffer> = [];
 	private chunkFrames!: number;
 	private numBins!: number;
 
@@ -123,10 +135,59 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 		this.fftBackend = fft.backend;
 		this.fftAddonOptions = fft.addonOptions;
 
-		const { buffer: refBuffer } = await readToBuffer(this.properties.referencePath);
+		// Resolve the DFTT-specific backend. Empty-string override follows the
+		// pipeline's selection (same as main STFT). Explicit "js"/"fftw"/"vkfft"
+		// forces the DFTT stage onto that backend; the main STFT still uses
+		// `this.fftBackend` / `this.fftAddonOptions` above. See design-de-bleed.md
+		// 2026-04-21 "DFTT batched via addon 2D FFT" and the 3×3 matrix follow-up
+		// in debleed-cpu-perf.md §2.9 Notes.
+		const { dfttBackend, fftwAddonPath, vkfftAddonPath } = this.properties;
+
+		if (dfttBackend === "") {
+			this.dfttFftBackend = fft.backend;
+			this.dfttFftAddonOptions = fft.addonOptions;
+		} else if (dfttBackend === "js") {
+			this.dfttFftBackend = "js";
+			this.dfttFftAddonOptions = undefined;
+		} else if (dfttBackend === "fftw") {
+			if (!fftwAddonPath) {
+				throw new Error("de-bleed: dfttBackend='fftw' requires fftwAddonPath to be set on the node.");
+			}
+
+			this.dfttFftBackend = "fftw";
+			this.dfttFftAddonOptions = { fftwPath: fftwAddonPath };
+
+			const addon = getFftAddon("fftw", this.dfttFftAddonOptions);
+
+			if (!addon) {
+				throw new Error(`de-bleed: dfttBackend='fftw' could not load FFTW addon at ${fftwAddonPath}.`);
+			}
+		} else {
+			// dfttBackend === "vkfft"
+			if (!vkfftAddonPath) {
+				throw new Error("de-bleed: dfttBackend='vkfft' requires vkfftAddonPath to be set on the node.");
+			}
+
+			this.dfttFftBackend = "vkfft";
+			this.dfttFftAddonOptions = { vkfftPath: vkfftAddonPath };
+
+			const addon = getFftAddon("vkfft", this.dfttFftAddonOptions);
+
+			if (!addon) {
+				throw new Error(`de-bleed: dfttBackend='vkfft' could not load VkFFT addon at ${vkfftAddonPath}.`);
+			}
+		}
+
+		const openedBuffers: Array<ChunkBuffer> = [];
 
 		try {
-			this.referenceBuffer = refBuffer;
+			for (const refPath of this.properties.references) {
+				const { buffer: refBuffer } = await readToBuffer(refPath);
+
+				openedBuffers.push(refBuffer);
+			}
+
+			this.referenceBuffers = openedBuffers;
 
 			const { fftSize } = this.properties;
 
@@ -135,27 +196,29 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 
 			return await super._setup(input, context);
 		} catch (error) {
-			await refBuffer.close();
-			this.referenceBuffer = undefined;
+			for (const refBuffer of openedBuffers) {
+				await refBuffer.close();
+			}
+
+			this.referenceBuffers = [];
 
 			throw error;
 		}
 	}
 
 	override async _teardown(): Promise<void> {
-		if (this.referenceBuffer) {
-			await this.referenceBuffer.close();
-			this.referenceBuffer = undefined;
+		for (const buffer of this.referenceBuffers) {
+			await buffer.close();
 		}
+
+		this.referenceBuffers = [];
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const { frames: totalFrames, channels } = buffer;
 		const { fftSize, hopSize, reductionStrength, artifactSmoothing } = this.properties;
-		const { chunkFrames, numBins } = this;
-		const referenceBuffer = this.referenceBuffer;
-
-		if (!referenceBuffer) throw new Error("DeBleedStream: referenceBuffer not initialised");
+		const { chunkFrames, numBins, referenceBuffers } = this;
+		const refCount = referenceBuffers.length;
 
 		// α = reductionStrength / 4 (Boll oversubtraction factor per design-de-bleed).
 		const alpha = reductionStrength / 4;
@@ -176,51 +239,62 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 		const windowSamples = windowFrames * hopSize + (fftSize - hopSize);
 
 		const targetStftOutput = allocateStftOutput(windowFrames, numBins);
-		const refStftOutput = allocateStftOutput(windowFrames, numBins);
+		const refStftOutputs: Array<StftOutput> = Array.from({ length: refCount }, () => allocateStftOutput(windowFrames, numBins));
 		const rawMask = new Float32Array(windowFrames * numBins);
 		const nlmMask = new Float32Array(windowFrames * numBins);
 		const finalMask = new Float32Array(windowFrames * numBins);
 		const targetPadded = new Float32Array(windowSamples);
-		const refPadded = new Float32Array(windowSamples);
+		const refPaddeds: Array<Float32Array> = Array.from({ length: refCount }, () => new Float32Array(windowSamples));
+
+		// Per-frame scratch holders for the mask-assembly call. Reused across
+		// frames so we never allocate inside the inner per-frame loop.
+		const refFrameReals = new Array<Float32Array>(refCount);
+		const refFrameImags = new Array<Float32Array>(refCount);
 
 		for (let ch = 0; ch < channels; ch++) {
-			// --- Pass 1: learn H for this channel ---
-			// Mini-pass 1a: find whole-file max |R|² on the reference for the scalar
-			// weight regulariser. Bit-compatible with the one-shot pre-pass.
-			let maxRefPow = 0;
+			// --- Pass 1: learn Hᵢ for this channel, per reference ---
+			// Mini-pass 1a: find whole-file max |Rᵢ|² on each reference for its own
+			// scalar weight regulariser. Bit-compatible with the one-shot pre-pass.
+			const maxRefPows: Array<number> = new Array<number>(refCount).fill(0);
 
 			for (let chunkStart = 0; chunkStart < totalStftFrames; chunkStart += chunkFrames) {
 				const framesThisChunk = Math.min(chunkFrames, totalStftFrames - chunkStart);
+				const chunkSamples = framesThisChunk * hopSize + (fftSize - hopSize);
 
-				await readChunkIntoPadded(referenceBuffer, 0, chunkStart, framesThisChunk, refPadded, hopSize, fftSize);
+				for (let refIndex = 0; refIndex < refCount; refIndex++) {
+					await readChunkIntoPadded(referenceBuffers[refIndex]!, 0, chunkStart, framesThisChunk, refPaddeds[refIndex]!, hopSize, fftSize);
 
-				const refSamples = framesThisChunk * hopSize + (fftSize - hopSize);
-				const refStft = stft(refPadded.subarray(0, refSamples), fftSize, hopSize, refStftOutput, this.fftBackend, this.fftAddonOptions);
+					const refStft = stft(refPaddeds[refIndex]!.subarray(0, chunkSamples), fftSize, hopSize, refStftOutputs[refIndex], this.fftBackend, this.fftAddonOptions);
 
-				maxRefPow = Math.max(maxRefPow, findMaxRefPower(refStft.real, refStft.imag, refStft.frames, numBins));
+					maxRefPows[refIndex] = Math.max(maxRefPows[refIndex]!, findMaxRefPower(refStft.real, refStft.imag, refStft.frames, numBins));
+				}
 			}
 
-			const weightEpsilon = 1e-10 * (maxRefPow + 1e-20);
+			const weightEpsilons: Array<number> = maxRefPows.map((maxPow) => 1e-10 * (maxPow + 1e-20));
 
-			// Mini-pass 1b: accumulate energy-ratio-weighted cross-spectrum.
-			const accumulator = createTransferAccumulator(numBins);
+			// Mini-pass 1b: accumulate energy-ratio-weighted cross-spectrum per reference.
+			const accumulators = referenceBuffers.map(() => createTransferAccumulator(numBins));
 
 			for (let chunkStart = 0; chunkStart < totalStftFrames; chunkStart += chunkFrames) {
 				const framesThisChunk = Math.min(chunkFrames, totalStftFrames - chunkStart);
+				const chunkSamples = framesThisChunk * hopSize + (fftSize - hopSize);
 
 				await readChunkIntoPadded(buffer, ch, chunkStart, framesThisChunk, targetPadded, hopSize, fftSize);
-				await readChunkIntoPadded(referenceBuffer, 0, chunkStart, framesThisChunk, refPadded, hopSize, fftSize);
 
-				const chunkSamples = framesThisChunk * hopSize + (fftSize - hopSize);
 				const targetStft = stft(targetPadded.subarray(0, chunkSamples), fftSize, hopSize, targetStftOutput, this.fftBackend, this.fftAddonOptions);
-				const refStft = stft(refPadded.subarray(0, chunkSamples), fftSize, hopSize, refStftOutput, this.fftBackend, this.fftAddonOptions);
 
-				accumulateTransferChunk(targetStft.real, targetStft.imag, refStft.real, refStft.imag, targetStft.frames, numBins, weightEpsilon, accumulator);
+				for (let refIndex = 0; refIndex < refCount; refIndex++) {
+					await readChunkIntoPadded(referenceBuffers[refIndex]!, 0, chunkStart, framesThisChunk, refPaddeds[refIndex]!, hopSize, fftSize);
+
+					const refStft = stft(refPaddeds[refIndex]!.subarray(0, chunkSamples), fftSize, hopSize, refStftOutputs[refIndex], this.fftBackend, this.fftAddonOptions);
+
+					accumulateTransferChunk(targetStft.real, targetStft.imag, refStft.real, refStft.imag, targetStft.frames, numBins, weightEpsilons[refIndex]!, accumulators[refIndex]!);
+				}
 			}
 
-			const transfer = finalizeTransferFunction(accumulator);
-			const transferReal = transfer.real;
-			const transferImag = transfer.imag;
+			const transfers = accumulators.map((acc) => finalizeTransferFunction(acc));
+			const transferReals: Array<Float32Array> = transfers.map((transfer) => transfer.real);
+			const transferImags: Array<Float32Array> = transfers.map((transfer) => transfer.imag);
 
 			// --- Pass 2: process with carry ---
 			for (let outStart = 0; outStart < totalStftFrames; outStart += chunkFrames) {
@@ -231,21 +305,33 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 				const winSamples = winFrames * hopSize + (fftSize - hopSize);
 
 				await readChunkIntoPadded(buffer, ch, winStart, winFrames, targetPadded, hopSize, fftSize);
-				await readChunkIntoPadded(referenceBuffer, 0, winStart, winFrames, refPadded, hopSize, fftSize);
 
 				const targetStft = stft(targetPadded.subarray(0, winSamples), fftSize, hopSize, targetStftOutput, this.fftBackend, this.fftAddonOptions);
-				const refStft = stft(refPadded.subarray(0, winSamples), fftSize, hopSize, refStftOutput, this.fftBackend, this.fftAddonOptions);
 
-				// Per-frame Boll-style raw gain mask over the whole window.
+				// STFT each reference once per chunk.
+				const refStftsForChunk = new Array<StftOutput>(refCount);
+
+				for (let refIndex = 0; refIndex < refCount; refIndex++) {
+					await readChunkIntoPadded(referenceBuffers[refIndex]!, 0, winStart, winFrames, refPaddeds[refIndex]!, hopSize, fftSize);
+
+					refStftsForChunk[refIndex] = stft(refPaddeds[refIndex]!.subarray(0, winSamples), fftSize, hopSize, refStftOutputs[refIndex], this.fftBackend, this.fftAddonOptions);
+				}
+
+				// Per-frame combined-B mask over the whole window.
 				// NLM/DFTT clamping handles shorter windows at file edges.
 				for (let frame = 0; frame < winFrames; frame++) {
-					const frameReal = targetStft.real[frame]!;
-					const frameImag = targetStft.imag[frame]!;
-					const refFrameReal = refStft.real[frame]!;
-					const refFrameImag = refStft.imag[frame]!;
-					const maskFrame = rawMask.subarray(frame * numBins, (frame + 1) * numBins);
+					const frameOffset = frame * numBins;
+					const frameReal = targetStft.real.subarray(frameOffset, frameOffset + numBins);
+					const frameImag = targetStft.imag.subarray(frameOffset, frameOffset + numBins);
 
-					computeFrameGainMask(frameReal, frameImag, refFrameReal, refFrameImag, transferReal, transferImag, alpha, 1e-10, maskFrame);
+					for (let refIndex = 0; refIndex < refCount; refIndex++) {
+						refFrameReals[refIndex] = refStftsForChunk[refIndex]!.real.subarray(frameOffset, frameOffset + numBins);
+						refFrameImags[refIndex] = refStftsForChunk[refIndex]!.imag.subarray(frameOffset, frameOffset + numBins);
+					}
+
+					const maskFrame = rawMask.subarray(frameOffset, frameOffset + numBins);
+
+					computeFrameGainMask(frameReal, frameImag, refFrameReals, refFrameImags, transferReals, transferImags, alpha, 1e-10, maskFrame);
 				}
 
 				const rawView = rawMask.subarray(0, winFrames * numBins);
@@ -282,19 +368,22 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 						threshold,
 					},
 					finalView,
+					this.dfttFftBackend,
+					this.dfttFftAddonOptions,
 				);
 
 				// Apply the final mask to the target STFT in-place (phase preserved).
+				const targetRealBuf = targetStft.real;
+				const targetImagBuf = targetStft.imag;
+
 				for (let frame = 0; frame < winFrames; frame++) {
-					const frameReal = targetStft.real[frame]!;
-					const frameImag = targetStft.imag[frame]!;
-					const maskOffset = frame * numBins;
+					const frameOffset = frame * numBins;
 
 					for (let bin = 0; bin < numBins; bin++) {
-						const gain = finalView[maskOffset + bin]!;
+						const gain = finalView[frameOffset + bin]!;
 
-						frameReal[bin] = frameReal[bin]! * gain;
-						frameImag[bin] = frameImag[bin]! * gain;
+						targetRealBuf[frameOffset + bin] = targetRealBuf[frameOffset + bin]! * gain;
+						targetImagBuf[frameOffset + bin] = targetImagBuf[frameOffset + bin]! * gain;
 					}
 				}
 
@@ -354,7 +443,7 @@ export class DeBleedNode extends TransformNode<DeBleedProperties> {
 }
 
 export function deBleed(
-	referencePath: string,
+	references: string | ReadonlyArray<string>,
 	options?: {
 		reductionStrength?: number;
 		artifactSmoothing?: number;
@@ -362,17 +451,21 @@ export function deBleed(
 		hopSize?: number;
 		vkfftAddonPath?: string;
 		fftwAddonPath?: string;
+		dfttBackend?: "" | "js" | "fftw" | "vkfft";
 		id?: string;
 	},
 ): DeBleedNode {
+	const referencesArray = typeof references === "string" ? [references] : [...references];
+
 	return new DeBleedNode({
-		referencePath,
+		references: referencesArray,
 		reductionStrength: options?.reductionStrength ?? 3,
 		artifactSmoothing: options?.artifactSmoothing ?? 4,
 		fftSize: options?.fftSize ?? 4096,
 		hopSize: options?.hopSize ?? 1024,
 		vkfftAddonPath: options?.vkfftAddonPath ?? "",
 		fftwAddonPath: options?.fftwAddonPath ?? "",
+		dfttBackend: options?.dfttBackend ?? "",
 		id: options?.id,
 	});
 }

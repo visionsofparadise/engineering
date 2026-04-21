@@ -29,36 +29,47 @@ export interface ComplexStft {
 export function computeStftScaled(signal: Float32Array): ComplexStft {
 	const scale = 1 / Math.sqrt(FFT_SIZE);
 	const result = stft(signal, FFT_SIZE, HOP_SIZE);
+	const halfSize = FFT_SIZE / 2 + 1;
+	const real: Array<Float32Array> = new Array<Float32Array>(result.frames);
+	const imag: Array<Float32Array> = new Array<Float32Array>(result.frames);
 
-	for (const frame of result.real) {
-		for (let index = 0; index < frame.length; index++) {
-			frame[index] = (frame[index] ?? 0) * scale;
+	for (let frame = 0; frame < result.frames; frame++) {
+		const frameOffset = frame * halfSize;
+		const reFrame = new Float32Array(halfSize);
+		const imFrame = new Float32Array(halfSize);
+
+		for (let bin = 0; bin < halfSize; bin++) {
+			reFrame[bin] = (result.real[frameOffset + bin] ?? 0) * scale;
+			imFrame[bin] = (result.imag[frameOffset + bin] ?? 0) * scale;
 		}
+
+		real[frame] = reFrame;
+		imag[frame] = imFrame;
 	}
 
-	for (const frame of result.imag) {
-		for (let index = 0; index < frame.length; index++) {
-			frame[index] = (frame[index] ?? 0) * scale;
-		}
-	}
-
-	return result;
+	return { real, imag };
 }
 
 export function computeIstftScaled(real: Array<Float32Array>, imag: Array<Float32Array>, outputLength: number): Float32Array {
 	const scale = Math.sqrt(FFT_SIZE);
+	const frames = real.length;
+	const halfSize = FFT_SIZE / 2 + 1;
+	const contiguousReal = new Float32Array(frames * halfSize);
+	const contiguousImag = new Float32Array(frames * halfSize);
 
-	for (const frame of real) {
-		for (let index = 0; index < frame.length; index++) {
-			frame[index] = (frame[index] ?? 0) * scale;
+	for (let frame = 0; frame < frames; frame++) {
+		const reFrame = real[frame];
+		const imFrame = imag[frame];
+
+		if (!reFrame || !imFrame) continue;
+
+		const frameOffset = frame * halfSize;
+
+		for (let bin = 0; bin < halfSize; bin++) {
+			contiguousReal[frameOffset + bin] = (reFrame[bin] ?? 0) * scale;
+			contiguousImag[frameOffset + bin] = (imFrame[bin] ?? 0) * scale;
 		}
 	}
 
-	for (const frame of imag) {
-		for (let index = 0; index < frame.length; index++) {
-			frame[index] = (frame[index] ?? 0) * scale;
-		}
-	}
-
-	return istft({ real, imag, frames: real.length, fftSize: FFT_SIZE }, HOP_SIZE, outputLength);
+	return istft({ real: contiguousReal, imag: contiguousImag, frames, fftSize: FFT_SIZE }, HOP_SIZE, outputLength);
 }

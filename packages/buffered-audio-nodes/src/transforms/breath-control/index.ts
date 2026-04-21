@@ -45,7 +45,7 @@ export class BreathControlStream extends BufferedTransformStream<BreathControlPr
 
 		expandBreathRegions(regions, wideband, speechThreshold);
 
-		const fadeLength = Math.round(sampleRate * 0.015);
+		const fadeLength = Math.round(sampleRate * 0.05);
 		const gainEnvelope = buildGainEnvelope(regions, frames, fadeLength, fadeLength, gainLinear);
 
 		for (let ch = 0; ch < channels; ch++) {

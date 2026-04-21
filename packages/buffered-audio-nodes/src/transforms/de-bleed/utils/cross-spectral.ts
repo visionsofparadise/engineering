@@ -93,24 +93,20 @@ export function createTransferAccumulator(numBins: number): TransferAccumulator 
  * whole-file `maxRefPow` before starting the accumulation pass. Non-mutating.
  */
 export function findMaxRefPower(
-	refReal: ReadonlyArray<Float32Array>,
-	refImag: ReadonlyArray<Float32Array>,
+	refReal: Float32Array,
+	refImag: Float32Array,
 	numFrames: number,
 	numBins: number,
 ): number {
 	let maxRefPow = 0;
+	const total = numFrames * numBins;
 
-	for (let frame = 0; frame < numFrames; frame++) {
-		const rR = refReal[frame]!;
-		const rI = refImag[frame]!;
+	for (let index = 0; index < total; index++) {
+		const rrb = refReal[index]!;
+		const rib = refImag[index]!;
+		const refPow = rrb * rrb + rib * rib;
 
-		for (let bin = 0; bin < numBins; bin++) {
-			const rrb = rR[bin]!;
-			const rib = rI[bin]!;
-			const refPow = rrb * rrb + rib * rib;
-
-			if (refPow > maxRefPow) maxRefPow = refPow;
-		}
+		if (refPow > maxRefPow) maxRefPow = refPow;
 	}
 
 	return maxRefPow;
@@ -133,10 +129,10 @@ export function findMaxRefPower(
  * @see Welch 1967, Cohen 2003, Gerkmann & Hendriks 2012 — header JSDoc.
  */
 export function accumulateTransferChunk(
-	targetReal: ReadonlyArray<Float32Array>,
-	targetImag: ReadonlyArray<Float32Array>,
-	refReal: ReadonlyArray<Float32Array>,
-	refImag: ReadonlyArray<Float32Array>,
+	targetReal: Float32Array,
+	targetImag: Float32Array,
+	refReal: Float32Array,
+	refImag: Float32Array,
 	numFrames: number,
 	numBins: number,
 	weightEpsilon: number,
@@ -145,16 +141,13 @@ export function accumulateTransferChunk(
 	const { crossReal, crossImag, weightedAutoPower } = accumulator;
 
 	for (let frame = 0; frame < numFrames; frame++) {
-		const tR = targetReal[frame]!;
-		const tI = targetImag[frame]!;
-		const rR = refReal[frame]!;
-		const rI = refImag[frame]!;
+		const frameOffset = frame * numBins;
 
 		for (let bin = 0; bin < numBins; bin++) {
-			const trb = tR[bin]!;
-			const tib = tI[bin]!;
-			const rrb = rR[bin]!;
-			const rib = rI[bin]!;
+			const trb = targetReal[frameOffset + bin]!;
+			const tib = targetImag[frameOffset + bin]!;
+			const rrb = refReal[frameOffset + bin]!;
+			const rib = refImag[frameOffset + bin]!;
 
 			const targetPow = trb * trb + tib * tib;
 			const refPow = rrb * rrb + rib * rib;
@@ -233,10 +226,10 @@ export function finalizeTransferFunction(
  * @see Welch 1967, Cohen 2003, Gerkmann & Hendriks 2012 — header JSDoc.
  */
 export function estimateTransferFunction(
-	targetReal: ReadonlyArray<Float32Array>,
-	targetImag: ReadonlyArray<Float32Array>,
-	refReal: ReadonlyArray<Float32Array>,
-	refImag: ReadonlyArray<Float32Array>,
+	targetReal: Float32Array,
+	targetImag: Float32Array,
+	refReal: Float32Array,
+	refImag: Float32Array,
 	numFrames: number,
 	numBins: number,
 	epsilon?: number,

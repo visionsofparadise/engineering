@@ -19,7 +19,6 @@ export const schema = z.object({
 		.meta({ input: "file", mode: "open", binary: "onnx-addon", download: "https://github.com/visionsofparadise/onnx-runtime-addon" })
 		.describe("ONNX Runtime native addon"),
 	attenuation: z.number().min(0).max(100).default(30).describe("Attenuation cap in dB. Maps to the ONNX `atten_lim_db` input; 0 = no cap"),
-	threshold: z.number().min(-100).max(0).default(-60).describe("Post-mask time-domain dB gate; output samples below this dBFS amplitude are zeroed"),
 });
 
 export interface VoiceDenoiseDfnProperties extends z.infer<typeof schema>, TransformNodeProperties {}
@@ -60,7 +59,7 @@ export class VoiceDenoiseDfnStream extends BufferedTransformStream<VoiceDenoiseD
 				input48k = resampled[0] ?? channel;
 			}
 
-			const denoised48k = processDfnFrames(input48k, session, this.properties.attenuation, this.properties.threshold);
+			const denoised48k = processDfnFrames(input48k, session, this.properties.attenuation);
 
 			let output: Float32Array = denoised48k;
 
@@ -116,7 +115,6 @@ export function voiceDenoiseDfn(options: {
 	ffmpegPath: string;
 	onnxAddonPath?: string;
 	attenuation?: number;
-	threshold?: number;
 	id?: string;
 }): VoiceDenoiseDfnNode {
 	return new VoiceDenoiseDfnNode({
@@ -124,7 +122,6 @@ export function voiceDenoiseDfn(options: {
 		ffmpegPath: options.ffmpegPath,
 		onnxAddonPath: options.onnxAddonPath ?? "",
 		attenuation: options.attenuation ?? 30,
-		threshold: options.threshold ?? -60,
 		id: options.id,
 	});
 }

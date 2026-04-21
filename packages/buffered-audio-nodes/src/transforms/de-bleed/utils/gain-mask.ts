@@ -1,35 +1,45 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loop with bounds-checked typed array access */
 
 /**
- * Per-frame Boll-style magnitude spectral subtraction gain mask.
+ * Per-frame Boll-style magnitude spectral subtraction gain mask with combined
+ * multi-reference bleed prediction.
  *
- * Boll-style magnitude spectral subtraction with oversubtraction factor α.
- * The mask is in [0,1] and is applied to the complex target spectrum to
- * preserve phase. α > 1 subtracts more aggressively (higher reduction
- * strength) at the cost of more artifacts.
+ * Multi-reference acoustic model: the target mic sees
+ *   T = A + Σᵢ Hᵢ · Rᵢ
+ * where each Hᵢ is the independently-learned per-reference transfer function.
+ * Bleed components from different reference mics interfere coherently, so the
+ * predicted bleed is the COMPLEX sum of per-reference predictions — not the
+ * sum of their magnitudes. Summing magnitudes would over-attenuate bins where
+ * two references' predictions cancel each other; only the complex sum is
+ * physically correct.
+ *
+ * The single-reference case is covered by passing length-1 arrays.
  *
  * @see Boll, S. F. (1979). "Suppression of acoustic noise in speech using
  *   spectral subtraction." IEEE Trans. ASSP, 27(2), 113–120.
  */
 
 /**
- * Compute the per-bin Wiener-style gain mask for a single STFT frame.
+ * Compute the per-bin Wiener-style gain mask for a single STFT frame against
+ * one or more reference microphones.
  *
- * For each frequency bin, the predicted bleed is B = H·R (complex multiply).
- * The mask is G = max(|T| - α·|B|, 0) / (|T| + ε), clamped to [0,1].
+ * For each frequency bin, the predicted combined bleed is
+ *   B_total[k] = Σᵢ Hᵢ[k] · Rᵢ[k]   (complex sum of per-reference H·R)
+ * and the mask is
+ *   G[k] = clamp(max(|T[k]| − α·|B_total[k]|, 0) / (|T[k]| + ε), 0, 1).
  * This function writes mask values into `outMask`; it does NOT apply the mask
  * to the target spectrum — application is done in index.ts after smoothing.
  *
- * @param targetReal  - Real part of target STFT frame, length numBins.
- * @param targetImag  - Imaginary part of target STFT frame, length numBins.
- * @param refReal     - Real part of reference STFT frame, length numBins.
- * @param refImag     - Imaginary part of reference STFT frame, length numBins.
- * @param transferReal - Real part of H[k] from estimateTransferFunction, length numBins.
- * @param transferImag - Imaginary part of H[k], length numBins.
- * @param alpha       - Oversubtraction factor (reductionStrength / 4). α=1 subtracts
- *                      exactly the predicted bleed; α>1 oversubtracts for harder reduction.
- * @param epsilon     - Small regularizer to prevent division by zero (e.g. 1e-10).
- * @param outMask     - Output Float32Array of length numBins, reused across frames.
+ * @param targetReal    - Real part of target STFT frame, length numBins.
+ * @param targetImag    - Imaginary part of target STFT frame, length numBins.
+ * @param refReals      - Per-reference real STFT frame rows; length refCount, each length numBins.
+ * @param refImags      - Per-reference imaginary STFT frame rows; length refCount, each length numBins.
+ * @param transferReals - Per-reference H real parts; length refCount, each length numBins.
+ * @param transferImags - Per-reference H imaginary parts; length refCount, each length numBins.
+ * @param alpha         - Oversubtraction factor (reductionStrength / 4). α=1 subtracts
+ *                        exactly the predicted bleed; α>1 oversubtracts for harder reduction.
+ * @param epsilon       - Small regularizer to prevent division by zero (e.g. 1e-10).
+ * @param outMask       - Output Float32Array of length numBins, reused across frames.
  *
  * @see Boll, S. F. (1979). "Suppression of acoustic noise in speech using
  *   spectral subtraction." IEEE Trans. ASSP, 27(2), 113–120.
@@ -37,34 +47,42 @@
 export function computeFrameGainMask(
 	targetReal: Float32Array,
 	targetImag: Float32Array,
-	refReal: Float32Array,
-	refImag: Float32Array,
-	transferReal: Float32Array,
-	transferImag: Float32Array,
+	refReals: ReadonlyArray<Float32Array>,
+	refImags: ReadonlyArray<Float32Array>,
+	transferReals: ReadonlyArray<Float32Array>,
+	transferImags: ReadonlyArray<Float32Array>,
 	alpha: number,
 	epsilon: number,
 	outMask: Float32Array,
 ): void {
 	const numBins = outMask.length;
+	const refCount = refReals.length;
 
 	for (let bin = 0; bin < numBins; bin++) {
 		const trb = targetReal[bin]!;
 		const tib = targetImag[bin]!;
-		const rrb = refReal[bin]!;
-		const rib = refImag[bin]!;
-		const hrb = transferReal[bin]!;
-		const hib = transferImag[bin]!;
 
-		// Predicted bleed B = H · R (complex multiply)
-		// bR = hR·rR - hI·rI
-		// bI = hR·rI + hI·rR
-		const bR = hrb * rrb - hib * rib;
-		const bI = hrb * rib + hib * rrb;
+		// Complex-sum per-reference predicted bleed Bᵢ = Hᵢ · Rᵢ into B_total.
+		let bRTotal = 0;
+		let bITotal = 0;
 
-		const bMag = Math.sqrt(bR * bR + bI * bI);
+		for (let refIndex = 0; refIndex < refCount; refIndex++) {
+			const rrb = refReals[refIndex]![bin]!;
+			const rib = refImags[refIndex]![bin]!;
+			const hrb = transferReals[refIndex]![bin]!;
+			const hib = transferImags[refIndex]![bin]!;
+
+			// Bᵢ = Hᵢ · Rᵢ (complex multiply)
+			//   bR = hR·rR - hI·rI
+			//   bI = hR·rI + hI·rR
+			bRTotal += hrb * rrb - hib * rib;
+			bITotal += hrb * rib + hib * rrb;
+		}
+
+		const bMag = Math.sqrt(bRTotal * bRTotal + bITotal * bITotal);
 		const tMag = Math.sqrt(trb * trb + tib * tib);
 
-		// G = max(|T| - α·|B|, 0) / (|T| + ε)
+		// G = max(|T| - α·|B_total|, 0) / (|T| + ε)
 		const raw = Math.max(tMag - alpha * bMag, 0) / (tMag + epsilon);
 
 		// Clamp to [0,1] defensively — max(..., 0) handles negatives;

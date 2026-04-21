@@ -3,15 +3,43 @@ import type { FftBackend } from "./fft-backend";
 import { getFftAddon } from "./fft-backend";
 
 export interface StftResult {
-	readonly real: Array<Float32Array>;
-	readonly imag: Array<Float32Array>;
+	readonly real: Float32Array;
+	readonly imag: Float32Array;
 	readonly frames: number;
 	readonly fftSize: number;
 }
 
 export interface StftOutput {
-	readonly real: Array<Float32Array>;
-	readonly imag: Array<Float32Array>;
+	readonly real: Float32Array;
+	readonly imag: Float32Array;
+}
+
+const batchInputCache = new Map<number, Float32Array>();
+
+function getBatchInput(fftSize: number, numFrames: number): Float32Array {
+	const needed = fftSize * numFrames;
+	const cached = batchInputCache.get(fftSize);
+
+	if (cached && cached.length >= needed) return cached;
+
+	const grown = new Float32Array(needed);
+	batchInputCache.set(fftSize, grown);
+
+	return grown;
+}
+
+const batchTimeCache = new Map<number, Float32Array>();
+
+function getBatchTime(fftSize: number, numFrames: number): Float32Array {
+	const needed = fftSize * numFrames;
+	const cached = batchTimeCache.get(fftSize);
+
+	if (cached && cached.length >= needed) return cached;
+
+	const grown = new Float32Array(needed);
+	batchTimeCache.set(fftSize, grown);
+
+	return grown;
 }
 
 export function stft(signal: Float32Array, fftSize: number, hopSize: number, output?: StftOutput, backend?: FftBackend, fftAddonOptions?: { vkfftPath?: string; fftwPath?: string }): StftResult {
@@ -21,9 +49,19 @@ export function stft(signal: Float32Array, fftSize: number, hopSize: number, out
 
 	const addon = backend ? getFftAddon(backend, fftAddonOptions) : null;
 
-	if (addon && numFrames > 0) {
-		// Native path: window all frames, batch FFT in a single call
-		const batchInput = new Float32Array(fftSize * numFrames);
+	// Allocate (or borrow) the contiguous destination. When the caller passes
+	// `output`, its `real` / `imag` are assumed sized for at least
+	// `halfSize * numFrames` elements — we write directly into them.
+	const real = output?.real ?? (numFrames > 0 ? new Float32Array(halfSize * numFrames) : new Float32Array(0));
+	const imag = output?.imag ?? (numFrames > 0 ? new Float32Array(halfSize * numFrames) : new Float32Array(0));
+
+	if (numFrames <= 0) {
+		return { real, imag, frames: 0, fftSize };
+	}
+
+	if (addon) {
+		// Native path: window all frames, then batch FFT.
+		const batchInput = getBatchInput(fftSize, numFrames);
 
 		for (let frame = 0; frame < numFrames; frame++) {
 			const offset = frame * hopSize;
@@ -33,30 +71,21 @@ export function stft(signal: Float32Array, fftSize: number, hopSize: number, out
 			}
 		}
 
-		const { re: batchRe, im: batchIm } = addon.batchFft(batchInput, fftSize, numFrames);
+		if (typeof addon.batchFftInto === "function") {
+			// Fast path: addon writes directly into caller-owned contiguous buffers.
+			addon.batchFftInto(batchInput.subarray(0, fftSize * numFrames), real.subarray(0, halfSize * numFrames), imag.subarray(0, halfSize * numFrames), fftSize, numFrames);
+		} else {
+			// Backwards-compat path for addon v1.1.x: addon allocates, we copy once.
+			const { re: batchRe, im: batchIm } = addon.batchFft(batchInput.subarray(0, fftSize * numFrames), fftSize, numFrames);
 
-		const real = output?.real ?? [];
-		const imag = output?.imag ?? [];
-
-		for (let frame = 0; frame < numFrames; frame++) {
-			const reSlice = batchRe.subarray(frame * halfSize, (frame + 1) * halfSize);
-			const imSlice = batchIm.subarray(frame * halfSize, (frame + 1) * halfSize);
-
-			if (output) {
-				output.real[frame]?.set(reSlice);
-				output.imag[frame]?.set(imSlice);
-			} else {
-				real.push(Float32Array.from(reSlice));
-				imag.push(Float32Array.from(imSlice));
-			}
+			real.set(batchRe.subarray(0, halfSize * numFrames));
+			imag.set(batchIm.subarray(0, halfSize * numFrames));
 		}
 
 		return { real, imag, frames: numFrames, fftSize };
 	}
 
-	// JS fallback path
-	const real = output?.real ?? [];
-	const imag = output?.imag ?? [];
+	// JS fallback path — per-frame FFT, write directly into the contiguous buffer.
 	const windowed = new Float32Array(fftSize);
 	const workspace = createFftWorkspace(fftSize);
 
@@ -68,13 +97,11 @@ export function stft(signal: Float32Array, fftSize: number, hopSize: number, out
 		}
 
 		const { re, im } = fft(windowed, workspace);
+		const dstOffset = frame * halfSize;
 
-		if (output) {
-			output.real[frame]?.set(re.subarray(0, halfSize));
-			output.imag[frame]?.set(im.subarray(0, halfSize));
-		} else {
-			real.push(re.slice(0, halfSize));
-			imag.push(im.slice(0, halfSize));
+		for (let bin = 0; bin < halfSize; bin++) {
+			real[dstOffset + bin] = re[bin] ?? 0;
+			imag[dstOffset + bin] = im[bin] ?? 0;
 		}
 	}
 
@@ -91,20 +118,20 @@ export function istft(result: StftResult, hopSize: number, outputLength: number,
 	const addon = backend ? getFftAddon(backend, fftAddonOptions) : null;
 
 	if (addon && frames > 0) {
-		// Native path: batch all iFFTs in a single call
-		const batchRe = new Float32Array(halfSize * frames);
-		const batchIm = new Float32Array(halfSize * frames);
+		const reView = real.subarray(0, halfSize * frames);
+		const imView = imag.subarray(0, halfSize * frames);
+		let timeDomainBatch: Float32Array;
 
-		for (let frame = 0; frame < frames; frame++) {
-			const re = real[frame];
-			const im = imag[frame];
+		if (typeof addon.batchIfftInto === "function") {
+			// Fast path: addon writes directly into caller-owned time-domain buffer.
+			const batchTime = getBatchTime(fftSize, frames);
 
-			if (!re || !im) continue;
-			batchRe.set(re, frame * halfSize);
-			batchIm.set(im, frame * halfSize);
+			addon.batchIfftInto(reView, imView, batchTime.subarray(0, fftSize * frames), fftSize, frames);
+			timeDomainBatch = batchTime;
+		} else {
+			// Backwards-compat path for addon v1.1.x.
+			timeDomainBatch = addon.batchIfft(reView, imView, fftSize, frames);
 		}
-
-		const timeDomainBatch = addon.batchIfft(batchRe, batchIm, fftSize, frames);
 
 		for (let frame = 0; frame < frames; frame++) {
 			const offset = frame * hopSize;
@@ -125,19 +152,19 @@ export function istft(result: StftResult, hopSize: number, outputLength: number,
 		const workspace = createFftWorkspace(fftSize);
 
 		for (let frame = 0; frame < frames; frame++) {
-			const re = real[frame];
-			const im = imag[frame];
-
-			if (!re || !im) continue;
+			const srcOffset = frame * halfSize;
 
 			fullRe.fill(0);
 			fullIm.fill(0);
-			fullRe.set(re);
-			fullIm.set(im);
+
+			for (let bin = 0; bin < halfSize; bin++) {
+				fullRe[bin] = real[srcOffset + bin] ?? 0;
+				fullIm[bin] = imag[srcOffset + bin] ?? 0;
+			}
 
 			for (let index = 1; index < halfSize - 1; index++) {
-				fullRe[fftSize - index] = re[index] ?? 0;
-				fullIm[fftSize - index] = -(im[index] ?? 0);
+				fullRe[fftSize - index] = real[srcOffset + index] ?? 0;
+				fullIm[fftSize - index] = -(imag[srcOffset + index] ?? 0);
 			}
 
 			const timeDomain = ifft(fullRe, fullIm, workspace);

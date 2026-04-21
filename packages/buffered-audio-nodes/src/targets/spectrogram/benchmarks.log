@@ -1,0 +1,2 @@
+2026-04-21T00:57:15.049Z | spectrogram [js]               |      220.5ms |              0 samples/sec |     0.00x RT | Node v22.20.0 win32
+2026-04-21T00:57:15.301Z | spectrogram [fftw]             |      246.2ms |              0 samples/sec |     0.00x RT | Node v22.20.0 win32

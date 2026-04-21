@@ -1,6 +1,6 @@
 import { smoothEnvelope } from "@e9g/buffered-audio-nodes-utils";
 
-export function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: number, maxClickDuration: number): Uint8Array {
+export function detectClickMask(signal: Float32Array, sampleRate: number, sensitivity: number, maxClickDuration: number, envelopeSmoothMs = 0.5): Uint8Array {
 	const mask = new Uint8Array(signal.length);
 
 	const hpCutoff = 4000;
@@ -20,7 +20,7 @@ export function detectClickMask(signal: Float32Array, sampleRate: number, sensit
 		prevHP = highPassed[index] ?? 0;
 	}
 
-	const envSmooth = Math.round(sampleRate * 0.0005);
+	const envSmooth = Math.max(1, Math.round(sampleRate * envelopeSmoothMs / 1000));
 	const envelope = new Float32Array(signal.length);
 
 	for (let index = 0; index < signal.length; index++) {

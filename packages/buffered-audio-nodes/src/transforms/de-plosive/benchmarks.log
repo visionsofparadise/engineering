@@ -18,3 +18,4 @@
 2026-03-17T04:26:44.449Z | dePlosive                      |     1120.9ms |        1201533 samples/sec |    27.25x RT | Node v22.20.0 win32
 2026-03-17T05:08:26.379Z | dePlosive                      |      286.6ms |        4698677 samples/sec |   106.55x RT | Node v22.20.0 win32
 2026-03-17T05:14:20.566Z | dePlosive                      |      632.1ms |        2130594 samples/sec |    48.31x RT | Node v22.20.0 win32
+2026-04-21T01:00:17.455Z | dePlosive                      |      440.2ms |              0 samples/sec |    69.37x RT | Node v22.20.0 win32

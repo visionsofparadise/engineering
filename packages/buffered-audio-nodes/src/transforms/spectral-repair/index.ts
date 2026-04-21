@@ -53,8 +53,8 @@ export class SpectralRepairStream extends BufferedTransformStream<SpectralRepair
 		const paddedLength = Math.max(frames, fftSize);
 		const numStftFrames = Math.floor((paddedLength - fftSize) / hopSize) + 1;
 		const stftOutput = {
-			real: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
-			imag: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
+			real: new Float32Array(numStftFrames * halfSize),
+			imag: new Float32Array(numStftFrames * halfSize),
 		};
 
 		const chunk = await buffer.read(0, frames);
@@ -81,7 +81,7 @@ export class SpectralRepairStream extends BufferedTransformStream<SpectralRepair
 				const startBin = Math.floor(region.startFreq / freqPerBin);
 				const endBin = Math.ceil(region.endFreq / freqPerBin);
 
-				interpolateTfRegion(stftResult.real, stftResult.imag, startFrame, endFrame, startBin, endBin);
+				interpolateTfRegion(stftResult.real, stftResult.imag, startFrame, endFrame, startBin, endBin, stftResult.frames, halfSize);
 			}
 
 			const repaired = istft(stftResult, hopSize, paddedLength, this.fftBackend, this.fftAddonOptions).subarray(0, frames);

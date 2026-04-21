@@ -21,11 +21,9 @@ export const DFN3_STATE_SIZE = 45304;
  * @param signal Input audio at 48 kHz (mono Float32Array).
  * @param session ONNX session for `dfn3.onnx`.
  * @param attenLimDb Attenuation cap in dB (0 = no cap).
- * @param thresholdDb Post-mask time-domain gate. Output samples whose absolute
- *  amplitude is below this dB (dBFS, reference 1.0) are zeroed. -Infinity disables.
  * @returns Enhanced signal of the same length as the input.
  */
-export function processDfnFrames(signal: Float32Array, session: OnnxSession, attenLimDb: number, thresholdDb: number): Float32Array {
+export function processDfnFrames(signal: Float32Array, session: OnnxSession, attenLimDb: number): Float32Array {
 	const originalLength = signal.length;
 	const hopPadding = (DFN3_HOP_SIZE - (originalLength % DFN3_HOP_SIZE)) % DFN3_HOP_SIZE;
 	const paddedLength = originalLength + hopPadding + DFN3_FFT_SIZE;
@@ -73,18 +71,6 @@ export function processDfnFrames(signal: Float32Array, session: OnnxSession, att
 
 	for (let index = 0; index < originalLength; index++) {
 		output[index] = concat[trimStart + index] ?? 0;
-	}
-
-	// Time-domain post-mask gate: zero samples with |amp| below the dB threshold.
-	// threshold in dB (dBFS, reference = 1.0). -Infinity or very low values disable.
-	if (Number.isFinite(thresholdDb) && thresholdDb > -Infinity) {
-		const linearThreshold = Math.pow(10, thresholdDb / 20);
-
-		for (let index = 0; index < originalLength; index++) {
-			if (Math.abs(output[index] ?? 0) < linearThreshold) {
-				output[index] = 0;
-			}
-		}
 	}
 
 	return output;

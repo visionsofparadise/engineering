@@ -71,8 +71,8 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 		const paddedLength = Math.max(frames, fftSize);
 		const numStftFrames = Math.floor((paddedLength - fftSize) / hopSize) + 1;
 		const stftOutput = {
-			real: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
-			imag: Array.from({ length: numStftFrames }, () => new Float32Array(halfSize)),
+			real: new Float32Array(numStftFrames * halfSize),
+			imag: new Float32Array(numStftFrames * halfSize),
 		};
 
 		const chunk = await buffer.read(0, frames);
@@ -96,17 +96,14 @@ export class EqMatchStream extends BufferedTransformStream<EqMatchProperties> {
 			const correctionLinear = correctionDb.map((db) => Math.pow(10, db / 20));
 
 			for (let frame = 0; frame < stftResult.frames; frame++) {
-				const realFrame = stftResult.real[frame];
-				const imagFrame = stftResult.imag[frame];
+				const frameOffset = frame * halfSize;
 
-				if (!realFrame || !imagFrame) continue;
-
-				for (let bin = 0; bin < realFrame.length; bin++) {
+				for (let bin = 0; bin < halfSize; bin++) {
 					const correctionIdx = Math.min(bin, correctionLinear.length - 1);
 					const gain = correctionLinear[correctionIdx] ?? 1;
 
-					realFrame[bin] = (realFrame[bin] ?? 0) * gain;
-					imagFrame[bin] = (imagFrame[bin] ?? 0) * gain;
+					stftResult.real[frameOffset + bin] = (stftResult.real[frameOffset + bin] ?? 0) * gain;
+					stftResult.imag[frameOffset + bin] = (stftResult.imag[frameOffset + bin] ?? 0) * gain;
 				}
 			}
 

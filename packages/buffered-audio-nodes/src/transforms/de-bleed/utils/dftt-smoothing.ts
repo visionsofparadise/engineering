@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loop with bounds-checked typed array access */
 
-import { createFftWorkspace, fft, hanningWindow, ifft, type FftWorkspace } from "@e9g/buffered-audio-nodes-utils";
+import { createFftWorkspace, fft, getFftAddon, hanningWindow, ifft, type FftBackend, type FftWorkspace } from "@e9g/buffered-audio-nodes-utils";
 
 /**
  * DFT-thresholding (DFTT) post-smoothing of a 2D gain mask.
@@ -11,9 +11,11 @@ import { createFftWorkspace, fft, hanningWindow, ifft, type FftWorkspace } from 
  * NLM-smoothed mask for SNR estimation, then reconstructs via inverse 2D-FFT
  * and overlap-add. Restores transient detail that NLM alone may oversmooth.
  *
- * 2D-FFT is performed as two passes of 1D-FFT: first along the frequency axis
- * (each time row independently, real input), then along the time axis (each
- * frequency column independently, complex values combined via DFT linearity).
+ * When a native FFT addon is available (fftw or vkfft) the 2D-FFT is
+ * performed as one batched `batchFft2D` / `batchIfft2D` call per invocation,
+ * replacing the ~15M per-chunk JS row/column 1D FFTs (see design-de-bleed.md
+ * 2026-04-21 "DFTT batched via addon 2D FFT"). When no addon is loadable,
+ * falls back to the original JS implementation (two passes of 1D-FFT).
  *
  * @see Lukin, A. & Todd, J. (2007). "Suppression of Musical Noise Artifacts
  *   in Audio Noise Reduction by Adaptive 2D Filtering." 123rd AES Convention,
@@ -68,26 +70,184 @@ function complexFft(
 /**
  * Apply DFT-thresholding (DFTT) post-smoothing to a gain mask.
  *
- * Per Lukin & Todd 2007 §4.2, this stage:
- *   1. Extracts overlapping 32×16 blocks from `rawMask` with a 2D Hann window.
- *   2. Applies a 2D-FFT to each block (rows then columns).
- *   3. Computes a Boll-style spectral-subtraction gain in 2D-frequency space,
- *      using the NLM-smoothed block to estimate the "signal" and the raw block
- *      for the full magnitude, suppressing components that are noise-like.
- *   4. Inverse 2D-FFT and overlap-add into the output.
+ * Routes to the native batched-2D-FFT path when an FFT addon is loadable for
+ * the pipeline's selected backend, else to the JS fallback. Both paths are
+ * numerically equivalent (Wiener rule in 2D-frequency, 2D Hann analysis/
+ * synthesis, 32×16 blocks, 8/4 hops).
  *
- * @param nlmSmoothed - Output of applyNlmSmoothing — used for SNR estimation.
- * @param rawMask     - Pre-NLM gain mask — subject to analysis and synthesis.
- * @param numFrames   - Number of STFT frames.
- * @param numBins     - Number of frequency bins per frame.
- * @param dfttOptions - DFTT algorithm parameters (see DfttParams).
- * @param output      - Pre-allocated output array, same shape as rawMask.
+ * @param nlmSmoothed     - Output of applyNlmSmoothing — used for SNR estimation.
+ * @param rawMask         - Pre-NLM gain mask — subject to analysis and synthesis.
+ * @param numFrames       - Number of STFT frames.
+ * @param numBins         - Number of frequency bins per frame.
+ * @param dfttOptions     - DFTT algorithm parameters (see DfttParams).
+ * @param output          - Pre-allocated output array, same shape as rawMask.
+ * @param fftBackend      - Backend selected by the pipeline; undefined forces JS.
+ * @param fftAddonOptions - Addon paths (same shape the main STFT receives).
  *
  * @see Lukin, A. & Todd, J. (2007). "Suppression of Musical Noise Artifacts
  *   in Audio Noise Reduction by Adaptive 2D Filtering." 123rd AES Convention,
  *   Paper 7168. PDF: http://imaging.cs.msu.ru/pub/MusicalNoise07.pdf
  */
 export function applyDfttSmoothing(
+	nlmSmoothed: Float32Array,
+	rawMask: Float32Array,
+	numFrames: number,
+	numBins: number,
+	dfttOptions: DfttParams,
+	output: Float32Array,
+	fftBackend: FftBackend | undefined,
+	fftAddonOptions: { vkfftPath?: string; fftwPath?: string } | undefined,
+): void {
+	const addon = fftBackend ? getFftAddon(fftBackend, fftAddonOptions) : null;
+
+	if (!addon || typeof addon.batchFft2D !== "function") {
+		applyDfttSmoothingJs(nlmSmoothed, rawMask, numFrames, numBins, dfttOptions, output);
+
+		return;
+	}
+
+	const { blockFreq, blockTime, hopFreq, hopTime, threshold } = dfttOptions;
+
+	// 2D Hann analysis/synthesis window (separable outer product). Same as JS path.
+	const winFreq = hanningWindow(blockFreq, false);
+	const winTime = hanningWindow(blockTime, false);
+	const win2d = new Float32Array(blockTime * blockFreq);
+
+	for (let tf = 0; tf < blockTime; tf++) {
+		for (let bf = 0; bf < blockFreq; bf++) {
+			win2d[tf * blockFreq + bf] = winTime[tf]! * winFreq[bf]!;
+		}
+	}
+
+	// Match the JS loop exactly: blocks start at multiples of hopTime/hopFreq
+	// up to (but not including) numFrames / numBins. For each starting block the
+	// block contents are read with boundary clamping on the source indices.
+	const blocksPerFrame = Math.ceil(numFrames / hopTime);
+	const blocksPerBin = Math.ceil(numBins / hopFreq);
+	const totalBlocks = blocksPerFrame * blocksPerBin;
+	const blockSize = blockTime * blockFreq;
+	const complexBinsPerRow = blockFreq / 2 + 1;
+	const complexBlockSize = blockTime * complexBinsPerRow;
+
+	// Block-major batched input buffers; inside each block row-major with
+	// blockTime (rows) outer and blockFreq (cols) inner — matches the addon's
+	// batchFft2D(input, rows=blockTime, cols=blockFreq, batchCount) layout.
+	const rawBatch = new Float32Array(totalBlocks * blockSize);
+	const nlmBatch = new Float32Array(totalBlocks * blockSize);
+
+	for (let frameIdx = 0; frameIdx < blocksPerFrame; frameIdx++) {
+		const frameStart = frameIdx * hopTime;
+
+		for (let binIdx = 0; binIdx < blocksPerBin; binIdx++) {
+			const binStart = binIdx * hopFreq;
+			const blockIdx = frameIdx * blocksPerBin + binIdx;
+			const blockOffset = blockIdx * blockSize;
+
+			for (let tf = 0; tf < blockTime; tf++) {
+				const srcFrame = frameStart + tf < numFrames ? frameStart + tf : numFrames - 1;
+
+				for (let bf = 0; bf < blockFreq; bf++) {
+					const srcBin = binStart + bf < numBins ? binStart + bf : numBins - 1;
+					const winVal = win2d[tf * blockFreq + bf]!;
+					const srcPos = srcFrame * numBins + srcBin;
+					const dstPos = blockOffset + tf * blockFreq + bf;
+
+					rawBatch[dstPos] = rawMask[srcPos]! * winVal;
+					nlmBatch[dstPos] = nlmSmoothed[srcPos]! * winVal;
+				}
+			}
+		}
+	}
+
+	// One forward 2D FFT per batched mask.
+	const rawFft = addon.batchFft2D(rawBatch, blockTime, blockFreq, totalBlocks);
+	const nlmFft = addon.batchFft2D(nlmBatch, blockTime, blockFreq, totalBlocks);
+
+	// Wiener suppression in 2D-frequency (Lukin & Todd 2007 §4.2):
+	//   G[k] = |nlm|² / (|nlm|² + σ²)
+	// Applied in-place on rawFft.re / rawFft.im so the iFFT reconstructs the
+	// gain-shaped raw mask block.
+	const sigmaSq = threshold * threshold;
+	const totalComplex = totalBlocks * complexBlockSize;
+	const rawRe = rawFft.re;
+	const rawIm = rawFft.im;
+	const nlmRe = nlmFft.re;
+	const nlmIm = nlmFft.im;
+
+	for (let flatIdx = 0; flatIdx < totalComplex; flatIdx++) {
+		const nRe = nlmRe[flatIdx]!;
+		const nIm = nlmIm[flatIdx]!;
+		const nMagSq = nRe * nRe + nIm * nIm;
+		const gain = nMagSq / (nMagSq + sigmaSq);
+
+		rawRe[flatIdx] = rawRe[flatIdx]! * gain;
+		rawIm[flatIdx] = rawIm[flatIdx]! * gain;
+	}
+
+	// One inverse 2D FFT for the whole batch.
+	const synth = addon.batchIfft2D(rawRe, rawIm, blockTime, blockFreq, totalBlocks);
+
+	// Overlap-add with the synthesis window (same win2d applied at OLA time,
+	// so effective window is analysis·synthesis = win² per the JS path).
+	const accumulator = new Float32Array(numFrames * numBins);
+	const windowSumSq = new Float32Array(numFrames * numBins);
+
+	for (let frameIdx = 0; frameIdx < blocksPerFrame; frameIdx++) {
+		const frameStart = frameIdx * hopTime;
+
+		for (let binIdx = 0; binIdx < blocksPerBin; binIdx++) {
+			const binStart = binIdx * hopFreq;
+			const blockIdx = frameIdx * blocksPerBin + binIdx;
+			const blockOffset = blockIdx * blockSize;
+
+			for (let tf = 0; tf < blockTime; tf++) {
+				const destFrame = frameStart + tf;
+
+				if (destFrame >= numFrames) break;
+
+				for (let bf = 0; bf < blockFreq; bf++) {
+					const destBin = binStart + bf;
+
+					if (destBin >= numBins) break;
+
+					const winVal = win2d[tf * blockFreq + bf]!;
+					const destPos = destFrame * numBins + destBin;
+					const srcVal = synth[blockOffset + tf * blockFreq + bf]!;
+
+					accumulator[destPos] = accumulator[destPos]! + srcVal * winVal;
+					windowSumSq[destPos] = windowSumSq[destPos]! + winVal * winVal;
+				}
+			}
+		}
+	}
+
+	// Normalise and clamp to [0,1] — DFTT input/output is a gain mask.
+	for (let flatIdx = 0; flatIdx < numFrames * numBins; flatIdx++) {
+		const ws = windowSumSq[flatIdx]!;
+
+		if (ws > 1e-8) {
+			const normalisedVal = accumulator[flatIdx]! / ws;
+
+			output[flatIdx] = normalisedVal < 0 ? 0 : normalisedVal > 1 ? 1 : normalisedVal;
+		} else {
+			output[flatIdx] = rawMask[flatIdx]!;
+		}
+	}
+}
+
+/**
+ * JS fallback — original row/column 1D FFT implementation. Kept verbatim for
+ * environments without a loadable FFT addon (unit tests and no-addon deploys).
+ *
+ * Per Lukin & Todd 2007 §4.2, this stage:
+ *   1. Extracts overlapping 32×16 blocks from `rawMask` with a 2D Hann window.
+ *   2. Applies a 2D-FFT to each block (rows then columns).
+ *   3. Computes a Wiener-style gain in 2D-frequency space, using the NLM-
+ *      smoothed block to estimate the "signal" and the raw block for the
+ *      full magnitude, suppressing components that are noise-like.
+ *   4. Inverse 2D-FFT and overlap-add into the output.
+ */
+function applyDfttSmoothingJs(
 	nlmSmoothed: Float32Array,
 	rawMask: Float32Array,
 	numFrames: number,

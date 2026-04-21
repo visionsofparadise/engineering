@@ -18,3 +18,5 @@
 2026-03-17T03:35:56.537Z | music-rebalance                |    23126.1ms |         116476 samples/sec |     2.64x RT | Node v22.20.0 win32
 2026-03-17T05:10:29.172Z | music-rebalance                |   189600.9ms |          14207 samples/sec |     0.32x RT | Node v22.20.0 win32
 2026-03-17T05:15:36.033Z | music-rebalance                |   151447.5ms |          17786 samples/sec |     0.40x RT | Node v22.20.0 win32
+2026-04-21T00:58:41.447Z | music-rebalance                |    36203.9ms |              0 samples/sec |     0.84x RT | Node v22.20.0 win32
+2026-04-21T01:35:03.981Z | music-rebalance                |    71743.2ms |              0 samples/sec |     0.43x RT | Node v22.20.0 win32

@@ -19,3 +19,4 @@
 2026-03-17T04:25:46.427Z | spectralRepair                 |    17974.8ms |         149856 samples/sec |     3.40x RT | Node v22.20.0 win32
 2026-03-17T05:07:35.594Z | spectralRepair                 |     7368.5ms |         365562 samples/sec |     8.29x RT | Node v22.20.0 win32
 2026-03-17T05:13:32.021Z | spectralRepair                 |     7425.5ms |         362755 samples/sec |     8.23x RT | Node v22.20.0 win32
+2026-04-21T00:58:43.651Z | spectralRepair                 |     1048.1ms |              0 samples/sec |    29.14x RT | Node v22.20.0 win32

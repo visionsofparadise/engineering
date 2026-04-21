@@ -18,3 +18,4 @@
 2026-03-17T04:26:00.982Z | breathControl                  |     6034.4ms |         446378 samples/sec |    10.12x RT | Node v22.20.0 win32
 2026-03-17T05:07:41.604Z | breathControl                  |      583.0ms |        4620629 samples/sec |   104.78x RT | Node v22.20.0 win32
 2026-03-17T05:13:45.732Z | breathControl                  |     1404.2ms |        1918328 samples/sec |    43.50x RT | Node v22.20.0 win32
+2026-04-21T01:00:05.285Z | breathControl                  |      313.5ms |              0 samples/sec |    97.42x RT | Node v22.20.0 win32

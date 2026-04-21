@@ -61,8 +61,8 @@ export class DeReverbWpeStream extends BufferedTransformStream<DeReverbWpeProper
 		const paddedLength = Math.max(frames, fftSize);
 		const numStftFrames = Math.floor((paddedLength - fftSize) / hopSize) + 1;
 		const stftOutput = {
-			real: Array.from({ length: numStftFrames }, () => new Float32Array(numBins)),
-			imag: Array.from({ length: numStftFrames }, () => new Float32Array(numBins)),
+			real: new Float32Array(numStftFrames * numBins),
+			imag: new Float32Array(numStftFrames * numBins),
 		};
 
 		const chunk = await buffer.read(0, frames);

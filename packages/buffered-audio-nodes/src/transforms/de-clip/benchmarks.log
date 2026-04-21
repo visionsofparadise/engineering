@@ -18,3 +18,4 @@
 2026-03-17T04:26:27.998Z | deClip                         |      781.4ms |        1723495 samples/sec |    39.08x RT | Node v22.20.0 win32
 2026-03-17T05:08:03.789Z | deClip                         |       60.9ms |       22117203 samples/sec |   501.52x RT | Node v22.20.0 win32
 2026-03-17T05:14:13.413Z | deClip                         |      221.7ms |        6075411 samples/sec |   137.76x RT | Node v22.20.0 win32
+2026-04-21T01:01:39.870Z | deClip                         |      200.3ms |              0 samples/sec |   152.44x RT | Node v22.20.0 win32

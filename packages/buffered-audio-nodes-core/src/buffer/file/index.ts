@@ -87,6 +87,12 @@ export class FileChunkBuffer extends ChunkBuffer {
 
 		this.fileFramesWritten = frames;
 		this.flushed = true;
+
+		// Release the in-memory copy now that the data is on disk. Post-flush
+		// reads/writes/appends all go through the file path, so the memory
+		// buffer's Float32Arrays are dead weight — keeping them resident held
+		// onto multi-GB references for the stream's lifetime.
+		await this.memoryBuffer.close();
 	}
 
 	async append(samples: Array<Float32Array>, sampleRate?: number, bitDepth?: number): Promise<void> {

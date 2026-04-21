@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DeClickNode, type DeClickProperties } from ".";
+import { DeClickNode, DeClickStream, type DeClickProperties } from ".";
 import type { BufferedAudioNodeInput } from "@e9g/buffered-audio-nodes-core";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
@@ -9,6 +9,10 @@ export const mouthDeClickSchema = z.object({
 });
 
 export interface MouthDeClickProperties extends z.infer<typeof mouthDeClickSchema>, DeClickProperties {}
+
+export class MouthDeClickStream extends DeClickStream {
+	protected override envelopeSmoothMs = 0.1;
+}
 
 export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 	static override readonly moduleName: string = "Mouth De-Click";
@@ -25,6 +29,10 @@ export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 		const parsed = mouthDeClickSchema.parse(properties ?? {});
 
 		super({ ...properties, ...parsed } as BufferedAudioNodeInput<MouthDeClickProperties>);
+	}
+
+	override createStream(): MouthDeClickStream {
+		return new MouthDeClickStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<MouthDeClickProperties>): MouthDeClickNode {

@@ -12,6 +12,8 @@ export const schema = z.object({
 export interface DeClickProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 export class DeClickStream extends BufferedTransformStream<DeClickProperties> {
+	protected envelopeSmoothMs = 0.5;
+
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const frames = buffer.frames;
 		const channels = buffer.channels;
@@ -24,7 +26,7 @@ export class DeClickStream extends BufferedTransformStream<DeClickProperties> {
 
 		if (!refChannel) return;
 
-		const clickMask = detectClickMask(refChannel, sampleRate, sensitivity, maxClickDuration);
+		const clickMask = detectClickMask(refChannel, sampleRate, sensitivity, maxClickDuration, this.envelopeSmoothMs);
 
 		const fadeSamples = Math.round(sampleRate * 0.001);
 		const blendEnv = buildBlendEnvelope(clickMask, frames, fadeSamples);
