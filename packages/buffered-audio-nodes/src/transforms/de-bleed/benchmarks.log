@@ -1,3 +1,7 @@
 2026-03-20T17:43:44.673Z | deBleed                        |    13681.3ms |              0 samples/sec |     2.23x RT | Node v22.20.0 win32
 2026-04-20T16:04:35.989Z | deBleed                        |   188551.9ms |              0 samples/sec |     0.16x RT | Node v22.20.0 win32
 2026-04-20T16:21:19.502Z | deBleed                        |   124754.0ms |              0 samples/sec |     0.24x RT | Node v22.20.0 win32
+2026-04-21T00:43:52.736Z | deBleed                        |   250000.2ms |              0 samples/sec |     0.12x RT | Node v22.20.0 win32
+2026-04-21T00:46:40.397Z | deBleed                        |    82984.7ms |              0 samples/sec |     0.37x RT | Node v22.20.0 win32
+2026-04-21T00:51:27.152Z | deBleed                        |    76770.4ms |              0 samples/sec |     0.40x RT | Node v22.20.0 win32
+2026-04-21T01:01:18.014Z | deBleed                        |    59834.7ms |              0 samples/sec |     0.51x RT | Node v22.20.0 win32
