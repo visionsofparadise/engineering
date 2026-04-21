@@ -35,11 +35,11 @@ export const schema = z.object({
 		.describe("FFTW native addon — CPU FFT acceleration"),
 });
 
-export interface VoiceDenoiseProperties extends z.infer<typeof schema>, TransformNodeProperties {}
+export interface VoiceDenoiseDtlnProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 const DTLN_SAMPLE_RATE = 16000;
 
-export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProperties> {
+export class VoiceDenoiseDtlnStream extends BufferedTransformStream<VoiceDenoiseDtlnProperties> {
 	private session1!: OnnxSession;
 	private session2!: OnnxSession;
 	private fftBackend?: FftBackend;
@@ -103,32 +103,32 @@ export class VoiceDenoiseStream extends BufferedTransformStream<VoiceDenoiseProp
 	}
 }
 
-export class VoiceDenoiseNode extends TransformNode<VoiceDenoiseProperties> {
-	static override readonly moduleName = "Voice Denoise";
+export class VoiceDenoiseDtlnNode extends TransformNode<VoiceDenoiseDtlnProperties> {
+	static override readonly moduleName = "Voice Denoise (DTLN)";
 	static override readonly packageName = PACKAGE_NAME;
 	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Remove background noise from speech using DTLN neural network";
 	static override readonly schema = schema;
-	static override is(value: unknown): value is VoiceDenoiseNode {
-		return TransformNode.is(value) && value.type[2] === "voice-denoise";
+	static override is(value: unknown): value is VoiceDenoiseDtlnNode {
+		return TransformNode.is(value) && value.type[2] === "voice-denoise-dtln";
 	}
 
-	override readonly type = ["buffered-audio-node", "transform", "voice-denoise"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "voice-denoise-dtln"] as const;
 
-	constructor(properties: VoiceDenoiseProperties) {
+	constructor(properties: VoiceDenoiseDtlnProperties) {
 		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
 	}
 
-	override createStream(): VoiceDenoiseStream {
-		return new VoiceDenoiseStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
+	override createStream(): VoiceDenoiseDtlnStream {
+		return new VoiceDenoiseDtlnStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
-	override clone(overrides?: Partial<VoiceDenoiseProperties>): VoiceDenoiseNode {
-		return new VoiceDenoiseNode({ ...this.properties, previousProperties: this.properties, ...overrides });
+	override clone(overrides?: Partial<VoiceDenoiseDtlnProperties>): VoiceDenoiseDtlnNode {
+		return new VoiceDenoiseDtlnNode({ ...this.properties, previousProperties: this.properties, ...overrides });
 	}
 }
 
-export function voiceDenoise(options: {
+export function voiceDenoiseDtln(options: {
 	modelPath1: string;
 	modelPath2: string;
 	ffmpegPath: string;
@@ -136,8 +136,8 @@ export function voiceDenoise(options: {
 	vkfftAddonPath?: string;
 	fftwAddonPath?: string;
 	id?: string;
-}): VoiceDenoiseNode {
-	return new VoiceDenoiseNode({
+}): VoiceDenoiseDtlnNode {
+	return new VoiceDenoiseDtlnNode({
 		modelPath1: options.modelPath1,
 		modelPath2: options.modelPath2,
 		ffmpegPath: options.ffmpegPath,

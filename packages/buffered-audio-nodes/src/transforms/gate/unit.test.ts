@@ -63,11 +63,11 @@ describe("GateNode", () => {
 		expect(lastSample).toBeCloseTo(signal, 2);
 	});
 
-	it("signal below threshold: gate is closed, attenuates signal by range", () => {
-		// -80dBFS signal, -40 threshold -> gate should be closed
-		// range=-60 means -60dB attenuation
-		const signal = Math.pow(10, -50 / 20);
-		const node = gate({ threshold: -40, range: -60, attack: 0, release: 0, hold: 0, hysteresis: 0 });
+	it("signal below threshold: gate is closed, attenuates signal toward range floor at high ratio", () => {
+		// Input -80 dBFS, 40 dB below threshold. ratio=20 -> slope 0.95 -> target gr = -38 dB.
+		// range=-30 clamps attenuation to -30 dB. Output ≈ -110 dBFS.
+		const signal = Math.pow(10, -80 / 20);
+		const node = gate({ threshold: -40, range: -30, ratio: 20, attack: 0, release: 0, hold: 0, hysteresis: 0 });
 
 		const chunks = Array.from({ length: 200 }, () => makeConstantChunk(signal));
 		const outputs = processMultipleChunks(node, chunks);
@@ -75,9 +75,8 @@ describe("GateNode", () => {
 		const lastSample = Math.abs(last.samples[0]![0] ?? 0);
 		const outDb = 20 * Math.log10(Math.max(lastSample, 1e-10));
 
-		// Expected: -50 + (-60) attenuation = -110dBFS range
-		// Actually: output = signal * rangeLinear -> outDb = -50 + (-60) = -110
-		expect(outDb).toBeLessThan(-80);
+		// Expected: -80 + (-30) = -110 dBFS.
+		expect(outDb).toBeLessThan(-100);
 	});
 
 	it("hold timer: gate stays open after signal drops", () => {
@@ -196,7 +195,8 @@ describe("GateNode", () => {
 			bitDepth: 32,
 		};
 
-		const node = gate({ threshold: -40, range: -80, attack: 0, release: 0, hold: 0, hysteresis: 0 });
+		// ratio=20 pushes toward hard-gate behavior for the quiet channel.
+		const node = gate({ threshold: -40, range: -80, ratio: 20, attack: 0, release: 0, hold: 0, hysteresis: 0 });
 		const chunks = Array.from({ length: 100 }, () => chunk);
 		const outputs = processMultipleChunks(node, chunks);
 		const last = outputs[outputs.length - 1]!;
@@ -207,8 +207,135 @@ describe("GateNode", () => {
 		// L (loud): gate open, near input level
 		expect(lOut).toBeCloseTo(loudSig, 2);
 
-		// R (quiet): gate closed, heavily attenuated
-		expect(rOut).toBeLessThan(quietSig * 0.1);
+		// R (quiet, -60 dBFS, 20 dB below threshold): ratio=20 -> target gr ≈ -19 dB.
+		// Output ≈ -79 dBFS; well under the input level.
+		expect(rOut).toBeLessThan(quietSig * 0.2);
+	});
+
+	it("schema default ratio is 10", () => {
+		const node = gate();
+
+		expect(node.properties.ratio).toBe(10);
+	});
+
+	it("ratio=1: no gating — signal passes unchanged even well below threshold", () => {
+		// With ratio=1 the expander slope factor is 0, so closed-state gain reduction is 0 dB.
+		// Signal well below threshold should still pass through at unity gain.
+		const signal = Math.pow(10, -60 / 20); // -60 dBFS
+		const node = gate({
+			threshold: -40,
+			range: -80,
+			ratio: 1,
+			attack: 0,
+			release: 0,
+			hold: 0,
+			hysteresis: 0,
+		});
+
+		const chunks = Array.from({ length: 200 }, () => makeConstantChunk(signal));
+		const outputs = processMultipleChunks(node, chunks);
+		const last = outputs[outputs.length - 1]!;
+		const lastSample = Math.abs(last.samples[0]![0] ?? 0);
+
+		// Output should be approximately equal to input (no gating applied)
+		expect(lastSample).toBeCloseTo(signal, 4);
+	});
+
+	it("ratio=20: strong gating — attenuation approaches range floor", () => {
+		// With ratio=20 the slope factor is 0.95.
+		// Signal 20 dB below threshold → target gr = -20 * 0.95 = -19 dB,
+		// but the state machine marks the gate closed so we saturate toward range.
+		// With range = -40 and high ratio, steady-state output should land near the range floor.
+		const signal = Math.pow(10, -60 / 20); // -60 dBFS (20 dB below threshold)
+		const node = gate({
+			threshold: -40,
+			range: -40,
+			ratio: 20,
+			attack: 0,
+			release: 0,
+			hold: 0,
+			hysteresis: 0,
+		});
+
+		const chunks = Array.from({ length: 200 }, () => makeConstantChunk(signal));
+		const outputs = processMultipleChunks(node, chunks);
+		const last = outputs[outputs.length - 1]!;
+		const lastSample = Math.abs(last.samples[0]![0] ?? 0);
+		const outDb = 20 * Math.log10(Math.max(lastSample, 1e-10));
+		const inDb = 20 * Math.log10(signal);
+		const attenuationDb = outDb - inDb;
+
+		// With input 20 dB below threshold and slope factor 0.95, target gr = -19 dB.
+		// range = -40 so the -19 dB value wins the max(). Expect attenuation near -19 dB.
+		expect(attenuationDb).toBeLessThan(-15);
+		expect(attenuationDb).toBeGreaterThan(-25);
+	});
+
+	it("ratio=20 with deep input below threshold: saturates at range floor", () => {
+		// Input 40 dB below threshold: target gr = -40 * 0.95 = -38 dB, but range = -30
+		// clamps attenuation at -30 dB.
+		const signal = Math.pow(10, -80 / 20); // -80 dBFS
+		const node = gate({
+			threshold: -40,
+			range: -30,
+			ratio: 20,
+			attack: 0,
+			release: 0,
+			hold: 0,
+			hysteresis: 0,
+		});
+
+		const chunks = Array.from({ length: 200 }, () => makeConstantChunk(signal));
+		const outputs = processMultipleChunks(node, chunks);
+		const last = outputs[outputs.length - 1]!;
+		const lastSample = Math.abs(last.samples[0]![0] ?? 0);
+		const outDb = 20 * Math.log10(Math.max(lastSample, 1e-10));
+		const inDb = 20 * Math.log10(signal);
+		const attenuationDb = outDb - inDb;
+
+		// Attenuation should land at the range floor (-30 dB), not exceed it.
+		expect(attenuationDb).toBeCloseTo(-30, 0);
+	});
+
+	it("intermediate ratios produce proportional attenuation", () => {
+		// For a signal 10 dB below threshold, target gr = -10 * (1 - 1/ratio) dB.
+		// ratio=2  -> -10 * 0.5 = -5 dB
+		// ratio=4  -> -10 * 0.75 = -7.5 dB
+		// ratio=10 -> -10 * 0.9 = -9 dB
+		// Attenuation should increase monotonically with ratio.
+		const signal = Math.pow(10, -50 / 20); // 10 dB below threshold
+		const ratios = [2, 4, 10];
+		const attenuations: Array<number> = [];
+
+		for (const ratio of ratios) {
+			const node = gate({
+				threshold: -40,
+				range: -80,
+				ratio,
+				attack: 0,
+				release: 0,
+				hold: 0,
+				hysteresis: 0,
+			});
+
+			const chunks = Array.from({ length: 200 }, () => makeConstantChunk(signal));
+			const outputs = processMultipleChunks(node, chunks);
+			const last = outputs[outputs.length - 1]!;
+			const lastSample = Math.abs(last.samples[0]![0] ?? 0);
+			const outDb = 20 * Math.log10(Math.max(lastSample, 1e-10));
+			const inDb = 20 * Math.log10(signal);
+
+			attenuations.push(outDb - inDb);
+		}
+
+		// Monotonic: higher ratio -> more attenuation (more negative dB)
+		expect(attenuations[0]!).toBeGreaterThan(attenuations[1]!);
+		expect(attenuations[1]!).toBeGreaterThan(attenuations[2]!);
+
+		// Check expected values within ~1 dB tolerance (EMA is instant with attack=release=0)
+		expect(attenuations[0]!).toBeCloseTo(-5, 0);
+		expect(attenuations[1]!).toBeCloseTo(-7.5, 0);
+		expect(attenuations[2]!).toBeCloseTo(-9, 0);
 	});
 
 	it("clone preserves and can override properties", () => {

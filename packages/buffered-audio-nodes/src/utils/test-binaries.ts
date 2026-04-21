@@ -19,6 +19,7 @@ export const binaries = {
 	kimVocal2: resolve(binariesDir, "Kim_Vocal_2.onnx"),
 	htdemucs: resolve(binariesDir, "htdemucs.onnx"),
 	htdemucsData: resolve(binariesDir, "htdemucs.onnx.data"),
+	dfn3: resolve(binariesDir, "dfn3.onnx"),
 } as const;
 
 export const audio = {

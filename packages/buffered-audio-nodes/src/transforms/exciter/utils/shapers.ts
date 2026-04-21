@@ -9,7 +9,7 @@
  * though they will not produce NaN or Infinity outside that range.
  */
 
-export type ExciterMode = "soft" | "tube" | "fold";
+export type ExciterMode = "soft" | "tube" | "fold" | "tape";
 
 /**
  * Soft saturation: y = x / (1 + |x|)
@@ -45,7 +45,37 @@ export function foldShaper(sample: number): number {
 }
 
 /**
+ * Tape-style saturation: biased tanh with DC correction.
+ *
+ * Adds a constant `bias` before the tanh so the transfer curve is asymmetric
+ * about zero, producing a second-harmonic-dominant response characteristic of
+ * analog tape. The `tanh(bias)` subtraction removes the DC offset the bias
+ * would otherwise introduce. The companion HF rolloff (single-pole / biquad
+ * lowpass, typically ~12 kHz) lives in `ExciterStream` because it requires
+ * per-channel state — this module stays purely stateless to match the
+ * existing soft/tube/fold pattern.
+ *
+ * The caller (ExciterStream) pre-multiplies the signal by the user `drive`
+ * factor before invoking the shaper, so dispatch passes `drive = 1` here.
+ * The `drive` parameter is kept on the signature so the formula matches the
+ * intended `tanh(x * drive + bias) - tanh(bias)` / drive form if a future
+ * caller wishes to hand over drive responsibility to the shaper itself.
+ */
+export function tapeShaper(sample: number, drive: number): number {
+	const bias = 0.15;
+	const driven = sample * drive + bias;
+	const saturated = Math.tanh(driven) - Math.tanh(bias);
+
+	return saturated / drive;
+}
+
+/**
  * Dispatch to the appropriate shaper by mode name.
+ *
+ * For `"tape"`, drive=1 is passed because the caller is expected to have
+ * already applied the user drive factor to `sample` (matching the
+ * soft/tube/fold convention where drive lives outside the shaper). The HF
+ * rolloff that accompanies tape saturation is handled by `ExciterStream`.
  */
 export function applyShaper(sample: number, mode: ExciterMode): number {
 	switch (mode) {
@@ -55,5 +85,7 @@ export function applyShaper(sample: number, mode: ExciterMode): number {
 			return tubeShaper(sample);
 		case "fold":
 			return foldShaper(sample);
+		case "tape":
+			return tapeShaper(sample, 1);
 	}
 }

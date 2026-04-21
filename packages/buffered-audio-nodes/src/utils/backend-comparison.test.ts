@@ -2,7 +2,7 @@ import { describe, it } from "vitest";
 import { runBenchmark } from "./test-benchmark";
 import { audio } from "./test-binaries";
 import { spectralRepair } from "../transforms/spectral-repair";
-import { deReverb } from "../transforms/de-reverb";
+import { deReverbWpe } from "../transforms/de-reverb-wpe";
 import { ExecutionProvider } from "@e9g/buffered-audio-nodes-core";
 
 const testVoice = audio.testVoice;
@@ -37,13 +37,13 @@ describe("backend comparison", () => {
 		});
 	});
 
-	describe("de-reverb", () => {
+	describe("de-reverb-wpe", () => {
 		const results: Array<{ label: string; totalMs: number; rtx: number }> = [];
 
 		for (const { label, providers } of configs) {
-			it(`de-reverb [${label}]`, async () => {
-				const transform = deReverb();
-				const result = await runBenchmark(`de-reverb-${label}`, transform, testVoice, { executionProviders: providers });
+			it(`de-reverb-wpe [${label}]`, async () => {
+				const transform = deReverbWpe();
+				const result = await runBenchmark(`de-reverb-wpe-${label}`, transform, testVoice, { executionProviders: providers });
 				results.push({ label, totalMs: result.totalMs, rtx: result.realTimeMultiplier });
 				console.log(`  ${label}: ${result.totalMs.toFixed(1)}ms | ${result.realTimeMultiplier.toFixed(2)}x RT | ${Math.round(result.samplesPerSecond)} samples/sec`);
 			}, 240_000);
@@ -51,7 +51,7 @@ describe("backend comparison", () => {
 
 		it("summary", () => {
 			if (results.length < 2) return;
-			console.log("\n  === de-reverb summary ===");
+			console.log("\n  === de-reverb-wpe summary ===");
 			const jsResult = results.find(r => r.label === "js");
 			for (const r of results) {
 				const speedup = jsResult ? (jsResult.totalMs / r.totalMs).toFixed(2) + "x vs js" : "";

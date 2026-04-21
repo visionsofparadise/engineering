@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { exciter, ExciterNode } from ".";
-import { softShaper, tubeShaper, foldShaper, applyShaper } from "./utils/shapers";
+import { softShaper, tubeShaper, foldShaper, tapeShaper, applyShaper } from "./utils/shapers";
 
 const SAMPLE_RATE = 48000;
 
@@ -395,10 +395,39 @@ describe("Transfer curve shapers", () => {
 		expect(applyShaper(sample, "soft")).toBeCloseTo(softShaper(sample), 8);
 		expect(applyShaper(sample, "tube")).toBeCloseTo(tubeShaper(sample), 8);
 		expect(applyShaper(sample, "fold")).toBeCloseTo(foldShaper(sample), 8);
+		expect(applyShaper(sample, "tape")).toBeCloseTo(tapeShaper(sample, 1), 8);
+	});
+
+	it("tapeShaper: zero input produces zero output (DC correction)", () => {
+		// With DC correction `- tanh(bias)`, tapeShaper(0, drive) must be 0
+		// regardless of drive — this is the property that keeps a biased tanh
+		// from introducing a DC offset.
+		expect(tapeShaper(0, 1)).toBeCloseTo(0, 10);
+		expect(tapeShaper(0, 2)).toBeCloseTo(0, 10);
+		expect(tapeShaper(0, 8)).toBeCloseTo(0, 10);
+	});
+
+	it("tapeShaper: asymmetric transfer curve (positive vs negative inputs differ in magnitude)", () => {
+		// Biased tanh is asymmetric about zero — |f(x)| != |f(-x)| for x != 0.
+		// This asymmetry is what produces the 2nd-harmonic-dominant tape
+		// character, versus the purely odd (3rd-harmonic) soft/tube/fold curves.
+		const positive = tapeShaper(0.5, 1);
+		const negative = tapeShaper(-0.5, 1);
+
+		expect(Math.abs(Math.abs(positive) - Math.abs(negative))).toBeGreaterThan(1e-3);
+	});
+
+	it("tapeShaper: produces finite output for a wide input range", () => {
+		const edgeCases = [0, 1, -1, 0.0001, -0.0001, 10, -10];
+
+		for (const value of edgeCases) {
+			expect(Number.isFinite(tapeShaper(value, 1))).toBe(true);
+			expect(Number.isFinite(tapeShaper(value, 4))).toBe(true);
+		}
 	});
 
 	it("all shapers produce finite output for edge-case inputs", () => {
-		const modes = ["soft", "tube", "fold"] as const;
+		const modes = ["soft", "tube", "fold", "tape"] as const;
 		const edgeCases = [0, 1, -1, 0.0001, -0.0001, 10, -10];
 
 		for (const mode of modes) {
@@ -408,6 +437,53 @@ describe("Transfer curve shapers", () => {
 				expect(Number.isFinite(result)).toBe(true);
 			}
 		}
+	});
+});
+
+describe("ExciterNode tape mode", () => {
+	it("schema accepts mode='tape'", () => {
+		const node = exciter({ mode: "tape" });
+
+		expect(node.properties.mode).toBe("tape");
+	});
+
+	it("tape mode produces non-zero, finite output for a non-zero input", () => {
+		const node = exciter({ mode: "tape", mix: 1, frequency: 200, drive: 12, harmonics: 1 });
+		const chunk = makeSinusoidChunk(1000);
+		const stream = node.createStream();
+		const output = stream._unbuffer(chunk);
+
+		for (const sample of output.samples[0]!) {
+			expect(Number.isFinite(sample)).toBe(true);
+		}
+
+		const outRms = rms(output.samples[0]!);
+
+		expect(outRms).toBeGreaterThan(0);
+	});
+
+	it("tape mode output differs from tube mode at matched settings (asymmetric vs symmetric)", () => {
+		// Tape is biased-tanh + HF rolloff; tube is symmetric cubic soft-clip.
+		// With identical drive / frequency / mix, the two outputs should be
+		// distinguishable at the sample level — this is the behavioral
+		// claim that justifies adding tape as its own mode.
+		const chunk = makeSinusoidChunk(1000, 4096);
+
+		const tapeNode = exciter({ mode: "tape", mix: 1, frequency: 200, drive: 12, harmonics: 1 });
+		const tubeNode = exciter({ mode: "tube", mix: 1, frequency: 200, drive: 12, harmonics: 1 });
+
+		const outTape = tapeNode.createStream()._unbuffer(chunk).samples[0]!;
+		const outTube = tubeNode.createStream()._unbuffer(chunk).samples[0]!;
+
+		let maxDiff = 0;
+
+		for (let index = 0; index < outTape.length; index++) {
+			const diff = Math.abs((outTape[index] ?? 0) - (outTube[index] ?? 0));
+
+			if (diff > maxDiff) maxDiff = diff;
+		}
+
+		expect(maxDiff).toBeGreaterThan(1e-3);
 	});
 });
 

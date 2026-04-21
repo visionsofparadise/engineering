@@ -20,3 +20,5 @@
 2026-03-17T04:26:46.061Z | deReverb                       |   154278.0ms |          17460 samples/sec |     0.40x RT | Node v22.20.0 win32
 2026-03-17T05:08:23.641Z | deReverb                       |    34514.1ms |          78044 samples/sec |     1.77x RT | Node v22.20.0 win32
 2026-03-17T05:14:00.359Z | deReverb                       |    58443.6ms |          46089 samples/sec |     1.05x RT | Node v22.20.0 win32
+2026-04-20T23:47:11.941Z | deReverbWpe                    |    14667.4ms |              0 samples/sec |     2.08x RT | Node v22.20.0 win32
+2026-04-21T00:06:22.796Z | deReverbWpe                    |    18754.7ms |              0 samples/sec |     1.63x RT | Node v22.20.0 win32

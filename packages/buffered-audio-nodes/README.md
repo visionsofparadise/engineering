@@ -174,7 +174,7 @@ Reduce plosive bursts (p, b, t, d sounds)
 
 Reduce room reverb using Weighted Prediction Error — classical DSP, fully tunable, no model required
 
-[Source](./src/transforms/de-reverb/index.ts)
+[Source](./src/transforms/de-reverb-wpe/index.ts)
 
 | Parameter         | Type                     | Default | Description                                                                                                         |
 | ----------------- | ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -563,11 +563,11 @@ Remove silence from start and end
 | `start`     | boolean                     | `true`  | Start       |
 | `end`       | boolean                     | `true`  | End         |
 
-### Voice Denoise
+### Voice Denoise (DTLN)
 
 Remove background noise from speech using DTLN neural network
 
-[Source](./src/transforms/voice-denoise/index.ts)
+[Source](./src/transforms/voice-denoise-dtln/index.ts)
 
 | Parameter        | Type   | Default | Description                                                                                                         |
 | ---------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -724,7 +724,7 @@ Models are not bundled with the package. Each node's parameter table links to th
 | --------------- | -------------------------- | -------------------------------------------------------- |
 | DialogueIsolate | Kim_Vocal_2.onnx           | [uvr_models](https://huggingface.co/seanghay/uvr_models) |
 | MusicRebalance  | htdemucs.onnx + .onnx.data | [demucs](https://github.com/facebookresearch/demucs)     |
-| VoiceDenoise    | model_1.onnx, model_2.onnx | [DTLN](https://github.com/breizhn/DTLN)                  |
+| VoiceDenoiseDtln | model_1.onnx, model_2.onnx | [DTLN](https://github.com/breizhn/DTLN)                 |
 
 ## License
 

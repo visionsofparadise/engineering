@@ -49,6 +49,15 @@
       "source": "https://huggingface.co/seanghay/uvr_models"
     },
     {
+      "key": "dfn3",
+      "platform": "all",
+      "arch": "all",
+      "filename": "dfn3.onnx",
+      "sha256": "fe5eb64fa2e4154c83f8e4935e82871c850c154387ee892e0ab65fe179e7d8c9",
+      "size": 16104687,
+      "source": "https://github.com/yuyun2000/SpeechDenoiser"
+    },
+    {
       "key": "dtln-model_1",
       "platform": "all",
       "arch": "all",

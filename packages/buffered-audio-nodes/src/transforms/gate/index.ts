@@ -7,6 +7,7 @@ import { makeEnvelopeCoefficients, type EnvelopeCoefficients } from "../dynamics
 export const schema = z.object({
 	threshold: z.number().min(-80).max(0).multipleOf(0.1).default(-40).describe("Threshold (dBFS)"),
 	range: z.number().min(-80).max(0).multipleOf(1).default(-80).describe("Range (dB) — attenuation when gate is closed"),
+	ratio: z.number().min(1).max(20).multipleOf(0.1).default(10).describe("Ratio — downward expansion below threshold (1 = no gating, 20 ≈ hard gate)"),
 	attack: z.number().min(0).max(500).multipleOf(0.1).default(1).describe("Attack (ms)"),
 	hold: z.number().min(0).max(2000).multipleOf(1).default(100).describe("Hold (ms)"),
 	release: z.number().min(0).max(5000).multipleOf(1).default(200).describe("Release (ms)"),
@@ -38,7 +39,10 @@ interface GateChannelState {
  * 3. When gate opens, reset hold timer.
  * 4. When signal drops below close threshold, decrement hold timer.
  *    Gate remains open while holdSamplesRemaining > 0.
- * 5. Target gain: 0dB (open) or range dB (closed).
+ * 5. Target gain: 0dB (open), or a continuous downward expansion when closed:
+ *    `target_gr_db = max(range, (input_db - threshold) * (1 - 1/ratio))`.
+ *    At ratio=1 target is 0 dB (no gating). At high ratios it saturates to `range`,
+ *    approximating the old binary behavior.
  * 6. Smooth target gain via attack/release envelope follower.
  * 7. Apply smoothed gain to output sample.
  *
@@ -48,7 +52,8 @@ export class GateStream extends BufferedTransformStream<GateProperties> {
 	private channelStates: Array<GateChannelState> = [];
 	private coefficients: EnvelopeCoefficients | null = null;
 	private holdSamples = 0;
-	private rangeLinear = 0;
+	private rangeDb = 0;
+	private ratioFactor = 0;
 	private openThresholdDb = 0;
 	private closeThresholdDb = 0;
 	private sampleRateKnown = false;
@@ -58,11 +63,14 @@ export class GateStream extends BufferedTransformStream<GateProperties> {
 
 		this.sampleRateKnown = true;
 
-		const { attack, release, hold, threshold, hysteresis, range } = this.properties;
+		const { attack, release, hold, threshold, hysteresis, range, ratio } = this.properties;
 
 		this.coefficients = makeEnvelopeCoefficients(attack, release, sampleRate);
 		this.holdSamples = Math.max(0, Math.round((hold / 1000) * sampleRate));
-		this.rangeLinear = dbToLinear(range);
+		this.rangeDb = range;
+		// `ratio` ≥ 1 per schema; (1 − 1/ratio) is the expander slope factor.
+		// ratio=1 → 0 (no gating); ratio→∞ → 1 (hard gate).
+		this.ratioFactor = 1 - 1 / ratio;
 		this.openThresholdDb = threshold;
 		this.closeThresholdDb = threshold - hysteresis;
 
@@ -122,8 +130,21 @@ export class GateStream extends BufferedTransformStream<GateProperties> {
 					}
 				}
 
-				// Target gain in linear
-				const targetGain = chState.isOpen ? 1 : this.rangeLinear;
+				// Target gain in linear.
+				// Open → unity. Closed → continuous downward expander:
+				//   target_gr_db = (input_db - threshold) * (1 - 1/ratio), clamped ≥ range.
+				// At ratio=1 this is 0 dB (no gating); at high ratios it saturates to `range`,
+				// approximating the old binary gate.
+				let targetGain: number;
+
+				if (chState.isOpen) {
+					targetGain = 1;
+				} else {
+					const belowDb = Math.min(0, levelDb - this.openThresholdDb);
+					const grDb = Math.max(this.rangeDb, belowDb * this.ratioFactor);
+
+					targetGain = dbToLinear(grDb);
+				}
 
 				// Smooth using an EMA directly in the linear domain.
 				// Attack coefficient applies when the gate is opening (gain rising toward 1).

@@ -1,13 +1,21 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, type AudioChunk, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
-import { highPassCoefficients, Oversampler, type OversamplingFactor } from "@e9g/buffered-audio-nodes-utils";
+import { highPassCoefficients, lowPassCoefficients, Oversampler, type OversamplingFactor } from "@e9g/buffered-audio-nodes-utils";
 import type { BiquadCoefficients } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { applyShaper, type ExciterMode } from "./utils/shapers";
 import { makeFilterState, processSample, type BandFilterState } from "../eq/utils/band-filter";
 
+/**
+ * Tape-mode HF rolloff cutoff (Hz). Applied only when `mode === "tape"`, after
+ * the shaper, to emulate the characteristic tape frequency response in which
+ * content above ~12 kHz falls off before saturation-generated HF harmonics
+ * become harsh. Q = Butterworth (0.71) for a clean single-stage rolloff.
+ */
+const TAPE_HF_CUTOFF_HZ = 12000;
+
 export const schema = z.object({
-	mode: z.enum(["soft", "tube", "fold"]).default("soft").describe("Saturation mode"),
+	mode: z.enum(["soft", "tube", "fold", "tape"]).default("soft").describe("Saturation mode"),
 	frequency: z.number().min(20).max(20000).multipleOf(1).default(3000).describe("Crossover frequency (Hz)"),
 	drive: z.number().min(0).max(24).multipleOf(0.1).default(6).describe("Drive (dB)"),
 	mix: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Wet/dry mix (0 = dry, 1 = wet)"),
@@ -40,6 +48,16 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 	private hpStates: Array<BandFilterState> = [];
 	private hpCoefficients: BiquadCoefficients | null = null;
 
+	/**
+	 * Per-channel low-pass biquad state for tape-mode HF rolloff. Applied only
+	 * when `mode === "tape"` to the shaped output, emulating the
+	 * characteristic tape HF response. State persists across chunks to keep
+	 * the filter continuous at chunk boundaries; it is reset whenever
+	 * `ensureState` re-initializes (e.g. channel count or sample rate change).
+	 */
+	private tapeLpStates: Array<BandFilterState> = [];
+	private tapeLpCoefficients: BiquadCoefficients | null = null;
+
 	/** Per-channel oversamplers for the shaper stage. Always allocated; factor=1 is a valid pass-through. */
 	private oversamplers: Array<Oversampler> = [];
 
@@ -55,6 +73,13 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 		// Standard Q=0.71 (Butterworth) for a clean crossover
 		this.hpCoefficients = highPassCoefficients(sampleRate, frequency, 0.71);
 		this.hpStates = Array.from({ length: channels }, () => makeFilterState());
+
+		// Tape-mode HF rolloff. Cutoff is clamped below Nyquist so the
+		// coefficients remain well-defined at lower sample rates.
+		const tapeCutoff = Math.min(TAPE_HF_CUTOFF_HZ, sampleRate * 0.45);
+
+		this.tapeLpCoefficients = lowPassCoefficients(sampleRate, tapeCutoff, 0.71);
+		this.tapeLpStates = Array.from({ length: channels }, () => makeFilterState());
 
 		// Oversampler is always allocated — factor 1 is a valid pass-through.
 		const factor = oversampling as OversamplingFactor;
@@ -78,7 +103,9 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 		const { mode, drive, mix, harmonics } = this.properties;
 		const driveLinear = Math.pow(10, drive / 20);
 		const dryMix = 1 - mix;
-		const shaperFn = (x: number): number => applyShaper(x, mode as ExciterMode);
+		const exciterMode = mode as ExciterMode;
+		const shaperFn = (x: number): number => applyShaper(x, exciterMode);
+		const tapeLpCoeffs = this.tapeLpCoefficients;
 
 		const outputSamples: Array<Float32Array> = samples.map((inCh, ch) => {
 			const frames = inCh.length;
@@ -108,6 +135,21 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 			// upsamples, shapes, and downsamples; at factor 1 it maps the shaper
 			// over the driven band at the original rate.
 			const shaped = oversampler.oversample(drivenBand, shaperFn);
+
+			// Step 3b (tape only): HF rolloff above the saturation knee. A single
+			// biquad LP (~12 kHz cutoff) applied at the original rate to the
+			// shaped output — this gives tape mode its characteristic darker
+			// top-end and tames the 2nd-harmonic HF that biased-tanh generates.
+			// State is per-channel and persists across chunks.
+			if (exciterMode === "tape" && tapeLpCoeffs) {
+				const tapeLpState = this.tapeLpStates[ch];
+
+				if (tapeLpState) {
+					for (let index = 0; index < frames; index++) {
+						shaped[index] = processSample(shaped[index] ?? 0, tapeLpCoeffs, tapeLpState);
+					}
+				}
+			}
 
 			// Steps 4 + 5: Harmonics and wet/dry mix at original rate.
 			for (let index = 0; index < frames; index++) {

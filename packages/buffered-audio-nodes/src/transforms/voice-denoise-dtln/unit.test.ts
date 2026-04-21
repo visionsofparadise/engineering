@@ -2,14 +2,14 @@ import { describe, it, expect } from "vitest";
 import { runTransform } from "../../utils/test-pipeline";
 import { notSilent, expectedDuration, somethingChanged, notAnomalous } from "../../utils/test-audio";
 import { audio, binaries, hasBinaryFixtures } from "../../utils/test-binaries";
-import { voiceDenoise } from ".";
+import { voiceDenoiseDtln } from ".";
 
 const testVoice = audio.testVoice;
 const describeIfFixtureSet = hasBinaryFixtures("model1", "model2", "ffmpeg", "onnxAddon", "vkfftAddon", "fftwAddon") ? describe : describe.skip;
 
-describeIfFixtureSet("voice-denoise", () => {
+describeIfFixtureSet("voice-denoise-dtln", () => {
 	it("processes voice audio", async () => {
-		const transform = voiceDenoise({
+		const transform = voiceDenoiseDtln({
 			modelPath1: binaries.model1,
 			modelPath2: binaries.model2,
 			ffmpegPath: binaries.ffmpeg,

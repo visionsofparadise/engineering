@@ -2,8 +2,8 @@ import { describe, it } from "vitest";
 import { runBenchmark, type BenchmarkResult } from "./test-benchmark";
 import { audio, binaries } from "./test-binaries";
 import { spectralRepair } from "../transforms/spectral-repair";
-import { deReverb } from "../transforms/de-reverb";
-import { voiceDenoise } from "../transforms/voice-denoise";
+import { deReverbWpe } from "../transforms/de-reverb-wpe";
+import { voiceDenoiseDtln } from "../transforms/voice-denoise-dtln";
 import { dialogueIsolate } from "../transforms/dialogue-isolate";
 import { musicRebalance } from "../transforms/music-rebalance";
 import { ExecutionProvider } from "@e9g/buffered-audio-nodes-core";
@@ -57,22 +57,22 @@ describe("FFT backends", () => {
 		}, 240_000);
 	}
 
-	// de-reverb
+	// de-reverb-wpe
 	for (const { label, providers } of fftConfigs) {
-		it(`de-reverb [${label}]`, async () => {
-			const t = deReverb();
-			const r = await runBenchmark(`de-reverb`, t, testVoice, { executionProviders: providers });
-			record("fft", "de-reverb", label, r);
+		it(`de-reverb-wpe [${label}]`, async () => {
+			const t = deReverbWpe();
+			const r = await runBenchmark(`de-reverb-wpe`, t, testVoice, { executionProviders: providers });
+			record("fft", "de-reverb-wpe", label, r);
 		}, 240_000);
 	}
 
 	// eq-match — needs a reference, skip if not easily constructable
-	// voice-denoise (also ONNX — tests FFT portion)
+	// voice-denoise-dtln (also ONNX — tests FFT portion)
 	for (const { label, providers } of fftConfigs) {
-		it(`voice-denoise [${label}]`, async () => {
-			const t = voiceDenoise({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
-			const r = await runBenchmark(`voice-denoise`, t, testVoice, { executionProviders: providers });
-			record("fft", "voice-denoise", label, r);
+		it(`voice-denoise-dtln [${label}]`, async () => {
+			const t = voiceDenoiseDtln({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
+			const r = await runBenchmark(`voice-denoise-dtln`, t, testVoice, { executionProviders: providers });
+			record("fft", "voice-denoise-dtln", label, r);
 		}, 240_000);
 	}
 });
@@ -82,10 +82,10 @@ describe("FFT backends", () => {
 // ============================================================
 describe("ONNX models", () => {
 	for (const { label, providers } of onnxConfigs) {
-		it(`voice-denoise [${label}]`, async () => {
-			const t = voiceDenoise({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
-			const r = await runBenchmark(`voice-denoise`, t, testVoice, { executionProviders: providers });
-			record("onnx", "voice-denoise", label, r);
+		it(`voice-denoise-dtln [${label}]`, async () => {
+			const t = voiceDenoiseDtln({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
+			const r = await runBenchmark(`voice-denoise-dtln`, t, testVoice, { executionProviders: providers });
+			record("onnx", "voice-denoise-dtln", label, r);
 		}, 240_000);
 	}
 

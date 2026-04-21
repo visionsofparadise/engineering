@@ -32,6 +32,7 @@ export { eq, EqNode, EqStream, type EqBand, type EqProperties } from "./transfor
 export { gain, GainNode, GainStream, type GainProperties } from "./transforms/gain";
 export { pan, PanNode, PanStream, type PanProperties } from "./transforms/pan";
 export { compressor, CompressorNode, type CompressorProperties } from "./transforms/compressor";
+export { deEsser, DeEsserNode, DeEsserStream, type DeEsserProperties } from "./transforms/de-esser";
 export { dynamics, DynamicsNode, DynamicsStream, type DynamicsProperties } from "./transforms/dynamics";
 export { exciter, ExciterNode, ExciterStream, type ExciterProperties } from "./transforms/exciter";
 export { gate, GateNode, GateStream, type GateProperties } from "./transforms/gate";
@@ -45,7 +46,7 @@ export { deCrackle, DeCrackleNode, type DeCrackleProperties } from "./transforms
 export { mouthDeClick, MouthDeClickNode, type MouthDeClickProperties } from "./transforms/de-click/mouth-de-click";
 export { deClip, DeClipNode, DeClipStream, type DeClipProperties } from "./transforms/de-clip";
 export { dePlosive, DePlosiveNode, DePlosiveStream, type DePlosiveProperties } from "./transforms/de-plosive";
-export { deReverb, DeReverbNode, DeReverbStream, type DeReverbProperties } from "./transforms/de-reverb";
+export { deReverbWpe, DeReverbWpeNode, DeReverbWpeStream, type DeReverbWpeProperties } from "./transforms/de-reverb-wpe";
 export { dialogueIsolate, DialogueIsolateNode, DialogueIsolateStream, type DialogueIsolateProperties } from "./transforms/dialogue-isolate";
 export { eqMatch, EqMatchNode, EqMatchStream, type EqMatchProperties } from "./transforms/eq-match";
 export { leveler, LevelerNode, LevelerStream, type LevelerProperties } from "./transforms/leveler";
@@ -54,7 +55,8 @@ export { pitchShift, PitchShiftNode, type PitchShiftProperties } from "./transfo
 export { spectralRepair, SpectralRepairNode, SpectralRepairStream, type SpectralRepairProperties } from "./transforms/spectral-repair";
 export type { SpectralRegion } from "./transforms/spectral-repair/utils/interpolation";
 export { timeStretch, TimeStretchNode, type TimeStretchProperties } from "./transforms/time-stretch";
-export { voiceDenoise, VoiceDenoiseNode, VoiceDenoiseStream, type VoiceDenoiseProperties } from "./transforms/voice-denoise";
+export { voiceDenoiseDtln, VoiceDenoiseDtlnNode, VoiceDenoiseDtlnStream, type VoiceDenoiseDtlnProperties } from "./transforms/voice-denoise-dtln";
+export { voiceDenoiseDfn, VoiceDenoiseDfnNode, VoiceDenoiseDfnStream, type VoiceDenoiseDfnProperties } from "./transforms/voice-denoise-dfn";
 
 // Composites
 export { chain, ChainNode } from "./composites/chain";

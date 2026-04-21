@@ -22,7 +22,7 @@ export const schema = z.object({
 		.describe("FFTW native addon — CPU FFT acceleration"),
 });
 
-export interface DeReverbProperties extends z.infer<typeof schema>, TransformNodeProperties {}
+export interface DeReverbWpeProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 /**
  * Reduces late reverberation from speech using the Weighted Prediction Error (WPE) algorithm.
@@ -39,7 +39,7 @@ export interface DeReverbProperties extends z.infer<typeof schema>, TransformNod
  *   "Speech Dereverberation Based on Variance-Normalized Delayed Linear Prediction."
  *   IEEE TASLP, 18(7), 1717-1731. https://doi.org/10.1109/TASL.2010.2052251
  */
-export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> {
+export class DeReverbWpeStream extends BufferedTransformStream<DeReverbWpeProperties> {
 	private fftBackend?: FftBackend;
 	private fftAddonOptions?: { vkfftPath?: string; fftwPath?: string };
 
@@ -147,32 +147,32 @@ export class DeReverbStream extends BufferedTransformStream<DeReverbProperties> 
 	}
 }
 
-export class DeReverbNode extends TransformNode<DeReverbProperties> {
+export class DeReverbWpeNode extends TransformNode<DeReverbWpeProperties> {
 	static override readonly moduleName = "De-Reverb (WPE)";
 	static override readonly packageName = PACKAGE_NAME;
 	static override readonly packageVersion = PACKAGE_VERSION;
 	static override readonly moduleDescription = "Reduce room reverb using Weighted Prediction Error — classical DSP, fully tunable, no model required";
 	static override readonly schema = schema;
-	static override is(value: unknown): value is DeReverbNode {
-		return TransformNode.is(value) && value.type[2] === "de-reverb";
+	static override is(value: unknown): value is DeReverbWpeNode {
+		return TransformNode.is(value) && value.type[2] === "de-reverb-wpe";
 	}
 
-	override readonly type = ["buffered-audio-node", "transform", "de-reverb"] as const;
+	override readonly type = ["buffered-audio-node", "transform", "de-reverb-wpe"] as const;
 
-	constructor(properties: DeReverbProperties) {
+	constructor(properties: DeReverbWpeProperties) {
 		super({ bufferSize: WHOLE_FILE, latency: WHOLE_FILE, ...properties });
 	}
 
-	override createStream(): DeReverbStream {
-		return new DeReverbStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
+	override createStream(): DeReverbWpeStream {
+		return new DeReverbWpeStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
-	override clone(overrides?: Partial<DeReverbProperties>): DeReverbNode {
-		return new DeReverbNode({ ...this.properties, previousProperties: this.properties, ...overrides });
+	override clone(overrides?: Partial<DeReverbWpeProperties>): DeReverbWpeNode {
+		return new DeReverbWpeNode({ ...this.properties, previousProperties: this.properties, ...overrides });
 	}
 }
 
-export function deReverb(options?: {
+export function deReverbWpe(options?: {
 	sensitivity?: number;
 	predictionDelay?: number;
 	filterLength?: number;
@@ -180,10 +180,10 @@ export function deReverb(options?: {
 	vkfftAddonPath?: string;
 	fftwAddonPath?: string;
 	id?: string;
-}): DeReverbNode {
+}): DeReverbWpeNode {
 	const sensitivity = Math.max(0, Math.min(1, options?.sensitivity ?? 0.5));
 
-	return new DeReverbNode({
+	return new DeReverbWpeNode({
 		predictionDelay: options?.predictionDelay ?? Math.round(2 + (1 - sensitivity) * 4),
 		filterLength: options?.filterLength ?? Math.round(5 + sensitivity * 15),
 		iterations: options?.iterations ?? Math.round(2 + sensitivity * 4),
