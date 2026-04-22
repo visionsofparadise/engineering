@@ -1,13 +1,11 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loops with bounds-checked typed array access */
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
-import { getFftAddon, initFftBackend, istft, replaceChannel, stft, type FftBackend, type StftOutput } from "@e9g/buffered-audio-nodes-utils";
+import { applyDfttSmoothing, applyNlmSmoothing, getFftAddon, initFftBackend, istft, replaceChannel, stft, type FftBackend, type StftOutput } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { readToBuffer } from "../../utils/read-to-buffer";
 import { accumulateTransferChunk, createTransferAccumulator, findMaxRefPower, finalizeTransferFunction } from "./utils/cross-spectral";
 import { computeFrameGainMask } from "./utils/gain-mask";
-import { applyNlmSmoothing } from "./utils/nlm-smoothing";
-import { applyDfttSmoothing } from "./utils/dftt-smoothing";
 
 export const schema = z.object({
 	references: z.array(z.string()).default([]).describe("References"),

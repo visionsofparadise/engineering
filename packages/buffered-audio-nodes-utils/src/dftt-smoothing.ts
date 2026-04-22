@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- tight DSP loop with bounds-checked typed array access */
 
-import { createFftWorkspace, fft, getFftAddon, hanningWindow, ifft, type FftBackend, type FftWorkspace } from "@e9g/buffered-audio-nodes-utils";
+import { createFftWorkspace, fft, hanningWindow, ifft, type FftWorkspace } from "./stft";
+import { getFftAddon, type FftBackend } from "./fft-backend";
 
 /**
  * DFT-thresholding (DFTT) post-smoothing of a 2D gain mask.

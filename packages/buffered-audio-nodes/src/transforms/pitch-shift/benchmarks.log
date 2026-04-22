@@ -18,3 +18,6 @@
 2026-03-17T05:07:41.464Z | pitch-shift                    |     5086.5ms |         529562 samples/sec |    12.01x RT | Node v22.20.0 win32
 2026-03-17T05:13:36.676Z | pitch-shift                    |     5326.2ms |         505733 samples/sec |    11.47x RT | Node v22.20.0 win32
 2026-04-21T01:00:03.275Z | pitch-shift                    |     1124.9ms |              0 samples/sec |    27.15x RT | Node v22.20.0 win32
+2026-04-21T20:30:25.155Z | pitch-shift                    |     1423.8ms |              0 samples/sec |    21.45x RT | Node v22.20.0 win32
+2026-04-21T20:43:36.371Z | pitch-shift                    |      998.2ms |              0 samples/sec |    30.59x RT | Node v22.20.0 win32
+2026-04-22T17:34:47.064Z | pitch-shift                    |    19711.3ms |              0 samples/sec |     1.55x RT | Node v22.20.0 win32

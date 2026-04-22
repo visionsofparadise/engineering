@@ -19,3 +19,4 @@
 2026-03-17T05:07:49.807Z | dither                         |      539.5ms |        2496308 samples/sec |    56.61x RT | Node v22.20.0 win32
 2026-03-17T05:13:54.494Z | dither                         |      658.2ms |        2046172 samples/sec |    46.40x RT | Node v22.20.0 win32
 2026-04-21T01:01:38.997Z | dither                         |      232.2ms |              0 samples/sec |   131.54x RT | Node v22.20.0 win32
+2026-04-21T20:43:44.144Z | dither                         |      196.5ms |              0 samples/sec |   155.41x RT | Node v22.20.0 win32

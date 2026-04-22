@@ -15,3 +15,5 @@
 2026-03-17T05:09:26.423Z | dialogue-isolate               |   140981.8ms |          19106 samples/sec |     0.43x RT | Node v22.20.0 win32
 2026-03-17T05:15:05.106Z | dialogue-isolate               |   137834.4ms |          19543 samples/sec |     0.44x RT | Node v22.20.0 win32
 2026-04-21T00:58:04.313Z | dialogue-isolate               |    40882.5ms |              0 samples/sec |     0.75x RT | Node v22.20.0 win32
+2026-04-21T20:29:42.667Z | dialogue-isolate               |    47116.1ms |              0 samples/sec |     0.65x RT | Node v22.20.0 win32
+2026-04-21T20:43:05.409Z | dialogue-isolate               |    37921.2ms |              0 samples/sec |     0.81x RT | Node v22.20.0 win32

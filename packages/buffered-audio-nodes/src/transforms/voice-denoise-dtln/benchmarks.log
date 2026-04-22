@@ -19,3 +19,6 @@
 2026-04-20T23:45:55.234Z | voice-denoise-dtln             |    16612.6ms |              0 samples/sec |     1.84x RT | Node v22.20.0 win32
 2026-04-21T00:06:12.234Z | voice-denoise-dtln             |     8184.1ms |              0 samples/sec |     3.73x RT | Node v22.20.0 win32
 2026-04-21T00:57:22.738Z | voice-denoise-dtln             |     3332.1ms |              0 samples/sec |     9.17x RT | Node v22.20.0 win32
+2026-04-21T20:30:19.378Z | voice-denoise-dtln             |     4071.9ms |              0 samples/sec |     7.50x RT | Node v22.20.0 win32
+2026-04-21T20:43:32.527Z | voice-denoise-dtln             |     2706.4ms |              0 samples/sec |    11.28x RT | Node v22.20.0 win32
+2026-04-22T17:34:52.063Z | voice-denoise-dtln             |    38542.2ms |              0 samples/sec |     0.79x RT | Node v22.20.0 win32

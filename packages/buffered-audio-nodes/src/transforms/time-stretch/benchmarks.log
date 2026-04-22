@@ -18,3 +18,5 @@
 2026-03-17T05:07:49.504Z | time-stretch                   |     1689.0ms |        1594805 samples/sec |    36.16x RT | Node v22.20.0 win32
 2026-03-17T05:13:48.499Z | time-stretch                   |     2389.9ms |        1127074 samples/sec |    25.56x RT | Node v22.20.0 win32
 2026-04-21T01:00:01.467Z | time-stretch                   |      266.9ms |              0 samples/sec |   114.41x RT | Node v22.20.0 win32
+2026-04-21T20:43:43.357Z | time-stretch                   |      242.0ms |              0 samples/sec |   126.19x RT | Node v22.20.0 win32
+2026-04-22T17:37:43.601Z | time-stretch                   |     4632.4ms |              0 samples/sec |     6.59x RT | Node v22.20.0 win32

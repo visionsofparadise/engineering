@@ -23,6 +23,7 @@ function getBatchInput(fftSize: number, numFrames: number): Float32Array {
 	if (cached && cached.length >= needed) return cached;
 
 	const grown = new Float32Array(needed);
+
 	batchInputCache.set(fftSize, grown);
 
 	return grown;
@@ -37,6 +38,7 @@ function getBatchTime(fftSize: number, numFrames: number): Float32Array {
 	if (cached && cached.length >= needed) return cached;
 
 	const grown = new Float32Array(needed);
+
 	batchTimeCache.set(fftSize, grown);
 
 	return grown;

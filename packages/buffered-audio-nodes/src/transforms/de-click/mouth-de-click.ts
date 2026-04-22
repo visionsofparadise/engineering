@@ -3,16 +3,23 @@ import { DeClickNode, DeClickStream, type DeClickProperties } from ".";
 import type { BufferedAudioNodeInput } from "@e9g/buffered-audio-nodes-core";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 
+/**
+ * MouthDeClick is a preset subclass of DeClick tuned for mouth clicks on
+ * close-mic vocal recordings. Mouth clicks concentrate in the 2–8 kHz range
+ * (G&R §5.7 on tongue-click spectral content) and are common enough in vocal
+ * material to warrant a higher click-density prior than the default.
+ *
+ * Only parameter defaults differ — the algorithm is the same faithful G&R
+ * Ch 5–6 pipeline as `DeClick`.
+ */
 export const mouthDeClickSchema = z.object({
 	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.7).describe("Sensitivity"),
-	maxClickDuration: z.number().min(1).max(1000).multipleOf(1).default(50).describe("Max Click Duration"),
+	frequencySkew: z.number().min(-1).max(1).multipleOf(0.01).default(0.3).describe("Frequency Skew"),
+	clickWidening: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Click Widening"),
+	maxClickDuration: z.number().min(1).max(1000).multipleOf(1).default(50).describe("Max Click Duration (ms)"),
 });
 
-export interface MouthDeClickProperties extends z.infer<typeof mouthDeClickSchema>, DeClickProperties {}
-
-export class MouthDeClickStream extends DeClickStream {
-	protected override envelopeSmoothMs = 0.1;
-}
+export interface MouthDeClickProperties extends Omit<DeClickProperties, keyof z.infer<typeof mouthDeClickSchema>>, z.infer<typeof mouthDeClickSchema> {}
 
 export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 	static override readonly moduleName: string = "Mouth De-Click";
@@ -31,8 +38,8 @@ export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 		super({ ...properties, ...parsed } as BufferedAudioNodeInput<MouthDeClickProperties>);
 	}
 
-	override createStream(): MouthDeClickStream {
-		return new MouthDeClickStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
+	override createStream(): DeClickStream {
+		return new DeClickStream({ ...this.properties, bufferSize: this.bufferSize, overlap: this.properties.overlap ?? 0 });
 	}
 
 	override clone(overrides?: Partial<MouthDeClickProperties>): MouthDeClickNode {
@@ -40,8 +47,12 @@ export class MouthDeClickNode extends DeClickNode<MouthDeClickProperties> {
 	}
 }
 
-export function mouthDeClick(options?: { sensitivity?: number; id?: string }): MouthDeClickNode {
-	const parsed = mouthDeClickSchema.parse(options ?? {});
-
-	return new MouthDeClickNode({ ...parsed, id: options?.id });
+export function mouthDeClick(options?: {
+	sensitivity?: number;
+	frequencySkew?: number;
+	clickWidening?: number;
+	maxClickDuration?: number;
+	id?: string;
+}): MouthDeClickNode {
+	return new MouthDeClickNode({ ...(options ?? {}), id: options?.id } as BufferedAudioNodeInput<MouthDeClickProperties>);
 }

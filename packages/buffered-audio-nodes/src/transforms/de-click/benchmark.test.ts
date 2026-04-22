@@ -10,7 +10,14 @@ const testVoice = audio.testVoice;
 
 describe("deClick benchmark", () => {
 	it("benchmarks deClick", async () => {
-		const result = await runBenchmark("deClick", deClick(), testVoice);
+		const node = deClick({
+			algorithm: "multiband-random",
+			sensitivity: 0.5,
+			frequencySkew: 0.2,
+			clickWidening: 0.25,
+			maxClickDuration: 200,
+		});
+		const result = await runBenchmark("deClick", node, testVoice);
 		await appendBenchmarkLog(here, result);
 	}, 240_000);
 });

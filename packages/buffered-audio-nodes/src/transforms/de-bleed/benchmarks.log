@@ -7,3 +7,11 @@
 2026-04-21T01:01:18.014Z | deBleed                        |    59834.7ms |              0 samples/sec |     0.51x RT | Node v22.20.0 win32
 2026-04-21T12:18:50.264Z | deBleed                        |   190411.5ms |              0 samples/sec |     0.16x RT | Node v22.20.0 win32
 2026-04-21T15:32:16.439Z | deBleed                        |    66627.3ms |              0 samples/sec |     0.46x RT | Node v22.20.0 win32
+2026-04-21T20:28:54.733Z | deBleed                        |    69686.6ms |              0 samples/sec |     0.44x RT | Node v22.20.0 win32
+2026-04-21T20:42:26.849Z | deBleed                        |    50448.4ms |              0 samples/sec |     0.61x RT | Node v22.20.0 win32
+2026-04-22T02:58:26.925Z | deBleed                        |   155959.3ms |              0 samples/sec |     0.20x RT | Node v22.20.0 win32
+2026-04-22T03:05:19.118Z | deBleed                        |   214743.9ms |              0 samples/sec |     0.14x RT | Node v22.20.0 win32
+2026-04-22T03:10:05.866Z | deBleed                        |   214577.1ms |              0 samples/sec |     0.14x RT | Node v22.20.0 win32
+2026-04-22T03:15:06.409Z | deBleed                        |   197579.3ms |              0 samples/sec |     0.15x RT | Node v22.20.0 win32
+2026-04-22T03:19:21.813Z | deBleed                        |   199006.1ms |              0 samples/sec |     0.15x RT | Node v22.20.0 win32
+2026-04-22T17:33:35.716Z | deBleed                        |   292175.1ms |              0 samples/sec |     0.10x RT | Node v22.20.0 win32

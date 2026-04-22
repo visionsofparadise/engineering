@@ -1,1 +1,4 @@
 2026-04-21T01:01:33.662Z | splice                         |     6414.8ms |              0 samples/sec |     4.76x RT | Node v22.20.0 win32
+2026-04-21T20:30:10.718Z | splice                         |     7692.8ms |              0 samples/sec |     3.97x RT | Node v22.20.0 win32
+2026-04-21T20:43:26.304Z | splice                         |     5627.4ms |              0 samples/sec |     5.43x RT | Node v22.20.0 win32
+2026-04-22T17:34:58.196Z | splice                         |    56029.5ms |              0 samples/sec |     0.55x RT | Node v22.20.0 win32

@@ -46,6 +46,7 @@ export { deCrackle, DeCrackleNode, type DeCrackleProperties } from "./transforms
 export { mouthDeClick, MouthDeClickNode, type MouthDeClickProperties } from "./transforms/de-click/mouth-de-click";
 export { deClip, DeClipNode, DeClipStream, type DeClipProperties } from "./transforms/de-clip";
 export { dePlosive, DePlosiveNode, DePlosiveStream, type DePlosiveProperties } from "./transforms/de-plosive";
+export { deReverb, DeReverbNode, DeReverbStream, type DeReverbProperties } from "./transforms/de-reverb";
 export { deReverbWpe, DeReverbWpeNode, DeReverbWpeStream, type DeReverbWpeProperties } from "./transforms/de-reverb-wpe";
 export { dialogueIsolate, DialogueIsolateNode, DialogueIsolateStream, type DialogueIsolateProperties } from "./transforms/dialogue-isolate";
 export { eqMatch, EqMatchNode, EqMatchStream, type EqMatchProperties } from "./transforms/eq-match";
