@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "bucket": "engineering-binaries-345340320424",
   "region": "us-east-1",
   "assets": [
@@ -218,6 +218,33 @@
       "sha256": "d33b21bda67f2699774b2b354bdb8a73d4b2b9ef7166e812685bc066e2be5a28",
       "size": 4899328,
       "source": "https://github.com/visionsofparadise/vkfft-addon/releases/tag/v1.0.0"
+    },
+    {
+      "key": "vst-host",
+      "platform": "darwin",
+      "arch": "arm64",
+      "filename": "vst-host-darwin-arm64",
+      "sha256": "738184657fce9ad5457e52655577db8880bdfc50d9a7fb004417015617451f93",
+      "size": 21115888,
+      "source": "https://github.com/visionsofparadise/vst-host/releases/tag/v0.1.0"
+    },
+    {
+      "key": "vst-host",
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "vst-host-linux-x64",
+      "sha256": "183358d22da136254e043bac952234d5b204c0e7673fc67a321f5ade0ef69956",
+      "size": 49714320,
+      "source": "https://github.com/visionsofparadise/vst-host/releases/tag/v0.1.0"
+    },
+    {
+      "key": "vst-host",
+      "platform": "win32",
+      "arch": "x64",
+      "filename": "vst-host-win32-x64.exe",
+      "sha256": "39d4fcbfac301ad00e0913d2e02e37186405223f138179cbf1b62f6204d67559",
+      "size": 30451802,
+      "source": "https://github.com/visionsofparadise/vst-host/releases/tag/v0.1.0"
     }
   ]
 }

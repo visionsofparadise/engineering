@@ -23,6 +23,8 @@ export default tseslint.config(
       "**/postcss.config.*",
       "**/*.test.ts",
       "**/*.test.tsx",
+      "**/__fixtures__/**",
+      "**/scratch/**",
     ],
   },
 

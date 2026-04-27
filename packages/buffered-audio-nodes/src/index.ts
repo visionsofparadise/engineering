@@ -58,6 +58,7 @@ export type { SpectralRegion } from "./transforms/spectral-repair/utils/interpol
 export { timeStretch, TimeStretchNode, type TimeStretchProperties } from "./transforms/time-stretch";
 export { voiceDenoiseDtln, VoiceDenoiseDtlnNode, VoiceDenoiseDtlnStream, type VoiceDenoiseDtlnProperties } from "./transforms/voice-denoise-dtln";
 export { voiceDenoiseDfn, VoiceDenoiseDfnNode, VoiceDenoiseDfnStream, type VoiceDenoiseDfnProperties } from "./transforms/voice-denoise-dfn";
+export { vst3, Vst3Node, Vst3Stream, type Vst3Properties } from "./transforms/vst3";
 
 // Composites
 export { chain, ChainNode } from "./composites/chain";

@@ -85,10 +85,29 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 		const samplesIn = chunkFrames;
 		const start = performance.now();
 
-		await this._buffer(chunk, this.chunkBuffer);
+		// Modes that don't pre-slice the incoming chunk:
+		//   - bufferSize === 0 (per-sample): append whole chunk, emit immediately.
+		//   - bufferSize === WHOLE_FILE: accumulate everything; processing at flush.
+		//   - bufferSize === 0 with lazy init: some transforms flip `this.bufferSize`
+		//     to a sampleRate-derived value inside `_buffer` on the first chunk
+		//     (de-plosive, de-clip, leveler). We can't slice before `_buffer` runs
+		//     because the target bufferSize doesn't exist yet. After `_buffer`
+		//     returns, we re-check and drain any overflow blocks. This is a
+		//     one-time exception per stream — subsequent chunks take the sliced
+		//     path below since `bufferSize` is no longer 0.
+		if (this.bufferSize === 0 || this.bufferSize === WHOLE_FILE) {
+			await this._buffer(chunk, this.chunkBuffer);
 
-		if (this.bufferSize === 0) {
-			await this.emitBuffer(controller);
+			if (this.bufferSize === 0) {
+				// True per-sample mode.
+				await this.emitBuffer(controller);
+			} else if (this.bufferSize !== WHOLE_FILE) {
+				// Lazy init bumped bufferSize to a finite N. The buffer may
+				// hold > N frames after the unsliced append; drain blocks.
+				while (this.chunkBuffer.frames >= this.bufferSize) {
+					await this.processAndEmit(controller);
+				}
+			}
 
 			this.processingMs += performance.now() - start;
 			this.framesProcessed += samplesIn;
@@ -98,16 +117,38 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 			return;
 		}
 
-		if (this.bufferSize !== WHOLE_FILE && this.chunkBuffer.frames >= this.bufferSize) {
-			await this.processAndEmit(controller);
+		// Block-aligned mode: feed `_buffer` in slices that keep `chunkBuffer`
+		// from ever exceeding `bufferSize`. When the buffer fills, fire
+		// `processAndEmit` (which calls `_process` with exactly `bufferSize`
+		// frames and resets the buffer for the next round). `chunkBuffer`
+		// semantically represents a single chunk's worth of working frames —
+		// it never overflows, so subclasses don't have to defend against
+		// arbitrary upstream chunk sizes.
+		let offset = 0;
 
-			this.events.emit("progress", { framesProcessed: this.framesProcessed, sourceTotalFrames: this.sourceTotalFrames });
-		} else {
-			this.processingMs += performance.now() - start;
-			this.framesProcessed += samplesIn;
+		while (offset < chunkFrames) {
+			const space = this.bufferSize - this.chunkBuffer.frames;
+			const take = Math.min(space, chunkFrames - offset);
 
-			this.events.emit("progress", { framesProcessed: this.framesProcessed, sourceTotalFrames: this.sourceTotalFrames });
+			const sliced: AudioChunk = {
+				samples: chunk.samples.map((channel) => channel.subarray(offset, offset + take)),
+				offset: chunk.offset + offset,
+				sampleRate: chunk.sampleRate,
+				bitDepth: chunk.bitDepth,
+			};
+
+			await this._buffer(sliced, this.chunkBuffer);
+			offset += take;
+
+			if (this.chunkBuffer.frames >= this.bufferSize) {
+				await this.processAndEmit(controller);
+			}
 		}
+
+		this.processingMs += performance.now() - start;
+		this.framesProcessed += samplesIn;
+
+		this.events.emit("progress", { framesProcessed: this.framesProcessed, sourceTotalFrames: this.sourceTotalFrames });
 	}
 
 	private async handleFlush(controller: TransformStreamDefaultController<AudioChunk>): Promise<void> {
