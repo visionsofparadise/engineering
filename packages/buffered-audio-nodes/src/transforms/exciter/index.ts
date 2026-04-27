@@ -3,7 +3,8 @@ import { BufferedTransformStream, TransformNode, type AudioChunk, type Transform
 import { highPassCoefficients, lowPassCoefficients, Oversampler, type OversamplingFactor } from "@e9g/buffered-audio-nodes-utils";
 import type { BiquadCoefficients } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
-import { applyShaper, type ExciterMode } from "./utils/shapers";
+import type { ExciterMode } from "./utils/shapers";
+import { makeAdaaCallback, type AdaaCallback } from "./utils/adaa";
 import { makeFilterState, processSample, type BandFilterState } from "../eq/utils/band-filter";
 
 /**
@@ -61,6 +62,48 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 	/** Per-channel oversamplers for the shaper stage. Always allocated; factor=1 is a valid pass-through. */
 	private oversamplers: Array<Oversampler> = [];
 
+	/**
+	 * Per-channel stateful ADAA callbacks. Each callback carries its own
+	 * previous-sample register across chunk boundaries, so the first sample
+	 * of a new chunk sees the last sample of the previous chunk as its
+	 * `x_{n-1}` (Parker-Zavalishin 2016 Eq. 9). Allocated alongside
+	 * `oversamplers` in `ensureState`; reset on channel-count or
+	 * sample-rate change. On `mode` change we call `setMode` on each
+	 * callback so the dispatch swaps without resetting the `x_{n-1}`
+	 * register — see `AdaaCallback` docs for why resetting the register
+	 * would introduce a spurious discontinuity.
+	 */
+	private adaaCallbacks: Array<AdaaCallback> = [];
+	private adaaCallbackMode: ExciterMode | null = null;
+
+	/**
+	 * Per-channel dry-path delay line for latency compensation against the
+	 * ADAA rule. Parker-Zavalishin 2016 §4 Eq. 17 shows that first-order
+	 * ADAA with the rectangular kernel behaves as a half-sample fractional
+	 * delay at low signal levels — half a sample **at the ADAA-input rate**,
+	 * which is the oversampled rate. After the oversampler downsamples by
+	 * factor `F`, the source-rate group delay is `0.5 / F` samples.
+	 *
+	 * The best integer-sample compensation is therefore `round(0.5 / F)`:
+	 *   - `F = 1`: 0.5 source-rate samples → compensate with 1 sample
+	 *     (over-shift by 0.5; residual comb notch at fs/2 = Nyquist, above
+	 *     the audible band).
+	 *   - `F ≥ 2`: ≤ 0.25 source-rate samples → compensate with 0 samples
+	 *     (the residual fractional-sample lag is well below comb-filter
+	 *     audibility; adding a whole-sample dry delay would over-shift to
+	 *     ~0.75 samples and move the comb notch *into* the audible band).
+	 *
+	 * `dryDelayEnabled` records which regime we are in; at `F = 1` we run
+	 * the one-sample delay per channel, at `F ≥ 2` the dry path is
+	 * undelayed. A half-sample allpass would be closer to ideal at `F = 1`
+	 * but costs a stateful biquad, adds its own phase non-linearity across
+	 * the audio band, and is not sample-accurate at chunk boundaries
+	 * without extra state plumbing — the Nyquist-centred residual comb at
+	 * `F = 1` is an acceptable trade.
+	 */
+	private dryDelaySamples: Array<number> = [];
+	private dryDelayEnabled = false;
+
 	private sampleRateKnown = false;
 
 	private ensureState(channels: number, sampleRate: number): void {
@@ -68,7 +111,8 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 
 		this.sampleRateKnown = true;
 
-		const { frequency, oversampling } = this.properties;
+		const { frequency, oversampling, mode } = this.properties;
+		const exciterMode = mode as ExciterMode;
 
 		// Standard Q=0.71 (Butterworth) for a clean crossover
 		this.hpCoefficients = highPassCoefficients(sampleRate, frequency, 0.71);
@@ -85,6 +129,18 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 		const factor = oversampling as OversamplingFactor;
 
 		this.oversamplers = Array.from({ length: channels }, () => new Oversampler(factor, sampleRate));
+
+		// Per-channel ADAA callbacks with their own x_{n-1} register.
+		this.adaaCallbacks = Array.from({ length: channels }, () => makeAdaaCallback(exciterMode));
+		this.adaaCallbackMode = exciterMode;
+
+		// Dry-path delay register: one sample per channel, initialised to 0.
+		// Only applied at factor=1 (see `dryDelaySamples` docblock for the
+		// per-factor rationale). At factor≥2 the source-rate ADAA lag is
+		// ≤ 0.25 samples, which `round(0.5/F) = 0` rounds away — no dry
+		// delay is the best integer-sample approximation.
+		this.dryDelaySamples = Array.from({ length: channels }, () => 0);
+		this.dryDelayEnabled = factor === 1;
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
@@ -104,16 +160,32 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 		const driveLinear = Math.pow(10, drive / 20);
 		const dryMix = 1 - mix;
 		const exciterMode = mode as ExciterMode;
-		const shaperFn = (x: number): number => applyShaper(x, exciterMode);
 		const tapeLpCoeffs = this.tapeLpCoefficients;
+
+		// If the mode changed since the last chunk, swap the dispatch curve on
+		// each ADAA callback without touching its `x_{n-1}` register (and
+		// without touching `dryDelaySamples`). The previous input sample is
+		// still a valid reference for the new F0 — the only discontinuity is
+		// which F0 it is passed through. Resetting `x_{n-1}` to 0 would make
+		// the first post-switch sample evaluate as
+		// `(F0_new(x_n) − F0_new(0)) / x_n` instead of the smooth
+		// `(F0_new(x_n) − F0_new(x_{n-1})) / (x_n − x_{n-1})`, which is its
+		// own spurious transient; resetting only `adaaCallbacks` and leaving
+		// `dryDelaySamples` also pairs a fresh-zero wet path against a stale
+		// pre-switch dry sample (a one-sample glitch).
+		if (this.adaaCallbackMode !== exciterMode) {
+			for (const callback of this.adaaCallbacks) callback.setMode(exciterMode);
+			this.adaaCallbackMode = exciterMode;
+		}
 
 		const outputSamples: Array<Float32Array> = samples.map((inCh, ch) => {
 			const frames = inCh.length;
 			const outCh = new Float32Array(frames);
 			const hpState = this.hpStates[ch];
 			const oversampler = this.oversamplers[ch];
+			const adaaCallback = this.adaaCallbacks[ch];
 
-			if (!hpState || !oversampler) {
+			if (!hpState || !oversampler || !adaaCallback) {
 				outCh.set(inCh);
 
 				return outCh;
@@ -131,10 +203,15 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 				drivenBand[index] = bandSample * driveLinear;
 			}
 
-			// Step 3: Shaper through the oversampler. At factor > 1 this
-			// upsamples, shapes, and downsamples; at factor 1 it maps the shaper
-			// over the driven band at the original rate.
-			const shaped = oversampler.oversample(drivenBand, shaperFn);
+			// Step 3: ADAA shaper through the oversampler. The oversampler
+			// upsamples (if factor > 1), applies the stateful ADAA callback
+			// per oversampled sample, and downsamples. The ADAA callback is a
+			// closure over a per-channel x_{n-1} register; its state persists
+			// across oversample() calls, so chunk boundaries are seamless
+			// (first sample of new chunk sees last sample of previous chunk
+			// as x_{n-1}). At factor=1 the oversampler passes through and the
+			// callback runs at the source rate.
+			const shaped = oversampler.oversample(drivenBand, adaaCallback);
 
 			// Step 3b (tape only): HF rolloff above the saturation knee. A single
 			// biquad LP (~12 kHz cutoff) applied at the original rate to the
@@ -152,11 +229,34 @@ export class ExciterStream extends BufferedTransformStream<ExciterProperties> {
 			}
 
 			// Steps 4 + 5: Harmonics and wet/dry mix at original rate.
-			for (let index = 0; index < frames; index++) {
-				const drySample = inCh[index] ?? 0;
-				const emphasized = (shaped[index] ?? 0) * harmonics;
+			//
+			// Per-factor dry-path latency compensation (Parker-Zavalishin §4
+			// Eq. 17): source-rate ADAA lag is `0.5 / factor` samples. At
+			// factor=1 we one-sample-delay the dry path (the best integer
+			// rounding of a 0.5-sample lag; residual half-sample comb notch
+			// lands at fs/2, above the audible band). At factor≥2 the
+			// source-rate lag is ≤ 0.25 samples and `round(0.5/F) = 0`
+			// rounds away — adding a whole-sample delay would *introduce*
+			// an audible in-band comb, so the dry path runs undelayed.
+			if (this.dryDelayEnabled) {
+				let prevDry = this.dryDelaySamples[ch] ?? 0;
 
-				outCh[index] = drySample * dryMix + emphasized * mix;
+				for (let index = 0; index < frames; index++) {
+					const drySample = inCh[index] ?? 0;
+					const emphasized = (shaped[index] ?? 0) * harmonics;
+
+					outCh[index] = prevDry * dryMix + emphasized * mix;
+					prevDry = drySample;
+				}
+
+				this.dryDelaySamples[ch] = prevDry;
+			} else {
+				for (let index = 0; index < frames; index++) {
+					const drySample = inCh[index] ?? 0;
+					const emphasized = (shaped[index] ?? 0) * harmonics;
+
+					outCh[index] = drySample * dryMix + emphasized * mix;
+				}
 			}
 
 			return outCh;

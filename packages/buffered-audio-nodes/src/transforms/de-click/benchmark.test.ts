@@ -11,7 +11,6 @@ const testVoice = audio.testVoice;
 describe("deClick benchmark", () => {
 	it("benchmarks deClick", async () => {
 		const node = deClick({
-			algorithm: "multiband-random",
 			sensitivity: 0.5,
 			frequencySkew: 0.2,
 			clickWidening: 0.25,

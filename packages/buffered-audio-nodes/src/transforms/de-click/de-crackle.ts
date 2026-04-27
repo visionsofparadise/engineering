@@ -10,11 +10,20 @@ import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
  * and occur at higher density, so the default `clickWidening` is smaller
  * and `maxClickDuration` is tighter than in base DeClick.
  *
- * Only parameter defaults differ — the algorithm is the same faithful G&R
- * Ch 5–6 pipeline as `DeClick`.
+ * `minFrequency` / `maxFrequency` are left unrestricted (inherited base
+ * defaults: `minFrequency = 0`, `maxFrequency = undefined`). Vinyl and tape
+ * crackle is broadband — unlike mouth clicks it occupies the full audio
+ * spectrum, so the RX mouth-declick 100 Hz – 5 kHz band-restriction that
+ * `MouthDeClick` uses is not applicable here. A future listening-test pass
+ * may narrow this (e.g. 200–16000 Hz to reject DC rumble and ultrasonic
+ * content) but the conservative default is no band restriction. See
+ * design-declick decision log 2026-04-24 band-restriction entry.
+ *
+ * Only parameter defaults differ — the algorithm is the same BMRI
+ * pipeline as `DeClick`.
  */
 export const schema = z.object({
-	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.5).describe("Sensitivity"),
+	sensitivity: z.number().min(0).max(1).multipleOf(0.01).default(0.6).describe("Sensitivity"),
 	frequencySkew: z.number().min(-1).max(1).multipleOf(0.01).default(0).describe("Frequency Skew"),
 	clickWidening: z.number().min(0).max(1).multipleOf(0.01).default(0.1).describe("Click Widening"),
 	maxClickDuration: z.number().min(1).max(1000).multipleOf(1).default(20).describe("Max Click Duration (ms)"),

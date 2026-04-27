@@ -28,3 +28,16 @@
 2026-04-21T20:19:48.028Z | deClick                        |     3738.7ms |              0 samples/sec |     8.17x RT | Node v22.20.0 win32
 2026-04-21T20:30:14.543Z | deClick                        |     2982.3ms |              0 samples/sec |    10.24x RT | Node v22.20.0 win32
 2026-04-21T20:43:29.144Z | deClick                        |     2108.7ms |              0 samples/sec |    14.48x RT | Node v22.20.0 win32
+2026-04-22T18:46:35.520Z | deClick                        |   152433.8ms |              0 samples/sec |     0.20x RT | Node v22.20.0 win32
+2026-04-24T02:19:51.506Z | deClick                        |    33587.2ms |              0 samples/sec |     0.91x RT | Node v22.20.0 win32
+2026-04-24T02:25:03.144Z | deClick                        |     7953.0ms |              0 samples/sec |     3.84x RT | Node v22.20.0 win32
+2026-04-24T14:03:02.055Z | deClick                        |     4015.6ms |              0 samples/sec |     7.61x RT | Node v22.20.0 win32
+2026-04-24T14:04:22.066Z | deClick                        |     4171.1ms |              0 samples/sec |     7.32x RT | Node v22.20.0 win32
+2026-04-24T14:09:35.165Z | deClick                        |     4233.6ms |              0 samples/sec |     7.21x RT | Node v22.20.0 win32
+2026-04-24T14:28:21.898Z | deClick                        |     5081.6ms |              0 samples/sec |     6.01x RT | Node v22.20.0 win32
+2026-04-24T14:34:19.162Z | deClick                        |     4301.6ms |              0 samples/sec |     7.10x RT | Node v22.20.0 win32
+2026-04-24T14:45:24.089Z | deClick                        |     4314.3ms |              0 samples/sec |     7.08x RT | Node v22.20.0 win32
+2026-04-24T14:47:26.128Z | deClick                        |    11710.6ms |              0 samples/sec |     2.61x RT | Node v22.20.0 win32
+2026-04-24T14:58:05.689Z | deClick                        |     4992.6ms |              0 samples/sec |     6.12x RT | Node v22.20.0 win32
+2026-04-24T16:26:02.172Z | deClick                        |     4629.4ms |              0 samples/sec |     6.60x RT | Node v22.20.0 win32
+2026-04-24T21:45:37.458Z | deClick                        |     6246.1ms |              0 samples/sec |     4.89x RT | Node v22.20.0 win32

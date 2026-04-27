@@ -21,3 +21,4 @@
 2026-04-21T20:30:25.155Z | pitch-shift                    |     1423.8ms |              0 samples/sec |    21.45x RT | Node v22.20.0 win32
 2026-04-21T20:43:36.371Z | pitch-shift                    |      998.2ms |              0 samples/sec |    30.59x RT | Node v22.20.0 win32
 2026-04-22T17:34:47.064Z | pitch-shift                    |    19711.3ms |              0 samples/sec |     1.55x RT | Node v22.20.0 win32
+2026-04-22T18:43:33.626Z | pitch-shift                    |    28788.6ms |              0 samples/sec |     1.06x RT | Node v22.20.0 win32

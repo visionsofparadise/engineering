@@ -6,3 +6,5 @@
 2026-04-21T20:43:38.860Z | spectrogram [fftw]             |      214.3ms |              0 samples/sec |     0.00x RT | Node v22.20.0 win32
 2026-04-22T17:36:58.968Z | spectrogram [js]               |     3253.4ms |              0 samples/sec |     0.00x RT | Node v22.20.0 win32
 2026-04-22T17:37:02.462Z | spectrogram [fftw]             |     3174.2ms |              0 samples/sec |     0.00x RT | Node v22.20.0 win32
+2026-04-22T18:44:49.832Z | spectrogram [js]               |     3725.8ms |              0 samples/sec |     0.00x RT | Node v22.20.0 win32
+2026-04-22T18:44:53.214Z | spectrogram [fftw]             |     2832.5ms |              0 samples/sec |     0.00x RT | Node v22.20.0 win32
