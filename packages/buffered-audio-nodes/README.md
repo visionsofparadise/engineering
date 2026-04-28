@@ -354,6 +354,7 @@ Host a VST3 effect plugin via Pedalboard
 | --- | --- | --- | --- |
 | `vstHostPath` | string | `""` | vst-host — Pedalboard-based VST3 host CLI Download: [vst-host](https://github.com/visionsofparadise/vst-host) |
 | `pluginPath` | string | — | VST3 plugin file or bundle |
+| `pluginName` | string, optional | — | Sub-plugin name when pluginPath is a multi-plugin shell (e.g. WaveShell) |
 | `presetPath` | string, optional | — | Optional .vstpreset state file |
 | `bypass` | boolean | `false` | Pass audio through unchanged |
 

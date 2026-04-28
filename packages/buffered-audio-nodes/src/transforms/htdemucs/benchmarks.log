@@ -23,3 +23,4 @@
 2026-04-21T20:27:43.516Z | music-rebalance                |    41874.5ms |              0 samples/sec |     0.73x RT | Node v22.20.0 win32
 2026-04-21T20:41:35.297Z | music-rebalance                |    31195.1ms |              0 samples/sec |     0.98x RT | Node v22.20.0 win32
 2026-04-22T17:37:30.738Z | music-rebalance                |   232531.3ms |              0 samples/sec |     0.13x RT | Node v22.20.0 win32
+2026-04-28T13:09:30.430Z | htdemucs                       |   144899.4ms |              0 samples/sec |     0.21x RT | Node v22.20.0 win32

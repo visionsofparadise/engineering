@@ -17,3 +17,5 @@
 2026-04-21T00:58:04.313Z | dialogue-isolate               |    40882.5ms |              0 samples/sec |     0.75x RT | Node v22.20.0 win32
 2026-04-21T20:29:42.667Z | dialogue-isolate               |    47116.1ms |              0 samples/sec |     0.65x RT | Node v22.20.0 win32
 2026-04-21T20:43:05.409Z | dialogue-isolate               |    37921.2ms |              0 samples/sec |     0.81x RT | Node v22.20.0 win32
+2026-04-28T13:09:10.538Z | kim-vocal-2                    |   125302.1ms |              0 samples/sec |     0.24x RT | Node v22.20.0 win32
+2026-04-28T13:19:58.003Z | kim-vocal-2                    |   218045.4ms |              0 samples/sec |     0.14x RT | Node v22.20.0 win32

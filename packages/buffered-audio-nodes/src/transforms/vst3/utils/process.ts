@@ -1,4 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { deinterleaveBuffer, interleave } from "@e9g/buffered-audio-nodes-utils";
 import { waitForDrain } from "../../../utils/ffmpeg";
 
@@ -11,15 +14,36 @@ export interface VstHostHandle {
 	readonly stderrChunks: Array<Buffer>;
 }
 
+export interface VstStage {
+	readonly pluginPath: string;
+	readonly pluginName?: string;
+	readonly presetPath?: string;
+	/**
+	 * Optional parameter overrides applied after `presetPath` loads. Keys map
+	 * to Pedalboard parameter names exposed by the plugin (lowercase / snake-
+	 * cased identifiers — see `plugin.parameters` in Pedalboard). Useful for
+	 * plugins whose on-disk preset format Pedalboard's `load_preset` rejects
+	 * (e.g. Waves XPst inside a VST3 wrapper) but whose parameter surface is
+	 * reachable directly.
+	 */
+	readonly parameters?: Readonly<Record<string, number | string | boolean>>;
+}
+
 const READY_LINE = "READY\n";
-const READY_TIMEOUT_MS = 30_000;
+// 5-minute floor accommodates chains of heavy plugins (iZotope RX, Waves
+// shells, Neutron) where each plugin's instantiation can take several
+// seconds. Empirically a 7-plugin chain of those vendors loads in ~60s on
+// a warm Windows box; the floor is generous to absorb cold-start variance
+// and authorization checks. The READY signal is bounded by plugin-load
+// cost, not audio length, so a single conservative cap is appropriate.
+const READY_TIMEOUT_MS = 300_000;
 
 /**
  * Spawn the vst-host subprocess and resolve `ready` once the wrapper prints
  * `READY\n` on stdout. Stderr is captured into `stderrChunks` for diagnostics.
  *
- * The caller is responsible for awaiting `ready` before writing to stdin —
- * without that, the first write may race the plugin load.
+ * The caller is responsible for awaiting `ready` before writing audio to
+ * stdin — without that, the first write may race the plugin chain load.
  */
 export function spawnVstHost(binaryPath: string, args: ReadonlyArray<string>): VstHostHandle {
 	const proc: ChildProcess = spawn(binaryPath, [...args], {
@@ -70,9 +94,6 @@ export function spawnVstHost(binaryPath: string, args: ReadonlyArray<string>): V
 			const tail = combined.subarray(readyIndex + READY_LINE.length);
 
 			if (tail.length > 0) {
-				// Re-emit any bytes received after `READY\n` so the audio reader
-				// sees them. Use queueMicrotask to avoid re-entering the listener
-				// chain mid-emit.
 				queueMicrotask(() => {
 					stdout.emit("data", tail);
 				});
@@ -100,112 +121,69 @@ export function spawnVstHost(binaryPath: string, args: ReadonlyArray<string>): V
 		proc.once("close", onClose);
 	});
 
-	// Swallow EPIPE on stdin — the subprocess may exit before we finish writing.
 	stdin.on("error", () => {
-		// Captured in stderr / exit code paths.
+		// EPIPE swallowed; surfaced via stderr / exit code.
 	});
 
 	return { proc, stdin, stdout, stderr, ready, stderrChunks };
 }
 
 /**
- * Synchronous queue of stdout bytes. Each call to `take(n)` resolves once at
- * least `n` bytes have accumulated; the first `n` are removed and returned.
- *
- * This is required because Node stdio is OS-chunked — a single write may
- * surface as multiple `data` events, or multiple writes may coalesce into one.
- * Always accumulate.
+ * Write `stages` as JSON to a fresh temp file. Returns the file path and an
+ * async cleanup function that removes the parent temp directory.
  */
-export class StdoutByteQueue {
-	private chunks: Array<Buffer> = [];
-	private size = 0;
-	private waiter?: { bytes: number; resolve: () => void };
-	private closed = false;
-	private closeError?: Error;
+export async function writeStagesJson(stages: ReadonlyArray<VstStage>): Promise<{ path: string; cleanup: () => Promise<void> }> {
+	const dir = await mkdtemp(join(tmpdir(), "vst-host-stages-"));
+	const path = join(dir, "stages.json");
 
-	constructor(stdout: NodeJS.ReadableStream) {
-		stdout.on("data", (chunk: Buffer) => {
-			this.chunks.push(chunk);
-			this.size += chunk.length;
-			this.maybeResolveWaiter();
-		});
+	await writeFile(path, JSON.stringify(stages));
 
-		stdout.on("end", () => {
-			this.closed = true;
-			this.maybeResolveWaiter();
-		});
-	}
-
-	closeWithError(error: Error): void {
-		this.closeError = error;
-		this.closed = true;
-		this.maybeResolveWaiter();
-	}
-
-	private maybeResolveWaiter(): void {
-		if (!this.waiter) return;
-
-		if (this.size >= this.waiter.bytes || this.closed) {
-			const { resolve } = this.waiter;
-
-			this.waiter = undefined;
-			resolve();
-		}
-	}
-
-	async take(bytes: number, timeoutMs: number): Promise<Buffer> {
-		if (this.size < bytes && !this.closed) {
-			await new Promise<void>((resolve, reject) => {
-				const timer = setTimeout(() => {
-					this.waiter = undefined;
-					reject(new Error(`vst-host stdout read timed out after ${timeoutMs}ms (waiting for ${bytes} bytes, have ${this.size})`));
-				}, timeoutMs);
-
-				this.waiter = {
-					bytes,
-					resolve: () => {
-						clearTimeout(timer);
-						resolve();
-					},
-				};
-			});
-		}
-
-		if (this.closeError) throw this.closeError;
-
-		if (this.size < bytes) {
-			throw new Error(`vst-host stdout closed before delivering ${bytes} bytes (had ${this.size})`);
-		}
-
-		const combined = Buffer.concat(this.chunks);
-
-		this.chunks = [combined.subarray(bytes)];
-		this.size = combined.length - bytes;
-
-		return combined.subarray(0, bytes);
-	}
+	return {
+		path,
+		cleanup: async () => {
+			await rm(dir, { recursive: true, force: true });
+		},
+	};
 }
 
 /**
- * Process one block of channel arrays through the vst-host subprocess:
+ * Run the entire audio buffer through the vst-host subprocess in offline mode:
  * 1. Interleave channel arrays to f32le bytes.
- * 2. Write to stdin with drain-event backpressure.
- * 3. Read exactly `frames * channels * 4` bytes from stdout via the queue.
- * 4. Deinterleave back to per-channel arrays.
+ * 2. Write to stdin and close stdin (signals "no more input" to the wrapper).
+ * 3. Concatenate all stdout bytes until the wrapper closes its stdout.
+ * 4. Wait for the subprocess to exit; surface stderr on non-zero exit.
+ * 5. Deinterleave back to per-channel arrays.
  *
- * The subprocess MUST be in the `READY` state when this is called.
+ * Pedalboard's offline mode (`reset=True`) inside the wrapper handles plugin
+ * delay compensation across the whole chain, so the returned channels have
+ * the same frame count as the input.
  */
-export async function processChunkThroughVstHost(
+export async function processWholeFileThroughVstHost(
 	handle: VstHostHandle,
-	queue: StdoutByteQueue,
 	channels: Array<Float32Array>,
 	frames: number,
 	channelCount: number,
 ): Promise<Array<Float32Array>> {
-	const expectedBytes = frames * channelCount * 4;
-
 	const interleaved = interleave(channels, frames, channelCount);
 	const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
+
+	// Drain stdout into a chunks array until the subprocess closes its stdout.
+	// We don't block on a fixed byte count — Pedalboard's offline mode returns
+	// the same frame count as input, so the wrapper writes
+	// `frames * channelCount * 4` bytes and then closes stdout on exit.
+	const stdoutChunks: Array<Buffer> = [];
+
+	handle.stdout.on("data", (chunk: Buffer) => {
+		stdoutChunks.push(chunk);
+	});
+
+	const stdoutEnd = new Promise<void>((resolve) => {
+		handle.stdout.once("end", () => resolve());
+	});
+
+	const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+		handle.proc.once("close", (code, signal) => resolve({ code, signal }));
+	});
 
 	const canWrite = handle.stdin.write(buf);
 
@@ -213,10 +191,23 @@ export async function processChunkThroughVstHost(
 		await waitForDrain(handle.proc, handle.stdin);
 	}
 
-	// Generous timeout: 10ms per frame is ~10x typical processing time even
-	// for heavy plugins at 48kHz, plus a 1s floor for short blocks.
-	const timeoutMs = Math.max(1000, frames * 10);
-	const outputBuf = await queue.take(expectedBytes, timeoutMs);
+	handle.stdin.end();
+
+	await stdoutEnd;
+	const exit = await exited;
+
+	if (exit.code !== 0) {
+		const stderrOutput = Buffer.concat(handle.stderrChunks).toString();
+
+		throw new Error(`vst-host exited with code ${exit.code ?? "null"}${exit.signal ? ` (signal ${exit.signal})` : ""}: ${stderrOutput}`);
+	}
+
+	const expectedBytes = frames * channelCount * 4;
+	const outputBuf = Buffer.concat(stdoutChunks);
+
+	if (outputBuf.length !== expectedBytes) {
+		throw new Error(`vst-host returned ${outputBuf.length} bytes, expected ${expectedBytes} (${frames} frames × ${channelCount} channels × 4)`);
+	}
 
 	return deinterleaveBuffer(outputBuf, channelCount);
 }

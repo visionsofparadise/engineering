@@ -3,3 +3,5 @@
 2026-04-21T20:43:42.521Z | ffmpeg                         |      273.6ms |              0 samples/sec |   111.62x RT | Node v22.20.0 win32
 2026-04-22T17:37:31.722Z | ffmpeg                         |     5432.8ms |              0 samples/sec |     5.62x RT | Node v22.20.0 win32
 2026-04-22T18:45:09.066Z | ffmpeg                         |     4297.8ms |              0 samples/sec |     7.11x RT | Node v22.20.0 win32
+2026-04-28T13:06:33.932Z | ffmpeg                         |     6401.1ms |              0 samples/sec |     4.77x RT | Node v22.20.0 win32
+2026-04-28T13:19:44.896Z | ffmpeg                         |     9280.7ms |              0 samples/sec |     3.29x RT | Node v22.20.0 win32
