@@ -27,6 +27,8 @@ export {
 	DropdownMenuSubContent,
 } from "./components/DropdownMenu";
 export { IconButton } from "./components/IconButton";
+export { DropdownButton } from "./components/DropdownButton";
+export type { DropdownButtonProps, MenuItem } from "./components/DropdownButton";
 export { TerrainShader } from "./components/TerrainShader";
 
 // Spectral
