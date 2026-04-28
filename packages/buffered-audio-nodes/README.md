@@ -73,35 +73,6 @@ npx @e9g/buffered-audio-nodes render --bag pipeline.bag
 
 ## Nodes
 
-### Breath Control
-
-Attenuate or remove breath sounds between phrases
-
-[Source](./src/transforms/breath-control/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `sensitivity` | number (0 to 1, step 0.01) | `0.5` | Sensitivity |
-| `reduction` | number (-60 to 0, step 1) | `-12` | Reduction |
-| `mode` | "remove" \| "attenuate" | `"attenuate"` | Mode |
-
-### Compressor
-
-Dynamic range compressor
-
-[Source](./src/transforms/compressor/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `threshold` | number (-60 to 0, step 0.1) | `-24` | Threshold (dBFS) |
-| `ratio` | number (1 to 20, step 0.1) | `4` | Ratio |
-| `attack` | number (0 to 500, step 0.1) | `10` | Attack (ms) |
-| `release` | number (0 to 5000, step 1) | `100` | Release (ms) |
-| `knee` | number (0 to 24, step 0.1) | `6` | Knee (dB) |
-| `makeupGain` | number (-24 to 24, step 0.1) | `0` | Makeup Gain (dB) |
-| `detection` | "peak" \| "rms" | `"peak"` | Detection mode |
-| `stereoLink` | "average" \| "max" \| "none" | `"average"` | Stereo link |
-
 ### Cut
 
 Remove a region of audio
@@ -131,124 +102,18 @@ Reduce microphone bleed between channels using spectral-domain cross-talk cancel
 | `fftwAddonPath` | string | `""` | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon) |
 | `dfttBackend` | "" \| "js" \| "fftw" \| "vkfft" | `""` | DFTT Backend Override |
 
-### De-Click
+### DeepFilterNet3 (Denoiser)
 
-Remove clicks, pops, and impulse artifacts (Godsill & Rayner 1998)
+Remove background noise from speech using DeepFilterNet3 (48 kHz full-band CRN)
 
-[Source](./src/transforms/de-click/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `sensitivity` | number (0 to 1, step 0.01) | `0.5` | Sensitivity |
-| `frequencySkew` | number (-1 to 1, step 0.01) | `0` | Frequency Skew |
-| `clickWidening` | number (0 to 1, step 0.01) | `0.25` | Click Widening |
-| `maxClickDuration` | number (1 to 1000, step 1) | `200` | Max Click Duration (ms) |
-| `fftSize` | number (512 to 16384, step 256) | `2048` | FFT Size |
-| `hopSize` | number (128 to 4096, step 64) | `512` | Hop Size |
-| `vkfftAddonPath` | string | `""` | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
-| `fftwAddonPath` | string | `""` | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon) |
-
-### De-Clip
-
-Restore clipped audio peaks
-
-[Source](./src/transforms/de-clip/index.ts)
+[Source](./src/transforms/deep-filter-net-3/index.ts)
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `threshold` | number (0 to 1, step 0.01) | `0.99` | Threshold |
-| `method` | "ar" \| "sparse" | `"ar"` | Method |
-
-### De-Crackle
-
-Remove clicks, pops, and impulse artifacts (Godsill & Rayner 1998)
-
-[Source](./src/transforms/de-click/de-crackle.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `sensitivity` | number (0 to 1, step 0.01) | `0.5` | Sensitivity |
-| `frequencySkew` | number (-1 to 1, step 0.01) | `0` | Frequency Skew |
-| `clickWidening` | number (0 to 1, step 0.01) | `0.1` | Click Widening |
-| `maxClickDuration` | number (1 to 1000, step 1) | `20` | Max Click Duration (ms) |
-
-### De-Plosive
-
-Reduce plosive bursts (p, b, t, d sounds)
-
-[Source](./src/transforms/de-plosive/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `sensitivity` | number (0 to 1, step 0.01) | `0.5` | Sensitivity |
-| `frequency` | number (50 to 500, step 10) | `200` | Frequency |
-
-### De-Reverb
-
-Classical dereverberation via Nercessian & Lukin 2019 §2.1 + Lukin & Todd 2007 post-filter
-
-[Source](./src/transforms/de-reverb/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `reduction` | number (0 to 10, step 0.1) | `5` | Reduction |
-| `tailLength` | number (0.5 to 4, step 0.01) | `1` | Tail Length |
-| `artifactSmoothing` | number (0 to 10, step 0.1) | `2` | Artifact Smoothing |
-| `enhanceDry` | boolean | `false` | Enhance Dry Signal |
-| `outputReverbOnly` | boolean | `false` | Output Reverb Only |
-| `reverbProfile` | Object, optional | — | Reverb Profile |
-| `reverbProfile.alpha` | number | — |  |
-| `reverbProfile.beta` | tuple | — |  |
-| `learnStart` | number (min 0), optional | — | Learn Start (seconds) |
-| `learnEnd` | number (min 0), optional | — | Learn End (seconds) |
-| `fftSize` | number (512 to 16384, step 256) | `2048` | FFT Size |
-| `hopSize` | number (128 to 4096, step 64) | `512` | Hop Size |
-| `vkfftAddonPath` | string | `""` | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
-| `fftwAddonPath` | string | `""` | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon) |
-
-### De-Reverb (WPE)
-
-Reduce room reverb using Weighted Prediction Error — classical DSP, fully tunable, no model required
-
-[Source](./src/transforms/de-reverb-wpe/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `predictionDelay` | number (1 to 10, step 1) | `4` | Prediction Delay |
-| `filterLength` | number (5 to 30, step 1) | `12` | Filter Length |
-| `iterations` | number (1 to 10, step 1) | `4` | Iterations |
-| `vkfftAddonPath` | string | `""` | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
-| `fftwAddonPath` | string | `""` | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon) |
-
-### DeEsser
-
-De-esser — split-band sidechain compression of sibilance
-
-[Source](./src/transforms/de-esser/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `frequency` | number (1000 to 20000, step 1) | `6000` | Center frequency of the sibilance band (Hz) |
-| `threshold` | number (-80 to 0, step 0.1) | `-20` | Threshold (dBFS) — sidechain envelope level above which reduction kicks in |
-| `ratio` | number (1 to 20, step 0.1) | `4` | Ratio — downward expansion above threshold (1 = no reduction, 20 ≈ hard cap) |
-| `range` | number (-60 to 0, step 0.1) | `-12` | Range (dB) — maximum attenuation applied |
-| `attack` | number (0 to 100, step 0.1) | `5` | Attack (ms) |
-| `release` | number (0 to 1000, step 1) | `80` | Release (ms) |
-| `mode` | "split" \| "wideband" | `"split"` | Split: attenuate sibilant band only. Wideband: attenuate full signal when sibilance detected. |
-
-### Dialogue Isolate
-
-Isolate dialogue from background using MDX-Net vocal separation
-
-[Source](./src/transforms/dialogue-isolate/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `modelPath` | string | `""` | MDX-Net vocal isolation model (.onnx) Download: [Kim_Vocal_2](https://huggingface.co/seanghay/uvr_models) |
+| `modelPath` | string | `""` | DeepFilterNet3 48 kHz denoiser model (.onnx) Download: [dfn3](https://github.com/yuyun2000/SpeechDenoiser) |
 | `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
 | `onnxAddonPath` | string | `""` | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon) |
-| `highPass` | number (20 to 500, step 10) | `80` | High Pass |
-| `lowPass` | number (1000 to 22050, step 100) | `20000` | Low Pass |
+| `attenuation` | number (0 to 100) | `30` | Attenuation cap in dB. Maps to the ONNX `atten_lim_db` input; 0 = no cap |
 
 ### Dither
 
@@ -267,6 +132,21 @@ Mix all input channels to a single mono channel by averaging
 
 [Source](./src/transforms/downmix-mono/index.ts)
 
+### DTLN (Denoiser)
+
+Remove background noise from speech using DTLN neural network
+
+[Source](./src/transforms/dtln/index.ts)
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `modelPath1` | string | `""` | DTLN magnitude mask model (.onnx) Download: [dtln-model_1](https://github.com/breizhn/DTLN) |
+| `modelPath2` | string | `""` | DTLN time-domain model (.onnx) Download: [dtln-model_2](https://github.com/breizhn/DTLN) |
+| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
+| `onnxAddonPath` | string | `""` | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon) |
+| `vkfftAddonPath` | string | `""` | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
+| `fftwAddonPath` | string | `""` | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon) |
+
 ### Duplicate Channels
 
 Duplicate a mono signal into multiple identical output channels
@@ -276,69 +156,6 @@ Duplicate a mono signal into multiple identical output channels
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
 | `channels` | number (2 to 8) | `2` | Output channel count |
-
-### Dynamics
-
-Full-featured dynamics processor — compress or expand audio
-
-[Source](./src/transforms/dynamics/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `threshold` | number (-60 to 0, step 0.1) | `-24` | Threshold (dBFS) |
-| `ratio` | number (1 to 100, step 0.1) | `4` | Ratio |
-| `attack` | number (0 to 500, step 0.1) | `10` | Attack (ms) |
-| `release` | number (0 to 5000, step 1) | `100` | Release (ms) |
-| `knee` | number (0 to 24, step 0.1) | `6` | Knee (dB) |
-| `makeupGain` | number (-24 to 24, step 0.1) | `0` | Makeup Gain (dB) |
-| `lookahead` | number (0 to 100, step 0.1) | `0` | Lookahead (ms) |
-| `detection` | "peak" \| "rms" | `"peak"` | Detection mode |
-| `mode` | "downward" \| "upward" | `"downward"` | Dynamics mode |
-| `stereoLink` | "average" \| "max" \| "none" | `"average"` | Stereo link |
-| `oversampling` | 1 \| 2 \| 4 \| 8 | `1` | Oversampling factor for true-peak detection (1 = off, 2/4/8 = inter-sample peak recovery). Envelope timing is unaffected — coefficients are always at the original rate. |
-
-### EQ
-
-Arbitrary multiband parametric equalizer
-
-[Source](./src/transforms/eq/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `bands` | Object[] | `[]` | EQ bands |
-| `bands[].type` | "lowpass" \| "highpass" \| "bandpass" \| "peaking" \| "lowshelf" \| "highshelf" \| "notch" \| "allpass" | `"peaking"` | Filter type |
-| `bands[].frequency` | number (20 to 20000, step 1) | `1000` | Frequency (Hz) |
-| `bands[].quality` | number (0.1 to 100, step 0.01) | `0.71` | Q / Bandwidth |
-| `bands[].gain` | number (-24 to 24, step 0.1), optional | — | Gain (dB) — peaking and shelf only |
-| `bands[].enabled` | boolean | `true` | Enabled |
-
-### EQ Match
-
-Match frequency response to a reference profile
-
-[Source](./src/transforms/eq-match/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `referencePath` | string | `""` | Reference Path |
-| `smoothing` | number (0 to 1, step 0.01) | `0.3333333333333333` | Smoothing |
-| `vkfftAddonPath` | string | `""` | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
-| `fftwAddonPath` | string | `""` | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon) |
-
-### Exciter
-
-Harmonic exciter — adds upper-harmonic content via band-limited saturation
-
-[Source](./src/transforms/exciter/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `mode` | "soft" \| "tube" \| "fold" \| "tape" | `"soft"` | Saturation mode |
-| `frequency` | number (20 to 20000, step 1) | `3000` | Crossover frequency (Hz) |
-| `drive` | number (0 to 24, step 0.1) | `6` | Drive (dB) |
-| `mix` | number (0 to 1, step 0.01) | `0.5` | Wet/dry mix (0 = dry, 1 = wet) |
-| `harmonics` | number (0.5 to 2, step 0.01) | `1` | Harmonic emphasis multiplier |
-| `oversampling` | 1 \| 2 \| 4 \| 8 | `2` | Oversampling factor (1 = off, 2/4/8 = internal-rate multiplier for alias-free nonlinear processing) |
 
 ### FFmpeg
 
@@ -361,50 +178,33 @@ Adjust signal level by a fixed amount in dB
 | --- | --- | --- | --- |
 | `gain` | number (-60 to 24, step 0.1) | `0` | Gain (dB) |
 
-### Gate
+### HTDemucs (Stem Separator)
 
-Noise gate — attenuates signal below threshold
+Rebalance stem volumes using HTDemucs source separation
 
-[Source](./src/transforms/gate/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `threshold` | number (-80 to 0, step 0.1) | `-40` | Threshold (dBFS) |
-| `range` | number (-80 to 0, step 1) | `-80` | Range (dB) — attenuation when gate is closed |
-| `ratio` | number (1 to 20, step 0.1) | `10` | Ratio — downward expansion below threshold (1 = no gating, 20 ≈ hard gate) |
-| `attack` | number (0 to 500, step 0.1) | `1` | Attack (ms) |
-| `hold` | number (0 to 2000, step 1) | `100` | Hold (ms) |
-| `release` | number (0 to 5000, step 1) | `200` | Release (ms) |
-| `hysteresis` | number (0 to 24, step 0.1) | `6` | Hysteresis (dB) — separate open/close thresholds |
-
-### Leveler
-
-Smooth volume variations for consistent loudness
-
-[Source](./src/transforms/leveler/index.ts)
+[Source](./src/transforms/htdemucs/index.ts)
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `target` | number (-60 to 0, step 1) | `-20` | Target |
-| `window` | number (0.01 to 5, step 0.01) | `0.5` | Window |
-| `speed` | number (0.01 to 1, step 0.01) | `0.1` | Speed |
-| `maxGain` | number (0 to 40, step 1) | `12` | Max Gain |
-| `maxCut` | number (0 to 40, step 1) | `12` | Max Cut |
+| `modelPath` | string | `""` | HTDemucs source separation model (.onnx) — requires .onnx.data file alongside Download: [htdemucs](https://github.com/facebookresearch/demucs) |
+| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
+| `onnxAddonPath` | string | `""` | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon) |
+| `highPass` | number (0 to 500, step 10) | `0` | High Pass |
+| `lowPass` | number (0 to 22050, step 100) | `0` | Low Pass |
 
-### Limiter
+### Kim Vocal 2 (Stem Separator)
 
-Brick-wall limiter — prevents signal from exceeding threshold
+Isolate dialogue from background using MDX-Net vocal separation
 
-[Source](./src/transforms/limiter/index.ts)
+[Source](./src/transforms/kim-vocal-2/index.ts)
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `threshold` | number (-60 to 0, step 0.1) | `-1` | Threshold (dBFS) |
-| `attack` | number (0 to 100, step 0.1) | `1` | Attack (ms) |
-| `release` | number (0 to 5000, step 1) | `50` | Release (ms) |
-| `makeupGain` | number (-24 to 24, step 0.1) | `0` | Makeup Gain (dB) |
-| `stereoLink` | "average" \| "max" \| "none" | `"max"` | Stereo link |
-| `oversampling` | 1 \| 2 \| 4 \| 8 | `2` | Oversampling factor (1 = off, 2/4/8 = internal-rate multiplier for alias-free nonlinear processing) |
+| `modelPath` | string | `""` | MDX-Net vocal isolation model (.onnx) Download: [Kim_Vocal_2](https://huggingface.co/seanghay/uvr_models) |
+| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
+| `onnxAddonPath` | string | `""` | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon) |
+| `highPass` | number (20 to 500, step 10) | `80` | High Pass |
+| `lowPass` | number (1000 to 22050, step 100) | `20000` | Low Pass |
 
 ### Loudness
 
@@ -424,33 +224,6 @@ Measure integrated, short-term, and momentary loudness
 Measure integrated loudness, true peak, loudness range, and short-term/momentary loudness per EBU R128
 
 [Source](./src/targets/loudness-stats/index.ts)
-
-### Mouth De-Click
-
-Remove clicks, pops, and impulse artifacts (Godsill & Rayner 1998)
-
-[Source](./src/transforms/de-click/mouth-de-click.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `sensitivity` | number (0 to 1, step 0.01) | `0.7` | Sensitivity |
-| `frequencySkew` | number (-1 to 1, step 0.01) | `0.3` | Frequency Skew |
-| `clickWidening` | number (0 to 1, step 0.01) | `0.5` | Click Widening |
-| `maxClickDuration` | number (1 to 1000, step 1) | `50` | Max Click Duration (ms) |
-
-### Music Rebalance
-
-Rebalance stem volumes using HTDemucs source separation
-
-[Source](./src/transforms/music-rebalance/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `modelPath` | string | `""` | HTDemucs source separation model (.onnx) — requires .onnx.data file alongside Download: [htdemucs](https://github.com/facebookresearch/demucs) |
-| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
-| `onnxAddonPath` | string | `""` | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon) |
-| `highPass` | number (0 to 500, step 10) | `0` | High Pass |
-| `lowPass` | number (0 to 22050, step 100) | `0` | Low Pass |
 
 ### Normalize
 
@@ -494,18 +267,6 @@ Invert or rotate signal phase
 | `invert` | boolean | `true` | Invert |
 | `angle` | number (-180 to 180, step 1), optional | — | Angle |
 
-### Pitch Shift
-
-Change pitch without affecting duration
-
-[Source](./src/transforms/pitch-shift/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
-| `semitones` | number (-24 to 24, step 1) | `0` | Semitones |
-| `cents` | number (-100 to 100, step 1) | `0` | Cents |
-
 ### Read
 
 Read audio from a file
@@ -540,35 +301,11 @@ Read audio from a WAV file
 | --- | --- | --- | --- |
 | `path` | string | `""` |  |
 
-### Resample
-
-Change sample rate
-
-[Source](./src/transforms/resample/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
-| `sampleRate` | number (8000 to 192000, step 100) | `44100` | Sample Rate |
-| `dither` | "triangular" \| "lipshitz" \| "none" | `"triangular"` | Dither |
-
 ### Reverse
 
 Reverse audio playback direction
 
 [Source](./src/transforms/reverse/index.ts)
-
-### Spectral Repair
-
-Repair spectral artifacts by interpolating from surrounding content
-
-[Source](./src/transforms/spectral-repair/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `method` | "ar" \| "nmf" | `"ar"` | Method |
-| `vkfftAddonPath` | string | `""` | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
-| `fftwAddonPath` | string | `""` | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon) |
 
 ### Spectrogram
 
@@ -594,17 +331,6 @@ Replace a region of audio with processed content
 | `insertPath` | string | `""` | Insert File Path |
 | `insertAt` | number (min 0) | `0` | Insert At (frames) |
 
-### Time Stretch
-
-Change duration without affecting pitch
-
-[Source](./src/transforms/time-stretch/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
-| `rate` | number (0.25 to 4, step 0.01) | `1` | Rate |
-
 ### Trim
 
 Remove silence from start and end
@@ -618,33 +344,18 @@ Remove silence from start and end
 | `start` | boolean | `true` | Start |
 | `end` | boolean | `true` | End |
 
-### Voice Denoise (DFN3)
+### VST3
 
-Remove background noise from speech using DeepFilterNet3 (48 kHz full-band CRN)
+Host a VST3 effect plugin via Pedalboard
 
-[Source](./src/transforms/voice-denoise-dfn/index.ts)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `modelPath` | string | `""` | DeepFilterNet3 48 kHz denoiser model (.onnx) Download: [dfn3](https://github.com/yuyun2000/SpeechDenoiser) |
-| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
-| `onnxAddonPath` | string | `""` | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon) |
-| `attenuation` | number (0 to 100) | `30` | Attenuation cap in dB. Maps to the ONNX `atten_lim_db` input; 0 = no cap |
-
-### Voice Denoise (DTLN)
-
-Remove background noise from speech using DTLN neural network
-
-[Source](./src/transforms/voice-denoise-dtln/index.ts)
+[Source](./src/transforms/vst3/index.ts)
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `modelPath1` | string | `""` | DTLN magnitude mask model (.onnx) Download: [dtln-model_1](https://github.com/breizhn/DTLN) |
-| `modelPath2` | string | `""` | DTLN time-domain model (.onnx) Download: [dtln-model_2](https://github.com/breizhn/DTLN) |
-| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
-| `onnxAddonPath` | string | `""` | ONNX Runtime native addon Download: [onnx-addon](https://github.com/visionsofparadise/onnx-runtime-addon) |
-| `vkfftAddonPath` | string | `""` | VkFFT native addon — GPU FFT acceleration Download: [vkfft-addon](https://github.com/visionsofparadise/vkfft-addon) |
-| `fftwAddonPath` | string | `""` | FFTW native addon — CPU FFT acceleration Download: [fftw-addon](https://github.com/visionsofparadise/fftw-addon) |
+| `vstHostPath` | string | `""` | vst-host — Pedalboard-based VST3 host CLI Download: [vst-host](https://github.com/visionsofparadise/vst-host) |
+| `pluginPath` | string | — | VST3 plugin file or bundle |
+| `presetPath` | string, optional | — | Optional .vstpreset state file |
+| `bypass` | boolean | `false` | Pass audio through unchanged |
 
 ### Waveform
 
@@ -788,11 +499,12 @@ ML-based transforms use ONNX Runtime for inference via a native addon. Nodes tha
 
 Models are not bundled with the package. Each node's parameter table links to the expected model source.
 
-| Node            | Model                      | Source                                                   |
-| --------------- | -------------------------- | -------------------------------------------------------- |
-| DialogueIsolate | Kim_Vocal_2.onnx           | [uvr_models](https://huggingface.co/seanghay/uvr_models) |
-| MusicRebalance  | htdemucs.onnx + .onnx.data | [demucs](https://github.com/facebookresearch/demucs)     |
-| VoiceDenoiseDtln | model_1.onnx, model_2.onnx | [DTLN](https://github.com/breizhn/DTLN)                 |
+| Node            | Model                            | Source                                                                            |
+| --------------- | -------------------------------- | --------------------------------------------------------------------------------- |
+| dtln            | model_1.onnx, model_2.onnx       | [DTLN](https://github.com/breizhn/DTLN)                                           |
+| deepFilterNet3  | dfn3.onnx                        | [SpeechDenoiser](https://github.com/yuyun2000/SpeechDenoiser)                     |
+| kimVocal2       | Kim_Vocal_2.onnx                 | [uvr_models](https://huggingface.co/seanghay/uvr_models)                          |
+| htdemucs        | htdemucs.onnx + htdemucs.onnx.data | [demucs](https://github.com/facebookresearch/demucs)                            |
 
 ## License
 

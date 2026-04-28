@@ -20,44 +20,22 @@ export { reverse, ReverseNode, ReverseStream } from "./transforms/reverse";
 export { splice, SpliceNode, SpliceStream, type SpliceProperties } from "./transforms/splice";
 export { trim, TrimNode, TrimStream, type TrimProperties } from "./transforms/trim";
 
-// Transforms - ffmpeg-based
-export { ffmpeg, FfmpegNode, FfmpegStream, type FfmpegProperties } from "./transforms/ffmpeg";
-export { loudness, LoudnessNode, LoudnessStream, type LoudnessProperties } from "./transforms/loudness";
-export { resample, ResampleNode, type ResampleProperties } from "./transforms/resample";
-
-// Transforms - utility/mastering
+// Transforms - channel
 export { downmixMono, DownmixMonoNode, DownmixMonoStream } from "./transforms/downmix-mono";
 export { duplicateChannels, DuplicateChannelsNode, DuplicateChannelsStream, type DuplicateChannelsProperties } from "./transforms/duplicate-channels";
-export { eq, EqNode, EqStream, type EqBand, type EqProperties } from "./transforms/eq";
 export { gain, GainNode, GainStream, type GainProperties } from "./transforms/gain";
 export { pan, PanNode, PanStream, type PanProperties } from "./transforms/pan";
-export { compressor, CompressorNode, type CompressorProperties } from "./transforms/compressor";
-export { deEsser, DeEsserNode, DeEsserStream, type DeEsserProperties } from "./transforms/de-esser";
-export { dynamics, DynamicsNode, DynamicsStream, type DynamicsProperties } from "./transforms/dynamics";
-export { exciter, ExciterNode, ExciterStream, type ExciterProperties } from "./transforms/exciter";
-export { gate, GateNode, GateStream, type GateProperties } from "./transforms/gate";
-export { limiter, LimiterNode, type LimiterProperties } from "./transforms/limiter";
 
-// Transforms - engineering
-export { breathControl, BreathControlNode, BreathControlStream, type BreathControlProperties } from "./transforms/breath-control";
+// Transforms - ffmpeg
+export { ffmpeg, FfmpegNode, FfmpegStream, type FfmpegProperties } from "./transforms/ffmpeg";
+export { loudness, LoudnessNode, LoudnessStream, type LoudnessProperties } from "./transforms/loudness";
+
+// Transforms - hosted
 export { deBleed, DeBleedNode, DeBleedStream, type DeBleedProperties } from "./transforms/de-bleed";
-export { deClick, DeClickNode, DeClickStream, type DeClickProperties } from "./transforms/de-click";
-export { deCrackle, DeCrackleNode, type DeCrackleProperties } from "./transforms/de-click/de-crackle";
-export { mouthDeClick, MouthDeClickNode, type MouthDeClickProperties } from "./transforms/de-click/mouth-de-click";
-export { deClip, DeClipNode, DeClipStream, type DeClipProperties } from "./transforms/de-clip";
-export { dePlosive, DePlosiveNode, DePlosiveStream, type DePlosiveProperties } from "./transforms/de-plosive";
-export { deReverb, DeReverbNode, DeReverbStream, type DeReverbProperties } from "./transforms/de-reverb";
-export { deReverbWpe, DeReverbWpeNode, DeReverbWpeStream, type DeReverbWpeProperties } from "./transforms/de-reverb-wpe";
-export { dialogueIsolate, DialogueIsolateNode, DialogueIsolateStream, type DialogueIsolateProperties } from "./transforms/dialogue-isolate";
-export { eqMatch, EqMatchNode, EqMatchStream, type EqMatchProperties } from "./transforms/eq-match";
-export { leveler, LevelerNode, LevelerStream, type LevelerProperties } from "./transforms/leveler";
-export { musicRebalance, MusicRebalanceNode, MusicRebalanceStream, type MusicRebalanceProperties, type StemGains } from "./transforms/music-rebalance";
-export { pitchShift, PitchShiftNode, type PitchShiftProperties } from "./transforms/pitch-shift";
-export { spectralRepair, SpectralRepairNode, SpectralRepairStream, type SpectralRepairProperties } from "./transforms/spectral-repair";
-export type { SpectralRegion } from "./transforms/spectral-repair/utils/interpolation";
-export { timeStretch, TimeStretchNode, type TimeStretchProperties } from "./transforms/time-stretch";
-export { voiceDenoiseDtln, VoiceDenoiseDtlnNode, VoiceDenoiseDtlnStream, type VoiceDenoiseDtlnProperties } from "./transforms/voice-denoise-dtln";
-export { voiceDenoiseDfn, VoiceDenoiseDfnNode, VoiceDenoiseDfnStream, type VoiceDenoiseDfnProperties } from "./transforms/voice-denoise-dfn";
+export { deepFilterNet3, DeepFilterNet3Node, DeepFilterNet3Stream, type DeepFilterNet3Properties } from "./transforms/deep-filter-net-3";
+export { dtln, DtlnNode, DtlnStream, type DtlnProperties } from "./transforms/dtln";
+export { htdemucs, HtdemucsNode, HtdemucsStream, type HtdemucsProperties, type StemGains } from "./transforms/htdemucs";
+export { kimVocal2, KimVocal2Node, KimVocal2Stream, type KimVocal2Properties } from "./transforms/kim-vocal-2";
 export { vst3, Vst3Node, Vst3Stream, type Vst3Properties } from "./transforms/vst3";
 
 // Composites

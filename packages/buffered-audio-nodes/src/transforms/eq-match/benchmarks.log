@@ -1,5 +1,0 @@
-2026-04-21T01:01:26.593Z | eqMatch                        |     7892.1ms |              0 samples/sec |     3.87x RT | Node v22.20.0 win32
-2026-04-21T20:29:53.123Z | eqMatch                        |     9337.1ms |              0 samples/sec |     3.27x RT | Node v22.20.0 win32
-2026-04-21T20:43:13.395Z | eqMatch                        |     7166.1ms |              0 samples/sec |     4.26x RT | Node v22.20.0 win32
-2026-04-22T17:34:43.598Z | eqMatch                        |    60382.2ms |              0 samples/sec |     0.51x RT | Node v22.20.0 win32
-2026-04-22T18:43:33.302Z | eqMatch                        |    91916.4ms |              0 samples/sec |     0.33x RT | Node v22.20.0 win32

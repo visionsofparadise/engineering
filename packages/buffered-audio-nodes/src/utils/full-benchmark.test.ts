@@ -1,11 +1,9 @@
 import { describe, it } from "vitest";
 import { runBenchmark, type BenchmarkResult } from "./test-benchmark";
 import { audio, binaries } from "./test-binaries";
-import { spectralRepair } from "../transforms/spectral-repair";
-import { deReverbWpe } from "../transforms/de-reverb-wpe";
-import { voiceDenoiseDtln } from "../transforms/voice-denoise-dtln";
-import { dialogueIsolate } from "../transforms/dialogue-isolate";
-import { musicRebalance } from "../transforms/music-rebalance";
+import { dtln } from "../transforms/dtln";
+import { kimVocal2 } from "../transforms/kim-vocal-2";
+import { htdemucs } from "../transforms/htdemucs";
 import { ExecutionProvider } from "@e9g/buffered-audio-nodes-core";
 
 const testVoice = audio.testVoice;
@@ -48,31 +46,12 @@ function record(group: string, transform: string, backend: string, r: BenchmarkR
 // FFT-backend-aware transforms
 // ============================================================
 describe("FFT backends", () => {
-	// spectral-repair
+	// dtln (also ONNX — tests FFT portion)
 	for (const { label, providers } of fftConfigs) {
-		it(`spectral-repair [${label}]`, async () => {
-			const t = spectralRepair([{ startTime: 0.5, endTime: 0.6, startFreq: 1000, endFreq: 4000 }]);
-			const r = await runBenchmark(`spectral-repair`, t, testVoice, { executionProviders: providers });
-			record("fft", "spectral-repair", label, r);
-		}, 240_000);
-	}
-
-	// de-reverb-wpe
-	for (const { label, providers } of fftConfigs) {
-		it(`de-reverb-wpe [${label}]`, async () => {
-			const t = deReverbWpe();
-			const r = await runBenchmark(`de-reverb-wpe`, t, testVoice, { executionProviders: providers });
-			record("fft", "de-reverb-wpe", label, r);
-		}, 240_000);
-	}
-
-	// eq-match — needs a reference, skip if not easily constructable
-	// voice-denoise-dtln (also ONNX — tests FFT portion)
-	for (const { label, providers } of fftConfigs) {
-		it(`voice-denoise-dtln [${label}]`, async () => {
-			const t = voiceDenoiseDtln({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
-			const r = await runBenchmark(`voice-denoise-dtln`, t, testVoice, { executionProviders: providers });
-			record("fft", "voice-denoise-dtln", label, r);
+		it(`dtln [${label}]`, async () => {
+			const t = dtln({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
+			const r = await runBenchmark(`dtln`, t, testVoice, { executionProviders: providers });
+			record("fft", "dtln", label, r);
 		}, 240_000);
 	}
 });
@@ -82,26 +61,26 @@ describe("FFT backends", () => {
 // ============================================================
 describe("ONNX models", () => {
 	for (const { label, providers } of onnxConfigs) {
-		it(`voice-denoise-dtln [${label}]`, async () => {
-			const t = voiceDenoiseDtln({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
-			const r = await runBenchmark(`voice-denoise-dtln`, t, testVoice, { executionProviders: providers });
-			record("onnx", "voice-denoise-dtln", label, r);
+		it(`dtln [${label}]`, async () => {
+			const t = dtln({ modelPath1: binaries.model1, modelPath2: binaries.model2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon, vkfftAddonPath: binaries.vkfftAddon, fftwAddonPath: binaries.fftwAddon });
+			const r = await runBenchmark(`dtln`, t, testVoice, { executionProviders: providers });
+			record("onnx", "dtln", label, r);
 		}, 240_000);
 	}
 
 	for (const { label, providers } of onnxConfigs) {
-		it(`dialogue-isolate [${label}]`, async () => {
-			const t = dialogueIsolate({ modelPath: binaries.kimVocal2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon });
-			const r = await runBenchmark(`dialogue-isolate`, t, testVoice, { executionProviders: providers });
-			record("onnx", "dialogue-isolate", label, r);
+		it(`kim-vocal-2 [${label}]`, async () => {
+			const t = kimVocal2({ modelPath: binaries.kimVocal2, ffmpegPath: binaries.ffmpeg, onnxAddonPath: binaries.onnxAddon });
+			const r = await runBenchmark(`kim-vocal-2`, t, testVoice, { executionProviders: providers });
+			record("onnx", "kim-vocal-2", label, r);
 		}, 240_000);
 	}
 
 	for (const { label, providers } of onnxConfigs) {
-		it(`music-rebalance [${label}]`, async () => {
-			const t = musicRebalance(binaries.htdemucs, { vocals: 1, drums: 0, bass: 0, other: 0 }, { onnxAddonPath: binaries.onnxAddon });
-			const r = await runBenchmark(`music-rebalance`, t, testVoice, { executionProviders: providers });
-			record("onnx", "music-rebalance", label, r);
+		it(`htdemucs [${label}]`, async () => {
+			const t = htdemucs(binaries.htdemucs, { vocals: 1, drums: 0, bass: 0, other: 0 }, { onnxAddonPath: binaries.onnxAddon });
+			const r = await runBenchmark(`htdemucs`, t, testVoice, { executionProviders: providers });
+			record("onnx", "htdemucs", label, r);
 		}, 240_000);
 	}
 });

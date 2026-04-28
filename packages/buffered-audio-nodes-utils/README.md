@@ -76,12 +76,10 @@ import {
 	zeroPhaseBiquadFilter,
 	highPassCoefficients,
 	lowPassCoefficients,
-	bandPassCoefficients,
 	preFilterCoefficients,
 	rlbFilterCoefficients,
 	bandpass,
 } from "@e9g/buffered-audio-nodes-utils";
-import type { BiquadCoefficients } from "@e9g/buffered-audio-nodes-utils";
 ```
 
 | Function | Description |
@@ -90,7 +88,6 @@ import type { BiquadCoefficients } from "@e9g/buffered-audio-nodes-utils";
 | `zeroPhaseBiquadFilter(samples, coefficients)` | Zero-phase (forward-backward) biquad filter |
 | `highPassCoefficients(frequency, sampleRate, Q?)` | Design a high-pass biquad filter |
 | `lowPassCoefficients(frequency, sampleRate, Q?)` | Design a low-pass biquad filter |
-| `bandPassCoefficients(frequency, sampleRate, Q?)` | Design a band-pass biquad filter |
 | `preFilterCoefficients(sampleRate)` | BS.1770-4 pre-filter (high shelf at ~1500 Hz) |
 | `rlbFilterCoefficients(sampleRate)` | BS.1770-4 RLB weighting filter |
 | `bandpass(signal, low, high, sampleRate)` | Convenience bandpass using cascaded biquads |
@@ -113,26 +110,14 @@ import { interleave, deinterleaveBuffer, replaceChannel } from "@e9g/buffered-au
 | `deinterleaveBuffer(buffer, channelCount)` | Deinterleave a buffer into per-channel arrays |
 | `replaceChannel(samples, channelIndex, replacement)` | Replace a single channel in an interleaved buffer |
 
-### Level Conversion
+### Resampling
 
 ```ts
-import { dbToLinear, linearToDb } from "@e9g/buffered-audio-nodes-utils";
+import { resampleDirect } from "@e9g/buffered-audio-nodes-utils";
 ```
 
 | Function | Description |
 | --- | --- |
-| `dbToLinear(db)` | Convert decibels to linear amplitude |
-| `linearToDb(linear)` | Convert linear amplitude to decibels |
-
-### Envelope / Resampling
-
-```ts
-import { smoothEnvelope, resampleDirect } from "@e9g/buffered-audio-nodes-utils";
-```
-
-| Function | Description |
-| --- | --- |
-| `smoothEnvelope(signal, attackSamples, releaseSamples)` | Attack/release envelope follower |
 | `resampleDirect(signal, fromRate, toRate)` | Sample rate conversion via direct resampling |
 
 ## License
