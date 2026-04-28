@@ -17,7 +17,7 @@ export async function measureLoudness(
 }> {
 	const binaryPath = properties.ffmpegPath;
 
-	const parts = [`I=${properties.target}`, `TP=${properties.truePeak}`, properties.lra !== undefined ? `LRA=${properties.lra}` : "", "print_format=json"].filter(Boolean);
+	const parts = [`I=${properties.target}`, `TP=${properties.truePeak}`, properties.lra !== undefined && properties.lra > 0 ? `LRA=${properties.lra}` : "", "print_format=json"].filter(Boolean);
 
 	const args = ["-f", "f32le", "-ar", String(sampleRate), "-ac", String(channels), "-i", "pipe:0", "-af", `loudnorm=${parts.join(":")}`, "-f", "null", "-"];
 

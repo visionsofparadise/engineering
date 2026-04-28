@@ -8,7 +8,7 @@ export const schema = z.object({
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
 	target: z.number().min(-50).max(0).multipleOf(0.1).default(-14).describe("Target"),
 	truePeak: z.number().min(-10).max(0).multipleOf(0.1).default(-1).describe("True Peak"),
-	lra: z.number().min(0).max(20).multipleOf(0.1).default(0).describe("LRA"),
+	lra: z.number().min(0).max(50).multipleOf(0.1).optional().describe("LRA"),
 });
 
 export interface LoudnessProperties extends FfmpegProperties {
@@ -49,7 +49,7 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 			const parts = [
 				`I=${target}`,
 				`TP=${truePeak}`,
-				lra !== undefined ? `LRA=${lra}` : "",
+				lra !== undefined && lra > 0 ? `LRA=${lra}` : "",
 				`measured_I=${inputI}`,
 				`measured_TP=${inputTp}`,
 				`measured_LRA=${inputLra}`,
@@ -61,7 +61,7 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 			return ["-af", `loudnorm=${parts.join(":")}`];
 		}
 
-		const parts = [`I=${target}`, `TP=${truePeak}`, lra !== undefined ? `LRA=${lra}` : ""].filter(Boolean);
+		const parts = [`I=${target}`, `TP=${truePeak}`, lra !== undefined && lra > 0 ? `LRA=${lra}` : ""].filter(Boolean);
 
 		return ["-af", `loudnorm=${parts.join(":")}`];
 	}

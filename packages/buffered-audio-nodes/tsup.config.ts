@@ -18,6 +18,8 @@ export default defineConfig([
 		bundle: true,
 		banner: { js: "#!/usr/bin/env node" },
 		treeshake: true,
-		noExternal: [/.*/],
+		// Leave runtime deps external so Node's resolver loads them as real
+		// modules at runtime. Inlining CJS deps (commander) into the ESM bundle
+		// produces a __require shim that crashes on Node builtins like `events`.
 	},
 ]);

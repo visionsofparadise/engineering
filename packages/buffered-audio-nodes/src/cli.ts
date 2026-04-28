@@ -87,10 +87,17 @@ program
 					const mod = (await import(nodeDef.packageName)) as Record<string, unknown>;
 					const packageMap = new Map<string, new (options?: Record<string, unknown>) => BufferedAudioNode>();
 
-					for (const [key, value] of Object.entries(mod)) {
-						if (typeof value === "function") {
-							packageMap.set(key, value as new (options?: Record<string, unknown>) => BufferedAudioNode);
-						}
+					// Bag node lookups go by `moduleName` (what `pack()` writes), not
+					// by export binding name. Index every export that has a string
+					// `moduleName`; ignore the rest (factory functions, types, etc.).
+					for (const value of Object.values(mod)) {
+						if (typeof value !== "function") continue;
+
+						const ctor = value as { moduleName?: unknown } & (new (options?: Record<string, unknown>) => BufferedAudioNode);
+
+						if (typeof ctor.moduleName !== "string") continue;
+
+						packageMap.set(ctor.moduleName, ctor);
 					}
 
 					registry.set(nodeDef.packageName, packageMap);
