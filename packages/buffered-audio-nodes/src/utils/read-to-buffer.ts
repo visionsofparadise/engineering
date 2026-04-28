@@ -1,8 +1,14 @@
 import { readFile } from "node:fs/promises";
-import * as wavefile from "wavefile";
+import { createRequire } from "node:module";
+import type * as Wavefile from "wavefile";
 import { FileChunkBuffer, type ChunkBuffer, type SourceMetadata } from "@e9g/buffered-audio-nodes-core";
 
-const { WaveFile } = wavefile;
+// wavefile interop: the package ships a CJS `main` (works under Node ESM, scratch
+// .mjs, tsx via Node resolver) and an ESM `module` with no default export (works
+// for esbuild/Vite bundling). No single ESM import statement satisfies both.
+// `createRequire` resolves to the CJS entry consistently across all runtimes
+// (esbuild bundle, tsup-noExternal bundle, tsx, Node ESM, vitest/Vite).
+const { WaveFile } = createRequire(import.meta.url)("wavefile") as typeof Wavefile;
 
 export interface WavSamples {
 	readonly samples: Array<Float32Array>;
