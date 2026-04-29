@@ -224,27 +224,27 @@
       "platform": "darwin",
       "arch": "arm64",
       "filename": "vst-host-darwin-arm64",
-      "sha256": "738184657fce9ad5457e52655577db8880bdfc50d9a7fb004417015617451f93",
-      "size": 21115888,
-      "source": "https://github.com/visionsofparadise/vst-host/releases/tag/v0.1.0"
+      "sha256": "3aef52ea1a4bc6e9928a2ea15530ea05145fa0150a3897226b7fc88a60bb67dc",
+      "size": 21118480,
+      "source": "https://github.com/visionsofparadise/vst-host/releases/tag/v0.2.0"
     },
     {
       "key": "vst-host",
       "platform": "linux",
       "arch": "x64",
       "filename": "vst-host-linux-x64",
-      "sha256": "183358d22da136254e043bac952234d5b204c0e7673fc67a321f5ade0ef69956",
-      "size": 49714320,
-      "source": "https://github.com/visionsofparadise/vst-host/releases/tag/v0.1.0"
+      "sha256": "fd6f8b17f0f79de815eb1bd9840e196309d3c7f4cffe89726299c0cdaec7064f",
+      "size": 49716872,
+      "source": "https://github.com/visionsofparadise/vst-host/releases/tag/v0.2.0"
     },
     {
       "key": "vst-host",
       "platform": "win32",
       "arch": "x64",
       "filename": "vst-host-win32-x64.exe",
-      "sha256": "39d4fcbfac301ad00e0913d2e02e37186405223f138179cbf1b62f6204d67559",
-      "size": 30451802,
-      "source": "https://github.com/visionsofparadise/vst-host/releases/tag/v0.1.0"
+      "sha256": "c5da511e63249bb305cf26eab486a9574dc00af7d5d2c8fdc4061e76da0e3c40",
+      "size": 30454351,
+      "source": "https://github.com/visionsofparadise/vst-host/releases/tag/v0.2.0"
     }
   ]
 }
