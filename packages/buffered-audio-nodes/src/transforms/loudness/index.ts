@@ -6,15 +6,13 @@ import { measureLoudness } from "./utils/measurement";
 
 export const schema = z.object({
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
-	target: z.number().min(-50).max(0).multipleOf(0.1).default(-14).describe("Target"),
-	truePeak: z.number().min(-10).max(0).multipleOf(0.1).default(-1).describe("True Peak"),
-	lra: z.number().min(0).max(50).multipleOf(0.1).optional().describe("LRA"),
+	target: z.number().min(-50).max(0).multipleOf(0.1).default(-14).describe("Target integrated loudness (LUFS)"),
+	truePeak: z.number().min(-10).max(0).multipleOf(0.1).default(-1).describe("True peak ceiling (dBTP) — enforced by limiter, not by clamping the loudness gain"),
 });
 
 export interface LoudnessProperties extends FfmpegProperties {
 	readonly target: number;
 	readonly truePeak: number;
-	readonly lra?: number;
 }
 
 export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
@@ -25,6 +23,7 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 		inputThresh: string;
 		targetOffset: string;
 	};
+	private sampleRateForApply?: number;
 
 	protected override _buildArgs(_context: StreamContext): Array<string> {
 		return this.buildArgsWithMeasurement();
@@ -35,35 +34,51 @@ export class LoudnessStream extends FfmpegStream<LoudnessProperties> {
 		const ch = buffer.channels;
 
 		this.measuredValues = await measureLoudness(buffer, sr, ch, this.properties);
+		this.sampleRateForApply = sr;
 
 		await super._process(buffer);
 
 		this.measuredValues = undefined;
+		this.sampleRateForApply = undefined;
 	}
 
 	private buildArgsWithMeasurement(): Array<string> {
-		const { target, truePeak, lra } = this.properties;
+		const { target, truePeak } = this.properties;
 
-		if (this.measuredValues) {
-			const { inputI, inputTp, inputLra, inputThresh, targetOffset } = this.measuredValues;
-			const parts = [
-				`I=${target}`,
-				`TP=${truePeak}`,
-				lra !== undefined && lra > 0 ? `LRA=${lra}` : "",
-				`measured_I=${inputI}`,
-				`measured_TP=${inputTp}`,
-				`measured_LRA=${inputLra}`,
-				`measured_thresh=${inputThresh}`,
-				`offset=${targetOffset}`,
-				"linear=true",
-			].filter(Boolean);
-
-			return ["-af", `loudnorm=${parts.join(":")}`];
+		if (!this.measuredValues || this.sampleRateForApply === undefined) {
+			// Defensive — _process always sets these before super._process triggers _buildArgs.
+			return ["-af", "anull"];
 		}
 
-		const parts = [`I=${target}`, `TP=${truePeak}`, lra !== undefined && lra > 0 ? `LRA=${lra}` : ""].filter(Boolean);
+		const { inputI } = this.measuredValues;
+		const gainDb = target - Number.parseFloat(inputI);
+		const limitLinear = 10 ** (truePeak / 20);
+		const sr = this.sampleRateForApply;
+		const upsampleRate = sr * 4;
 
-		return ["-af", `loudnorm=${parts.join(":")}`];
+		// Loudness normalization apply pipeline:
+		//   1. volume     — pure linear gain shift to land integrated loudness at target.
+		//                   No TP clamping in the gain stage; the loudness target is binding.
+		//   2. aresample  — upsample 4x via soxr so inter-sample peaks become sample peaks.
+		//   3. alimiter   — sample-peak limiter at the upsampled rate (= true-peak limiter at
+		//                   the original rate). level=disabled prevents the filter's
+		//                   auto-renormalization from undoing the limiting; latency=true
+		//                   compensates lookahead delay so output is time-aligned.
+		//   4. aresample  — downsample back; the limited (oversampled) peaks survive the
+		//                   filter math because they're below the linear ceiling.
+		//
+		// TODO: alimiter is a settling. Resurrect the deleted Oversampler + DynamicsStream
+		// (see commit a56ddf9^) and embed a native true-peak-aware limiter inside this
+		// node — proper lookahead, knee, stereo-link control. Tracked at:
+		//   D:\Documents\Planner\projects\code\engineering\buffered-audio-nodes\design-loudness-limiter.md
+		const filterChain = [
+			`volume=${gainDb}dB`,
+			`aresample=${upsampleRate}:resampler=soxr`,
+			`alimiter=limit=${limitLinear}:level=disabled:latency=true`,
+			`aresample=${sr}:resampler=soxr`,
+		].join(",");
+
+		return ["-af", filterChain];
 	}
 }
 
@@ -88,12 +103,11 @@ export class LoudnessNode extends FfmpegNode<LoudnessProperties> {
 	}
 }
 
-export function loudness(ffmpegPath: string, options?: { target?: number; truePeak?: number; lra?: number; id?: string }): LoudnessNode {
+export function loudness(ffmpegPath: string, options?: { target?: number; truePeak?: number; id?: string }): LoudnessNode {
 	return new LoudnessNode({
 		ffmpegPath,
 		target: options?.target ?? -14,
 		truePeak: options?.truePeak ?? -1,
-		lra: options?.lra,
 		id: options?.id,
 	});
 }

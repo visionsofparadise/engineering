@@ -17,7 +17,12 @@ export async function measureLoudness(
 }> {
 	const binaryPath = properties.ffmpegPath;
 
-	const parts = [`I=${properties.target}`, `TP=${properties.truePeak}`, properties.lra !== undefined && properties.lra > 0 ? `LRA=${properties.lra}` : "", "print_format=json"].filter(Boolean);
+	// Single-pass loudnorm in measure-only mode — produces input_i / input_tp / input_lra /
+	// input_thresh / target_offset in stderr JSON. The I / TP args here only configure what
+	// loudnorm would target if applying; in measure-only mode they don't affect the measured
+	// values, but we pass them for consistency / future-proofing. LRA target intentionally
+	// omitted — see design-loudness-limiter.md for why range compression doesn't belong here.
+	const parts = [`I=${properties.target}`, `TP=${properties.truePeak}`, "print_format=json"];
 
 	const args = ["-f", "f32le", "-ar", String(sampleRate), "-ac", String(channels), "-i", "pipe:0", "-af", `loudnorm=${parts.join(":")}`, "-f", "null", "-"];
 
