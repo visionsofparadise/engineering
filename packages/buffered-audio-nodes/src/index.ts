@@ -30,6 +30,7 @@ export { pan, PanNode, PanStream, type PanProperties } from "./transforms/pan";
 export { ffmpeg, FfmpegNode, FfmpegStream, type FfmpegProperties } from "./transforms/ffmpeg";
 
 // Transforms - loudness
+export { loudnessCurve, LoudnessCurveNode, LoudnessCurveStream, type LoudnessCurveProperties } from "./transforms/loudness-curve";
 export { loudnessNormalize, LoudnessNormalizeNode, LoudnessNormalizeStream, type LoudnessNormalizeProperties } from "./transforms/loudness-normalize";
 
 // Transforms - hosted

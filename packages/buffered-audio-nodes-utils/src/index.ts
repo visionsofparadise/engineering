@@ -1,11 +1,18 @@
 /* eslint-disable barrel-files/avoid-barrel-files */
 export { bandpass } from "./bandpass";
 export { biquadFilter, highPassCoefficients, lowPassCoefficients, preFilterCoefficients, rlbFilterCoefficients, zeroPhaseBiquadFilter } from "./biquad";
+export { dbToLinear, linearToDb } from "./db";
+export { decimate, integerDecimationRate } from "./decimator";
+export { smoothEnvelope } from "./envelope";
 export { detectFftBackend, getFftAddon, initFftBackend } from "./fft-backend";
 export type { FftBackend, FftBackendConfig } from "./fft-backend";
+export { amplitudeHistogram } from "./histogram";
+export type { AmplitudeHistogram } from "./histogram";
 export { deinterleaveBuffer, interleave } from "./interleave";
 export { IntegratedLufsAccumulator } from "./loudness";
 export { MixedRadixFft } from "./mixed-radix-fft";
+export { Oversampler } from "./oversample";
+export type { OversamplingFactor } from "./oversample";
 export { replaceChannel } from "./replace-channel";
 export { resampleDirect } from "./resample-direct";
 export { bitReverse, butterflyStages, createFftWorkspace, fft, hanningWindow, ifft, istft, stft } from "./stft";
