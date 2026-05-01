@@ -4,6 +4,7 @@ export { biquadFilter, highPassCoefficients, lowPassCoefficients, preFilterCoeff
 export { detectFftBackend, getFftAddon, initFftBackend } from "./fft-backend";
 export type { FftBackend, FftBackendConfig } from "./fft-backend";
 export { deinterleaveBuffer, interleave } from "./interleave";
+export { IntegratedLufsAccumulator } from "./loudness";
 export { MixedRadixFft } from "./mixed-radix-fft";
 export { replaceChannel } from "./replace-channel";
 export { resampleDirect } from "./resample-direct";

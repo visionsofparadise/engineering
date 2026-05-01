@@ -206,18 +206,15 @@ Isolate dialogue from background using MDX-Net vocal separation
 | `highPass` | number (20 to 500, step 10) | `80` | High Pass |
 | `lowPass` | number (1000 to 22050, step 100) | `20000` | Low Pass |
 
-### Loudness
+### Loudness Normalize
 
-Measure integrated, short-term, and momentary loudness
+Measure integrated loudness (BS.1770) and apply a single linear gain to hit a target LUFS — no limiting, no dynamics
 
-[Source](./src/transforms/loudness/index.ts)
+[Source](./src/transforms/loudness-normalize/index.ts)
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ffmpegPath` | string | `""` | FFmpeg — audio/video processing tool Download: [ffmpeg](https://ffmpeg.org/download.html) |
-| `target` | number (-50 to 0, step 0.1) | `-14` | Target |
-| `truePeak` | number (-10 to 0, step 0.1) | `-1` | True Peak |
-| `lra` | number (0 to 20, step 0.1) | `0` | LRA |
+| `target` | number (-50 to 0, step 0.1) | `-16` | Target integrated loudness (LUFS) |
 
 ### Loudness Stats
 

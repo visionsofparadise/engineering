@@ -28,7 +28,9 @@ export { pan, PanNode, PanStream, type PanProperties } from "./transforms/pan";
 
 // Transforms - ffmpeg
 export { ffmpeg, FfmpegNode, FfmpegStream, type FfmpegProperties } from "./transforms/ffmpeg";
-export { loudness, LoudnessNode, LoudnessStream, type LoudnessProperties } from "./transforms/loudness";
+
+// Transforms - loudness
+export { loudnessNormalize, LoudnessNormalizeNode, LoudnessNormalizeStream, type LoudnessNormalizeProperties } from "./transforms/loudness-normalize";
 
 // Transforms - hosted
 export { deBleed, DeBleedNode, DeBleedStream, type DeBleedProperties } from "./transforms/de-bleed";
