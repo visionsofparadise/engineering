@@ -1,12 +1,10 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- typed-array indexing in test scaffolding */
 /**
- * Integration tests for `deBleedAdaptive` (Phase 4 actions 4.1 + 4.2 of
+ * Integration tests for `deBleed` (Phase 4 actions 4.1 + 4.2 of
  * `plan-debleed-v2-mef.md`).
  *
  * 4.1 — End-to-end on a 60-s synthetic fixture (output finite, no DC offset,
- * no clipping); regression vs legacy `deBleed` on the existing test fixture
- * (RMS within 30 %, spectral centroid within an octave, no output frame more
- * than 6 dB louder than the loudest input frame).
+ * no clipping).
  *
  * 4.2 — 5-mic synthetic configuration (1 target + 4 interferers); MSAD
  * activity flags correct per channel via a direct unit-style probe of
@@ -23,8 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runTransform } from "../../utils/test-pipeline";
 import { audio } from "../../utils/test-binaries";
-import { deBleed } from "../de-bleed";
-import { deBleedAdaptive } from ".";
+import { deBleed } from ".";
 import { computeMsadDecision, createMsadChannelState } from "./utils/mef-msad";
 
 // ----- Helpers --------------------------------------------------------------
@@ -295,7 +292,7 @@ async function writeFixtures(mix: SyntheticMix, sampleRate: number): Promise<Wri
 
 // ----- Phase 4.1 ------------------------------------------------------------
 
-describe("deBleedAdaptive integration", () => {
+describe("deBleed integration", () => {
 	// 4.1 — End-to-end on a 60-s synthetic fixture. Default knobs.
 	// Sample rate 44.1 kHz mirrors `audio.testVoice`; default warmupSeconds = 30
 	// covers the first half of the clip. Bleed is a single reference at a
@@ -312,7 +309,7 @@ describe("deBleedAdaptive integration", () => {
 		const fixtures = await writeFixtures(mix, sampleRate);
 
 		try {
-			const transform = deBleedAdaptive(fixtures.referencePaths);
+			const transform = deBleed(fixtures.referencePaths);
 			const { output } = await runTransform(fixtures.targetPath, transform);
 
 			const channel = output[0]!;
@@ -337,269 +334,11 @@ describe("deBleedAdaptive integration", () => {
 		}
 	}, 1_800_000);
 
-	// 4.1 — Regression test against legacy `deBleed` on the existing test
-	// fixture (`audio.testVoice` — 30.5 s mono 44.1 kHz, used here with
-	// target = ref, mirroring the legacy node's only fixture in
-	// `de-bleed/unit.test.ts`). Run both nodes with default knobs; compare
-	// spectral centroid and frame-peak ratio. Quality cannot be compared
-	// deterministically (the algorithms differ); these checks catch only
-	// catastrophic mismatches.
-	//
-	// MEF's Wiener form drives output → 0 when target == ref (degenerate
-	// fixture); legacy Boll preserves more signal via its subtraction gain
-	// floor. Comparing RMS is not a meaningful regression check on this
-	// fixture. The catastrophic-gain check below is the safety gate. The
-	// non-degenerate fixture in the next test exercises the bleed-reduction
-	// behaviour on a target ≠ ref configuration, which is the realistic
-	// regression case.
-	it.sequential("regression vs legacy deBleed on testVoice — centroid within an octave, no catastrophic gain (RMS comparison skipped — degenerate target=ref fixture)", async () => {
-		const testVoice = audio.testVoice;
-		const sampleRate = 44100; // testVoice header confirmed mono 44.1 kHz f32 30.5 s
-
-		const legacyOut = await runTransform(testVoice, deBleed(testVoice));
-		const adaptiveOut = await runTransform(testVoice, deBleedAdaptive(testVoice));
-
-		const inputCh = legacyOut.input[0]!;
-		const legacyCh = legacyOut.output[0]!;
-		const adaptiveCh = adaptiveOut.output[0]!;
-
-		const legacyReport = inspectQuality(legacyCh);
-		const adaptiveReport = inspectQuality(adaptiveCh);
-
-		// Compute all metrics up-front so the diagnostic log shows every value
-		// even if one assertion fails — makes regression triage cheaper.
-		const legacyRms = rms(legacyCh);
-		const adaptiveRms = rms(adaptiveCh);
-		const inputRms = rms(inputCh);
-		const rmsRelDelta = Math.abs(adaptiveRms - legacyRms) / Math.max(legacyRms, 1e-9);
-
-		const legacyCentroid = spectralCentroidHz(legacyCh, sampleRate);
-		const adaptiveCentroid = spectralCentroidHz(adaptiveCh, sampleRate);
-		const centroidRatio = adaptiveCentroid / Math.max(legacyCentroid, 1e-9);
-
-		const frameSize = 4096;
-		const maxInputFramePeak = Math.max(...frameMaxAbs(inputCh, frameSize));
-		const adaptiveFramePeaks = frameMaxAbs(adaptiveCh, frameSize);
-		const maxAdaptiveFramePeak = Math.max(...adaptiveFramePeaks);
-		const dBOver = 20 * Math.log10(Math.max(maxAdaptiveFramePeak, 1e-12) / Math.max(maxInputFramePeak, 1e-12));
-
-		console.warn(
-			[
-				`[Phase 4.1 regression] inputRms=${inputRms.toExponential(3)}`,
-				`legacyRms=${legacyRms.toExponential(3)}`,
-				`adaptiveRms=${adaptiveRms.toExponential(3)}`,
-				`rmsRelDelta=${rmsRelDelta.toFixed(3)} (NOT asserted on target=ref)`,
-				`legacyCentroidHz=${legacyCentroid.toFixed(1)}`,
-				`adaptiveCentroidHz=${adaptiveCentroid.toFixed(1)}`,
-				`centroidRatio=${centroidRatio.toFixed(3)}`,
-				`maxInputFramePeak=${maxInputFramePeak.toFixed(4)}`,
-				`maxAdaptiveFramePeak=${maxAdaptiveFramePeak.toFixed(4)}`,
-				`dBOver=${dBOver.toFixed(2)}`,
-			].join(" "),
-		);
-
-		// Sanity preconditions — if either node produces non-finite output the
-		// regression check itself is meaningless.
-		expect(adaptiveReport.finite).toBe(true);
-		expect(adaptiveReport.nonNan).toBe(true);
-		expect(adaptiveReport.noDenormals).toBe(true);
-		expect(adaptiveReport.clippedSamples).toBe(0);
-		expect(legacyReport.finite).toBe(true);
-		expect(legacyReport.nonNan).toBe(true);
-		expect(legacyCentroid).toBeGreaterThan(0);
-		expect(adaptiveCentroid).toBeGreaterThan(0);
-
-		// Catastrophic-gain check (the most important — catches dangerous
-		// regressions like uncontrolled feedback). No output frame more than
-		// 6 dB louder than the loudest input frame.
-		expect(dBOver).toBeLessThan(6);
-
-		// Spectral centroid within an octave (factor of 2 either direction).
-		expect(centroidRatio).toBeGreaterThan(0.5);
-		expect(centroidRatio).toBeLessThan(2.0);
-
-		// MEF's Wiener form drives output → 0 when target == ref (degenerate
-		// fixture); legacy Boll preserves more signal via its subtraction
-		// gain floor. Comparing RMS is not a meaningful regression check on
-		// this fixture. Catastrophic-gain check above is the safety gate.
-		// The next test (non-degenerate target ≠ ref synthetic mix) exercises
-		// the realistic regression path.
-	}, 1_800_000);
-
-	// 4.1 — Non-degenerate regression test. Synthesises a 60-s target ≠ ref
-	// mix where the target carries one fundamental + harmonics + amplitude
-	// envelope (rough speech surrogate) and the reference carries a
-	// different fundamental + harmonics + envelope, with a known
-	// scaled+delayed bleed path into the target mic. Both nodes must:
-	//   - produce finite, non-NaN output
-	//   - retain a detectable target signal (RMS > 10 % of input RMS) —
-	//     catches the "drives output to zero" failure mode on a realistic
-	//     fixture
-	//   - stay below catastrophic gain (≤ input + 6 dB)
-	//   - independently reduce bleed-band energy (each algorithm vs its
-	//     own input — equivalence between the two NOT asserted, since the
-	//     gain rules differ structurally).
-	it.sequential("regression vs legacy deBleed on non-degenerate target≠ref synthetic mix — both retain target signal and reduce bleed-band energy", async () => {
-		const sampleRate = 44100;
-		const durationSeconds = 60;
-		const numSamples = sampleRate * durationSeconds;
-		const targetFundamentalHz = 220;
-		const referenceFundamentalHz = 300;
-		const bleedScale = 0.3;
-		const bleedDelaySamples = 12;
-
-		// Target signal: 220 Hz + 3 harmonics + slow amplitude envelope (1 Hz
-		// AM mimicking speech-rate amplitude variation). Harmonic amplitudes
-		// taper for a vaguely speech-like spectrum.
-		const targetSignal = new Float32Array(numSamples);
-		// Reference signal: 300 Hz + 3 harmonics + different (0.7 Hz) envelope.
-		const referenceSignal = new Float32Array(numSamples);
-
-		for (let n = 0; n < numSamples; n++) {
-			const t = n / sampleRate;
-			const targetEnv = 0.5 * (1 + Math.sin(2 * Math.PI * 1.0 * t));
-			const referenceEnv = 0.5 * (1 + Math.sin(2 * Math.PI * 0.7 * t + 0.5));
-
-			let target = 0;
-			target += 0.3 * Math.sin((2 * Math.PI * targetFundamentalHz * n) / sampleRate);
-			target += 0.15 * Math.sin((2 * Math.PI * 2 * targetFundamentalHz * n) / sampleRate);
-			target += 0.075 * Math.sin((2 * Math.PI * 3 * targetFundamentalHz * n) / sampleRate);
-			targetSignal[n] = targetEnv * target;
-
-			let reference = 0;
-			reference += 0.4 * Math.sin((2 * Math.PI * referenceFundamentalHz * n) / sampleRate);
-			reference += 0.2 * Math.sin((2 * Math.PI * 2 * referenceFundamentalHz * n) / sampleRate);
-			reference += 0.1 * Math.sin((2 * Math.PI * 3 * referenceFundamentalHz * n) / sampleRate);
-			referenceSignal[n] = referenceEnv * reference;
-		}
-
-		// Build the target mic = target_signal + bleedScale · delay(reference, bleedDelaySamples).
-		const targetMic = new Float32Array(numSamples);
-
-		for (let n = 0; n < numSamples; n++) {
-			let value = targetSignal[n] ?? 0;
-
-			if (n >= bleedDelaySamples) {
-				value += bleedScale * (referenceSignal[n - bleedDelaySamples] ?? 0);
-			}
-
-			targetMic[n] = value;
-		}
-
-		const tag = randomBytes(8).toString("hex");
-		const targetPath = join(tmpdir(), `dba-nondeg-target-${tag}.wav`);
-		const referencePath = join(tmpdir(), `dba-nondeg-ref-${tag}.wav`);
-
-		await writeFile(targetPath, encodeWavFloat32(targetMic, sampleRate));
-		await writeFile(referencePath, encodeWavFloat32(referenceSignal, sampleRate));
-
-		try {
-			const legacyOut = await runTransform(targetPath, deBleed(referencePath));
-			const adaptiveOut = await runTransform(targetPath, deBleedAdaptive(referencePath));
-
-			const inputCh = legacyOut.input[0]!;
-			const legacyCh = legacyOut.output[0]!;
-			const adaptiveCh = adaptiveOut.output[0]!;
-
-			const legacyReport = inspectQuality(legacyCh);
-			const adaptiveReport = inspectQuality(adaptiveCh);
-
-			const inputRms = rms(inputCh);
-			const legacyRms = rms(legacyCh);
-			const adaptiveRms = rms(adaptiveCh);
-
-			// Bleed-band energy probe: bandpass-equivalent RMS at the
-			// reference fundamental. Use the centroid helper's underlying
-			// DFT machinery via a direct narrowband Goertzel-style
-			// computation on a centred 8192-sample window.
-			const probeWindow = 8192;
-			const probeStart = Math.floor((numSamples - probeWindow) / 2);
-			const goertzelMagnitude = (signal: Float32Array, frequencyHz: number): number => {
-				const omega = (2 * Math.PI * frequencyHz) / sampleRate;
-				const coeff = 2 * Math.cos(omega);
-				let s0 = 0;
-				let s1 = 0;
-				let s2 = 0;
-
-				for (let n = 0; n < probeWindow; n++) {
-					const w = 0.5 * (1 - Math.cos((2 * Math.PI * n) / (probeWindow - 1)));
-					const sample = (signal[probeStart + n] ?? 0) * w;
-
-					s0 = sample + coeff * s1 - s2;
-					s2 = s1;
-					s1 = s0;
-				}
-
-				const real = s1 - s2 * Math.cos(omega);
-				const imag = s2 * Math.sin(omega);
-
-				return Math.sqrt(real * real + imag * imag);
-			};
-
-			const inputBleedBand = goertzelMagnitude(inputCh, referenceFundamentalHz);
-			const legacyBleedBand = goertzelMagnitude(legacyCh, referenceFundamentalHz);
-			const adaptiveBleedBand = goertzelMagnitude(adaptiveCh, referenceFundamentalHz);
-
-			const frameSize = 4096;
-			const maxInputFramePeak = Math.max(...frameMaxAbs(inputCh, frameSize));
-			const maxLegacyFramePeak = Math.max(...frameMaxAbs(legacyCh, frameSize));
-			const maxAdaptiveFramePeak = Math.max(...frameMaxAbs(adaptiveCh, frameSize));
-			const legacyDBOver = 20 * Math.log10(Math.max(maxLegacyFramePeak, 1e-12) / Math.max(maxInputFramePeak, 1e-12));
-			const adaptiveDBOver = 20 * Math.log10(Math.max(maxAdaptiveFramePeak, 1e-12) / Math.max(maxInputFramePeak, 1e-12));
-
-			console.warn(
-				[
-					`[Phase 4.1 non-degenerate regression] inputRms=${inputRms.toExponential(3)}`,
-					`legacyRms=${legacyRms.toExponential(3)}`,
-					`adaptiveRms=${adaptiveRms.toExponential(3)}`,
-					`legacyRms/inputRms=${(legacyRms / Math.max(inputRms, 1e-12)).toFixed(3)}`,
-					`adaptiveRms/inputRms=${(adaptiveRms / Math.max(inputRms, 1e-12)).toFixed(3)}`,
-					`bleedBand_input=${inputBleedBand.toExponential(3)}`,
-					`bleedBand_legacy=${legacyBleedBand.toExponential(3)}`,
-					`bleedBand_adaptive=${adaptiveBleedBand.toExponential(3)}`,
-					`legacyBleedReduction=${(1 - legacyBleedBand / Math.max(inputBleedBand, 1e-12)).toFixed(3)}`,
-					`adaptiveBleedReduction=${(1 - adaptiveBleedBand / Math.max(inputBleedBand, 1e-12)).toFixed(3)}`,
-					`legacyDBOver=${legacyDBOver.toFixed(2)}`,
-					`adaptiveDBOver=${adaptiveDBOver.toFixed(2)}`,
-				].join(" "),
-			);
-
-			// Sanity: both outputs are finite + non-NaN.
-			expect(legacyReport.finite).toBe(true);
-			expect(legacyReport.nonNan).toBe(true);
-			expect(adaptiveReport.finite).toBe(true);
-			expect(adaptiveReport.nonNan).toBe(true);
-
-			// Both outputs retain a detectable target signal — RMS > 10 % of
-			// input RMS. This is the explicit "drives to zero" defect-detector
-			// for the new node on a realistic (non-degenerate) fixture.
-			expect(legacyRms / Math.max(inputRms, 1e-12)).toBeGreaterThan(0.10);
-			expect(adaptiveRms / Math.max(inputRms, 1e-12)).toBeGreaterThan(0.10);
-
-			// Frame-peak gain ratio (legacyDBOver, adaptiveDBOver) logged
-			// above for diagnostic purposes only — not asserted. On this
-			// sinusoidal cold-start fixture the metric is dominated by
-			// Kalman convergence transients and is not a useful catastrophic
-			// regression signal. Absolute clipping is asserted on the 60-s
-			// integration fixture test. The substantive regression checks
-			// for this fixture are RMS retention and bleed-band reduction
-			// (asserted above and below).
-
-			// Each node independently reduces bleed-band energy at the
-			// reference fundamental. Equivalence between the two is NOT
-			// asserted — the algorithms differ structurally.
-			expect(legacyBleedBand).toBeLessThan(inputBleedBand);
-			expect(adaptiveBleedBand).toBeLessThan(inputBleedBand);
-		} finally {
-			await unlink(targetPath).catch(() => undefined);
-			await unlink(referencePath).catch(() => undefined);
-		}
-	}, 1_800_000);
 });
 
 // ----- Phase 4.2 ------------------------------------------------------------
 
-describe("deBleedAdaptive multi-reference scaling (Phase 4.2)", () => {
+describe("deBleed multi-reference scaling (Phase 4.2)", () => {
 	// 4.2 — MSAD activity flags correct per channel on a 5-mic synthetic
 	// configuration (1 target + 4 interferers). Probes `computeMsadDecision`
 	// directly — the per-stream MSAD state inside `_process` is internal and
@@ -718,7 +457,7 @@ describe("deBleedAdaptive multi-reference scaling (Phase 4.2)", () => {
 			for (const refCount of [2, 3, 4]) {
 				const refs = fixtures.referencePaths.slice(0, refCount);
 				const start = performance.now();
-				const transform = deBleedAdaptive(refs);
+				const transform = deBleed(refs);
 				const { output } = await runTransform(fixtures.targetPath, transform);
 				const elapsed = performance.now() - start;
 
