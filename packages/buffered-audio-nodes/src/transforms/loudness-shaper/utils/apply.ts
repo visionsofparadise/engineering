@@ -1,7 +1,7 @@
 /**
- * Base-rate LUT application for the loudnessCurve node's iteration loop.
+ * Base-rate LUT application for the loudnessShaper node's iteration loop.
  *
- * Per design-loudness-curve §"Pipeline shape" / §"Iterate at base rate;
+ * Per design-loudness-shaper §"Pipeline shape" / §"Iterate at base rate;
  * oversample only for final apply" — during iteration we apply the LUT
  * to source samples without any oversampling or anti-aliasing filter.
  * The aliasing-induced LUFS bias is acceptable because the secant method

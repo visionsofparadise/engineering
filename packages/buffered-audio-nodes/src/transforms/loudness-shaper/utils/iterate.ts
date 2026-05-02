@@ -1,8 +1,8 @@
 /**
  * Secant-method iteration on `boost` (the design-doc's `B`) to hit a
- * target integrated LUFS for the loudnessCurve node's learn pass.
+ * target integrated LUFS for the loudnessShaper node's learn pass.
  *
- * Per design-loudness-curve §"Iteration to hit target loudness".
+ * Per design-loudness-shaper §"Iteration to hit target loudness".
  *
  * Each attempt:
  *   1. Build LUT from current `boost`, fixed `posParams` / `negParams`.
@@ -89,15 +89,6 @@ export interface IterateForTargetArgs {
 	negParams: CurveParams;
 	targetLUFS: number;
 	sourceLUFS: number;
-	/**
-	 * Linear-amplitude gate threshold. Samples with `|x| < floorLinear`
-	 * pass through the LUT step unchanged (matching the final-apply
-	 * behaviour) so the per-attempt LUFS measurement is consistent with
-	 * what the final apply will produce. The LUFS measurement itself is
-	 * NOT gated by this — BS.1770 measures the whole signal. Default
-	 * `0` (no gating) for callers that don't need a floor.
-	 */
-	floorLinear?: number;
 	pointCountTarget?: number;
 	maxAttempts?: number;
 	toleranceLUFSdB?: number;
@@ -123,7 +114,6 @@ export async function iterateForTarget(args: IterateForTargetArgs): Promise<Iter
 		negParams,
 		targetLUFS,
 		sourceLUFS,
-		floorLinear = 0,
 		pointCountTarget = DEFAULT_POINT_COUNT_TARGET,
 		maxAttempts = DEFAULT_MAX_ATTEMPTS,
 		toleranceLUFSdB = DEFAULT_TOLERANCE_LUFS_DB,
@@ -142,7 +132,7 @@ export async function iterateForTarget(args: IterateForTargetArgs): Promise<Iter
 
 	for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex++) {
 		const lut = buildLUT(posParams, negParams, currentBoost, pointCountTarget);
-		const outputLUFS = await measureLufsThroughLut(buffer, sampleRate, channelCount, lut, chunkFrames, floorLinear);
+		const outputLUFS = await measureLufsThroughLut(buffer, sampleRate, channelCount, lut, chunkFrames);
 
 		attempts.push({ boost: currentBoost, outputLUFS });
 
@@ -193,7 +183,6 @@ async function measureLufsThroughLut(
 	channelCount: number,
 	lut: LUT,
 	chunkFrames: number,
-	floorLinear: number,
 ): Promise<number> {
 	if (channelCount === 0 || buffer.frames === 0) return -Infinity;
 
@@ -230,16 +219,13 @@ async function measureLufsThroughLut(
 			if (sourceChannel === undefined) {
 				outputChannel.fill(0);
 			} else {
-				// Gate at the floor — below-floor samples pass through, the
-				// rest go through the LUT. Same per-sample-magnitude rule as
-				// the final apply (which applies it inside the 4× oversample
-				// callback); here it's at base rate. Keeps the iteration's
-				// LUFS measurement consistent with what the final apply will
-				// produce (modulo the documented ~0.3 dB base-rate vs 4× bias).
+				// LUT geometry handles below-floor pass-through (shape = 0 →
+				// gain = 1) and (when preservePeaks = true) above-peak pass-
+				// through by construction. No per-sample gate needed here.
 				for (let frameIndex = 0; frameIndex < inputFrames; frameIndex++) {
 					const sample = sourceChannel[frameIndex] ?? 0;
 
-					outputChannel[frameIndex] = (sample < 0 ? -sample : sample) < floorLinear ? sample : lookupLUT(lut, sample);
+					outputChannel[frameIndex] = lookupLUT(lut, sample);
 				}
 			}
 

@@ -4,16 +4,16 @@ import { type CurveParams } from "./curve";
 import { buildLUT, lookupLUT } from "./lut";
 
 const symmetricParams = (overrides: Partial<CurveParams> = {}): CurveParams => ({
-	median: 0.1,
-	max: 0.8,
-	density: 1,
-	warmth: 0,
+	floor: 0.01,
+	bodyLow: 0.05,
+	bodyHigh: 0.4,
+	peak: 0.8,
 	...overrides,
 });
 
 describe("applyLUTBaseRate", () => {
 	it("identity LUT (boost = 0): output equals input within float epsilon", () => {
-		const params = symmetricParams({ density: 2 });
+		const params = symmetricParams();
 		const lut = buildLUT(params, params, 0, 256);
 		const channel = new Float32Array([0, 0.01, 0.05, -0.07, 0.1, -0.2, 0.5, -0.78, 0.9, -1.1]);
 
@@ -30,7 +30,7 @@ describe("applyLUTBaseRate", () => {
 	});
 
 	it("each output sample equals Float32(lookupLUT(lut, input sample))", () => {
-		const params = symmetricParams({ density: 2 });
+		const params = symmetricParams();
 		const lut = buildLUT(params, params, 0.7, 256);
 		const channel = new Float32Array([0.02, 0.08, -0.12, 0.3, -0.6]);
 
@@ -50,7 +50,7 @@ describe("applyLUTBaseRate", () => {
 	});
 
 	it("multi-channel: each channel processed independently (no leakage)", () => {
-		const params = symmetricParams({ density: 2 });
+		const params = symmetricParams();
 		const lut = buildLUT(params, params, 0.5, 256);
 		const left = new Float32Array([0.05, 0.1, 0.2]);
 		const right = new Float32Array([-0.05, -0.1, -0.2]);

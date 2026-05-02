@@ -70,13 +70,13 @@ function measureSourceLufs(source: ReadonlyArray<Float32Array>): number {
 }
 
 /**
- * Build symmetric `CurveParams` from a histogram-shaped median/max pair.
- * For these tests we eyeball median/max from the synthetic generator's
- * statistics rather than running the histogram primitive — Phase 5 will
- * wire that path; Phase 3 just needs realistic numbers.
+ * Build symmetric trapezoidal `CurveParams` from linear amplitudes. The
+ * iteration tests don't exercise the geometry directly — they just need
+ * a well-formed curve with anchors that bracket the synthetic source's
+ * amplitude range so the LUFS-vs-boost mapping is monotonic.
  */
-function makeParams(median: number, max: number, density = 1): CurveParams {
-	return { median, max, density, warmth: 0 };
+function makeParams(floor: number, bodyLow: number, bodyHigh: number, peak: number | null): CurveParams {
+	return { floor, bodyLow, bodyHigh, peak };
 }
 
 describe("iterateForTarget", () => {
@@ -86,8 +86,8 @@ describe("iterateForTarget", () => {
 
 		expect(Number.isFinite(sourceLUFS)).toBe(true);
 
-		// Estimate median/max for the synthetic signal (mostly body in [0, ~0.2]).
-		const params = makeParams(0.05, 0.2, 1);
+		// Body brackets ~[0.02, 0.18]; anchor peak above the synthetic max.
+		const params = makeParams(0.005, 0.02, 0.18, 0.3);
 		const targetLUFS = sourceLUFS + 3;
 
 		const buffer = await makeBufferFromChannels(source);
@@ -113,7 +113,7 @@ describe("iterateForTarget", () => {
 	it("identity target (target = source LUFS): converges with bestBoost ≈ 0 in 1–2 attempts", async () => {
 		const source = makeSyntheticSource(0xC0FFEE, 0.2);
 		const sourceLUFS = measureSourceLufs(source);
-		const params = makeParams(0.05, 0.2, 1);
+		const params = makeParams(0.005, 0.02, 0.18, 0.3);
 
 		const buffer = await makeBufferFromChannels(source);
 		const result = await iterateForTarget({
@@ -133,7 +133,7 @@ describe("iterateForTarget", () => {
 	it("hard-target (+20 dB above source): does not crash, returns best attempt with converged = false if unreachable", async () => {
 		const source = makeSyntheticSource(0xBADBEEF, 0.05);
 		const sourceLUFS = measureSourceLufs(source);
-		const params = makeParams(0.02, 0.06, 1);
+		const params = makeParams(0.001, 0.005, 0.05, 0.1);
 
 		const buffer = await makeBufferFromChannels(source);
 		const result = await iterateForTarget({
@@ -164,7 +164,7 @@ describe("iterateForTarget", () => {
 	it("attempts step toward the target (no wild oscillation on a tractable target)", async () => {
 		const source = makeSyntheticSource(0xFACE_F00D, 0.15);
 		const sourceLUFS = measureSourceLufs(source);
-		const params = makeParams(0.04, 0.16, 1);
+		const params = makeParams(0.005, 0.02, 0.14, 0.25);
 		const targetLUFS = sourceLUFS + 4;
 
 		const buffer = await makeBufferFromChannels(source);
@@ -190,82 +190,15 @@ describe("iterateForTarget", () => {
 		expect(Math.abs(bestAttempt.outputLUFS - targetLUFS)).toBeLessThanOrEqual(Math.abs((first?.outputLUFS ?? Infinity) - targetLUFS));
 	});
 
-	it("converges with floor enabled on a voice-with-silence source", async () => {
-		// Build a source where half the frames are body (~0.2 amplitude
-		// sine + body noise) and half are sub-floor silence (1e-6). Then
-		// run iteration twice — with and without `floorLinear` set —
-		// against the same source, same target, same params. Both should
-		// converge (or at least produce well-formed best-attempt
-		// results). The convergence regime doesn't change fundamentally
-		// when the floor turns on; it just changes what the LUT
-		// considers "in scope" for processing.
-		const sineRate = (2 * Math.PI * 220) / SAMPLE_RATE;
-		const channel = new Float32Array(FRAME_COUNT);
-		const rand = makeLcg(0xF100_DEED);
-
-		for (let frameIndex = 0; frameIndex < FRAME_COUNT; frameIndex++) {
-			if (frameIndex % 2 === 0) {
-				channel[frameIndex] = 0.2 * (0.6 * Math.sin(sineRate * frameIndex) + 0.4 * rand());
-			} else {
-				channel[frameIndex] = 1e-6;
-			}
-		}
-
-		const sourceLUFS = measureSourceLufs([channel]);
-
-		expect(Number.isFinite(sourceLUFS)).toBe(true);
-
-		const params = makeParams(0.05, 0.2, 1);
-		const targetLUFS = sourceLUFS + 3;
-		const FLOOR_LINEAR_NEG_60_DB = Math.pow(10, -60 / 20); // ≈ 1e-3.
-
-		const bufferNoFloor = await makeBufferFromChannels([channel]);
-		const noFloorResult = await iterateForTarget({
-			buffer: bufferNoFloor,
-			sampleRate: SAMPLE_RATE,
-			posParams: params,
-			negParams: params,
-			targetLUFS,
-			sourceLUFS,
-		});
-
-		const bufferWithFloor = await makeBufferFromChannels([channel]);
-		const withFloorResult = await iterateForTarget({
-			buffer: bufferWithFloor,
-			sampleRate: SAMPLE_RATE,
-			posParams: params,
-			negParams: params,
-			targetLUFS,
-			sourceLUFS,
-			floorLinear: FLOOR_LINEAR_NEG_60_DB,
-		});
-
-		// Smoke test: both runs produce well-formed results in [0, 100],
-		// every attempt finite, and at least one attempt landed within
-		// a generous tolerance of target. The exact bestBoost may differ
-		// between runs (the curve sees a different mix of sample
-		// magnitudes when the floor turns on) — that's the point.
-		for (const result of [noFloorResult, withFloorResult]) {
-			expect(Number.isFinite(result.bestBoost)).toBe(true);
-			expect(result.bestBoost).toBeGreaterThanOrEqual(0);
-			expect(result.bestBoost).toBeLessThanOrEqual(100);
-			expect(result.attempts.length).toBeGreaterThan(0);
-			expect(result.attempts.length).toBeLessThanOrEqual(5);
-
-			for (const attempt of result.attempts) {
-				expect(Number.isFinite(attempt.boost)).toBe(true);
-				expect(attempt.boost).toBeGreaterThanOrEqual(0);
-				expect(attempt.boost).toBeLessThanOrEqual(100);
-			}
-		}
-	});
-
-	it("non-monotonic regime (very low density, aggressive boost): does not crash", async () => {
-		const source = makeSyntheticSource(0xBEEF_CAFE, 0.2);
+	it("preservePeaks = false (peak === null): converges and produces well-formed results", async () => {
+		// The expander mode lets the body lift continue above bodyHigh
+		// without an upper roll-off. Convergence properties are similar to
+		// preservePeaks=true at moderate boosts; the LUT just covers a
+		// flat region above bodyHigh instead of ramping down to zero.
+		const source = makeSyntheticSource(0x1234_5678, 0.2);
 		const sourceLUFS = measureSourceLufs(source);
-		// density = 0.3 makes the curve very wide; large boosts push samples
-		// near max above max → non-monotonic LUFS-vs-boost is plausible.
-		const params = makeParams(0.05, 0.2, 0.3);
+		const params = makeParams(0.005, 0.02, 0.18, null);
+		const targetLUFS = sourceLUFS + 3;
 
 		const buffer = await makeBufferFromChannels(source);
 		const result = await iterateForTarget({
@@ -273,14 +206,13 @@ describe("iterateForTarget", () => {
 			sampleRate: SAMPLE_RATE,
 			posParams: params,
 			negParams: params,
-			targetLUFS: sourceLUFS + 8,
+			targetLUFS,
 			sourceLUFS,
 		});
 
-		// Whatever happens, the result must be well-formed.
 		expect(Number.isFinite(result.bestBoost)).toBe(true);
-		expect(result.bestBoost).toBeGreaterThanOrEqual(0);
 		expect(result.attempts.length).toBeGreaterThan(0);
+		expect(result.attempts.length).toBeLessThanOrEqual(5);
 
 		for (const attempt of result.attempts) {
 			expect(Number.isFinite(attempt.boost)).toBe(true);

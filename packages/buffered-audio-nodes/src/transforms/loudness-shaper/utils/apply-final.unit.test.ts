@@ -53,10 +53,10 @@ function makeStereoSyntheticSource(seedLeft: number, seedRight: number, amplitud
 }
 
 const symmetricParams = (overrides: Partial<CurveParams> = {}): CurveParams => ({
-	median: 0.1,
-	max: 0.8,
-	density: 1,
-	warmth: 0,
+	floor: 0.01,
+	bodyLow: 0.05,
+	bodyHigh: 0.4,
+	peak: 0.8,
 	...overrides,
 });
 
@@ -128,7 +128,7 @@ describe("applyFinal", () => {
 		// the Oversampler with `fn = identity`. The Oversampler's biquad
 		// rolloff is captured equally in both paths and cancels out in the
 		// comparison.
-		const params = symmetricParams({ density: 2 });
+		const params = symmetricParams();
 		const lut = buildLUT(params, params, 0, 512);
 
 		const frames = 4096;
@@ -239,12 +239,12 @@ describe("applyFinal", () => {
 	});
 
 	it("aliasing suppression: 4× pipeline has less HF energy than base-rate apply on a non-trivial LUT", () => {
-		// Build a non-trivial LUT (density = 1, boost = 0.5) sized to the
-		// noise distribution. The non-linearity generates harmonics; at
-		// base rate those harmonics fold (alias) back into the audible
-		// band. The 4× pipeline absorbs them above the original Nyquist
+		// Build a non-trivial LUT (boost = 0.5) sized to the noise
+		// distribution. The non-linearity generates harmonics; at base
+		// rate those harmonics fold (alias) back into the audible band.
+		// The 4× pipeline absorbs them above the original Nyquist
 		// before decimation's anti-alias filter rejects them.
-		const params: CurveParams = { median: 0.1, max: 0.5, density: 1, warmth: 0 };
+		const params: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5 };
 		const lut = buildLUT(params, params, 0.5, 512);
 
 		// FFT size is power-of-2 friendly for the package's mixed-radix
@@ -295,7 +295,7 @@ describe("applyFinal", () => {
 
 		expect(Number.isFinite(sourceLUFS)).toBe(true);
 
-		const params: CurveParams = { median: 0.05, max: 0.2, density: 1, warmth: 0 };
+		const params: CurveParams = { floor: 0.005, bodyLow: 0.02, bodyHigh: 0.18, peak: 0.3 };
 		const targetLUFS = sourceLUFS + 3;
 
 		// Wrap into a MemoryChunkBuffer for the streaming `iterateForTarget`.
