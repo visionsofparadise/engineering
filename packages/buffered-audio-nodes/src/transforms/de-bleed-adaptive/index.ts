@@ -545,11 +545,35 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 				if (maxWrite <= 0) continue;
 
 				const samplesToWrite = Math.min(centerSamples.length, maxWrite);
-				const writeSamples = centerSamples.subarray(0, samplesToWrite);
 
-				const existingChunk = await buffer.read(writeOffset, samplesToWrite);
+				// Edge-guard: iSTFT cannot mathematically reconstruct samples within
+				// `(fftSize - hopSize)` of the file boundaries — only 1..3 frames
+				// overlap there (vs `fftSize / hopSize = 4` frames in steady state),
+				// so the OLA windowSum is partial. With aggressive masking (V2's MWF
+				// + post-filter changes the spectrum more than V1's mild Boll
+				// subtraction), the masked iFFT output near a frame boundary can be
+				// large; dividing it by a small windowSum produces head/tail spikes
+				// (sample 14 = ~0.5 dB on Pierce, sample N-14 = +12.8 dB on Richard
+				// at default knobs). The samples are genuinely unrecoverable from
+				// the available STFT evidence — preserving the raw target input in
+				// these edge zones is the most defensible behaviour. See plan-
+				// debleed-v2-rx-match.md Phase 1 + design-de-bleed.md edge-guard
+				// note for the full reasoning.
+				const edgeGuard = fftSize - hopSize;
+				const writeRangeStart = writeOffset;
+				const writeRangeEnd = writeOffset + samplesToWrite;
+				const guardedStart = Math.max(writeRangeStart, edgeGuard);
+				const guardedEnd = Math.min(writeRangeEnd, totalFrames - edgeGuard);
 
-				await buffer.write(writeOffset, replaceChannel(existingChunk, ch, writeSamples, channels));
+				if (guardedEnd <= guardedStart) continue;
+
+				const sliceFromOffset = guardedStart - writeRangeStart;
+				const sliceLength = guardedEnd - guardedStart;
+				const writeSamples = centerSamples.subarray(sliceFromOffset, sliceFromOffset + sliceLength);
+
+				const existingChunk = await buffer.read(guardedStart, sliceLength);
+
+				await buffer.write(guardedStart, replaceChannel(existingChunk, ch, writeSamples, channels));
 			}
 		}
 	}

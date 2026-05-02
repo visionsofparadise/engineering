@@ -405,11 +405,31 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 				if (maxWrite <= 0) continue;
 
 				const samplesToWrite = Math.min(centerSamples.length, maxWrite);
-				const writeSamples = centerSamples.subarray(0, samplesToWrite);
 
-				const existingChunk = await buffer.read(writeOffset, samplesToWrite);
+				// Edge-guard: iSTFT cannot mathematically reconstruct samples within
+				// `(fftSize - hopSize)` of the file boundaries — only 1..3 frames
+				// overlap there vs the steady-state `fftSize / hopSize` frames, so
+				// the OLA windowSum is partial. The samples are genuinely
+				// unrecoverable from the available STFT evidence — preserving the
+				// raw target input in these edge zones is the most defensible
+				// behaviour. V1 is much less prone to amplification here than V2
+				// (mild Boll subtraction vs aggressive MWF), but the same correct
+				// behaviour applies. See plan-debleed-v2-rx-match.md Phase 1.
+				const edgeGuard = fftSize - hopSize;
+				const writeRangeStart = writeOffset;
+				const writeRangeEnd = writeOffset + samplesToWrite;
+				const guardedStart = Math.max(writeRangeStart, edgeGuard);
+				const guardedEnd = Math.min(writeRangeEnd, totalFrames - edgeGuard);
 
-				await buffer.write(writeOffset, replaceChannel(existingChunk, ch, writeSamples, channels));
+				if (guardedEnd <= guardedStart) continue;
+
+				const sliceFromOffset = guardedStart - writeRangeStart;
+				const sliceLength = guardedEnd - guardedStart;
+				const writeSamples = centerSamples.subarray(sliceFromOffset, sliceFromOffset + sliceLength);
+
+				const existingChunk = await buffer.read(guardedStart, sliceLength);
+
+				await buffer.write(guardedStart, replaceChannel(existingChunk, ch, writeSamples, channels));
 			}
 		}
 	}
