@@ -153,6 +153,23 @@ export interface MwfParams {
  */
 const LAMBDA_SCALE = Number(process.env.DEBLEED_LAMBDA_SCALE) || 5.0;
 
+// Frequency-dependent oversubtraction λ — power-curve ramp:
+//   λ_eff(bin) = λ × (1 + HF_BOOST × (bin / (numBins − 1))^HF_EXPONENT).
+// Production defaults HF_BOOST=200, HF_EXPONENT=2 baked 2026-05-02 after
+// the Iteration 1 listening sweep on Pierce/Richard — closes the structural
+// HF under-reduction gap to RX from mean |gap| 5.31 dB → 3.09 dB. The
+// exponent=2 power curve concentrates aggression in the top half of the
+// spectrum, leaving LF bands within 0.03 dB of baseline. See
+// design-de-bleed.md "2026-05-02: HF-removal power-curve λ ramp" for the
+// sweep data.
+//
+// Env overrides `DEBLEED_HF_BOOST` / `DEBLEED_HF_EXPONENT` remain available;
+// using `??` so explicit "0" disables the ramp instead of falling through.
+// Stays inside the Wiener-mask gain rule (no PSD envelope tricks) —
+// adjacent to Boll (1979) α(f) tradition.
+const HF_BOOST = process.env.DEBLEED_HF_BOOST !== undefined ? Number(process.env.DEBLEED_HF_BOOST) : 200;
+const HF_EXPONENT = process.env.DEBLEED_HF_EXPONENT !== undefined ? Number(process.env.DEBLEED_HF_EXPONENT) : 2;
+
 export function reductionStrengthToOversubtraction(reductionStrength: number): number {
 	return LAMBDA_SCALE * reductionStrength;
 }
@@ -230,6 +247,9 @@ export function computeMwfMask(
 ): void {
 	const numBins = outMask.length;
 	const lambda = mwfParams.oversubtraction;
+	const hfBoost = HF_BOOST;
+	const hfExponent = HF_EXPONENT;
+	const binDenom = numBins > 1 ? numBins - 1 : 1;
 
 	// Eq. 29: Φ̂_YY[k] = |Y_m − D̂_m^total|². Compute once and reuse for both
 	// the dominant-bin RMS and the per-bin Φ̂_SS construction.
@@ -267,7 +287,9 @@ export function computeMwfMask(
 
 		const phiSS = xDom * LAMBDA_DOM * yy + (1 - xDom) * (LAMBDA_Y_RES * yy + LAMBDA_S_RES * ssPrev);
 		const phiDD = psdState.psd[bin]!;
-		const denom = phiSS + lambda * phiDD + epsilon;
+		const binNorm = bin / binDenom;
+		const lambdaEff = lambda * (1 + hfBoost * Math.pow(binNorm, hfExponent));
+		const denom = phiSS + lambdaEff * phiDD + epsilon;
 
 		const wienerGain = denom > 0 ? phiSS / denom : 0;
 

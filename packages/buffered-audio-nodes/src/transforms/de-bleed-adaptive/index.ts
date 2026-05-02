@@ -350,7 +350,8 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 		// MEF parameter mappings per the design's parameter-surface decision.
 		const lambda = reductionStrengthToOversubtraction(reductionStrength);
 		const markovForgetting = adaptationSpeedToMarkovForgetting(adaptationSpeed);
-		const threshold = artifactSmoothing * ARTIFACT_THRESHOLD_SCALE;
+		const thresholdOverride = Number(process.env.DEBLEED_THRESHOLD);
+		const threshold = thresholdOverride > 0 ? thresholdOverride : artifactSmoothing * ARTIFACT_THRESHOLD_SCALE;
 
 		const kalmanParams: KalmanParams = {
 			markovForgetting,
@@ -364,12 +365,6 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 		};
 
 		const carry = MAX_CARRY_FRAMES;
-
-		// Mirror legacy paddedLength formula so chunk-aligned STFT frame count
-		// matches the pre-streaming one-shot implementation.
-		const logicalTargetLength = Math.max(totalFrames, fftSize);
-		const paddedLength = logicalTargetLength + ((hopSize - ((logicalTargetLength - fftSize) % hopSize)) % hopSize);
-		const totalStftFrames = Math.floor((paddedLength - fftSize) / hopSize) + 1;
 
 		// Edge pad for the process pass. The iSTFT OLA windowSum is partial
 		// within `(fftSize - hopSize)` samples of any signal boundary — only
@@ -422,6 +417,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 			// --- Warm-up scan: per-reference H seed for this target channel ---
 			const _twarm = _profStart();
 			const seeds = await this.warmupSeedsForChannel(buffer, ch, warmupFrames, fftSize, hopSize);
+
 			_profAdd("warmup", _twarm);
 
 			// --- Allocate per-channel Kalman + MWF PSD state, seeded from warm-up ---
@@ -447,6 +443,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 				const winSamples = winFrames * hopSize + (fftSize - hopSize);
 
 				const _tstft = _profStart();
+
 				await readChunkIntoPadded(buffer, ch, winStart, winFrames, targetPadded, hopSize, fftSize, edgePadSamples);
 
 				const targetStft = stft(targetPadded.subarray(0, winSamples), fftSize, hopSize, targetStftOutput, this.fftBackend, this.fftAddonOptions);
@@ -458,6 +455,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 
 					refStftsForChunk[refIndex] = stft(refPaddeds[refIndex]!.subarray(0, winSamples), fftSize, hopSize, refStftOutputs[refIndex], this.fftBackend, this.fftAddonOptions);
 				}
+
 				_profAdd("stftRead", _tstft);
 
 				// Per-frame Stage 1 + Stage 2 update + mask compute.
@@ -489,6 +487,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 
 					const _tmsad = _profStart();
 					const msadDecision = computeMsadDecision(msadFrameReals, msadFrameImags, msadChannelStates);
+
 					_profAdd("msad", _tmsad);
 
 					// --- Stage 1: FDAF Kalman update + combined-bleed prediction ---
@@ -497,6 +496,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 					// speech dominates. Equivalent to MEF Eq. 23's Ψ^S inflation
 					// driving Kalman gain → 0; the skip path is cleaner in code.
 					const _tkal = _profStart();
+
 					kalmanUpdateFrame(
 						frameReal,
 						frameImag,
@@ -517,11 +517,13 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 					for (let refIndex = 0; refIndex < refCount; refIndex++) {
 						applyIspRestoration(kalmanStates[refIndex]!, ispStates[refIndex]!, msadDecision.referenceActive[refIndex]!, ispThresholdFrames);
 					}
+
 					_profAdd("kalman", _tkal);
 
 					// --- Stage 2: MWF — update interferer PSD then compute gain mask ---
 					// Per MEF Eq. 28: Φ̂_DD smoothed from |D̂_m^total|².
 					const _tmwf = _profStart();
+
 					updateInterfererPsd(bleedTotalReal, bleedTotalImag, interfererPsd, mwfParams.temporalSmoothing);
 
 					const maskFrame = rawMask.subarray(frameOffset, frameOffset + numBins);
@@ -552,6 +554,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 				const finalView = finalMask.subarray(0, winFrames * numBins);
 
 				const _tnlm = _profStart();
+
 				// pasteBlockSize=8 (was Lukin-Todd 4) per Phase 5.2 compute optimisation.
 				// Cuts NLM cost by ~74% (16/64 of original work) and brings the
 				// 60-s real-podcast render from 1.7× RT to 0.99× RT (Phase 5 goal).
@@ -578,6 +581,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 				_profAdd("nlm", _tnlm);
 
 				const _tdftt = _profStart();
+
 				applyDfttSmoothing(
 					nlmView,
 					rawView,
@@ -613,6 +617,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 				}
 
 				const cleaned = istft(targetStft, hopSize, winSamples, this.fftBackend, this.fftAddonOptions);
+
 				_profAdd("applyMaskIstft", _tapp);
 
 				const centerStartFrame = outStart - winStart;
@@ -650,6 +655,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 		if (profileEnabled) {
 			const total = profileMs.warmup + profileMs.stftRead + profileMs.msad + profileMs.kalman + profileMs.mwf + profileMs.nlm + profileMs.dftt + profileMs.applyMaskIstft + profileMs.write;
 			const pct = (k: keyof typeof profileMs): string => `${(profileMs[k] / 1000).toFixed(2)}s (${((profileMs[k] / total) * 100).toFixed(1)}%)`;
+
 			// eslint-disable-next-line no-console -- profile output is opt-in via env var
 			console.log(`[deBleedAdaptive profile]
   warmup        : ${pct("warmup")}
