@@ -63,13 +63,16 @@
 import type { KalmanState } from "./mef-kalman";
 
 // MEF §4.1 / Table 1 hyperparameters — hardcoded per the 2026-05-01
-// parameter-surface decision.
+// parameter-surface decision. ALPHA, MSAD_THRESHOLD, PSD_SMOOTHING are
+// env-overridable for Phase 4 RX-spectral-shape tuning per
+// plan-debleed-v2-rx-match.md §4.2; SNR_THRESHOLD, NOISE_OVERESTIMATION,
+// BAND_COUNT remain pure MEF Table 1.
 const SNR_THRESHOLD = 0.25;
-const ALPHA = 0.1;
-const MSAD_THRESHOLD = 0.2;
+const ALPHA = Number(process.env.DEBLEED_MSAD_ALPHA) || 0.1;
+const MSAD_THRESHOLD = Number(process.env.DEBLEED_MSAD_THETA) || 0.2;
 const NOISE_OVERESTIMATION = 4;
 const BAND_COUNT = 10;
-const PSD_SMOOTHING = 0.5;
+const PSD_SMOOTHING = Number(process.env.DEBLEED_MSAD_BETA_PSD) || 0.5;
 
 // Minimum Statistics tracker constants (Martin 2001).
 const MS_SUBWINDOW_COUNT = 8;

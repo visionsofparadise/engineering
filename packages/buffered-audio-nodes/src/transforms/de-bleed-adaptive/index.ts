@@ -85,6 +85,16 @@ function allocateStftOutput(frames: number, numBins: number): StftOutput {
  * (zero-padded for any tail past the buffer end or when `channelIndex` is
  * out of range). Mutates `out`; caller must size it to at least
  * `frames * hopSize + (fftSize - hopSize)` samples.
+ *
+ * When `edgePadSamples > 0`, the file is treated as if it were virtually
+ * extended by `edgePadSamples` zero samples at the start AND end. Callers
+ * pass `startFrame` indexed in the VIRTUAL signal (so `startFrame=0`
+ * begins reading inside the leading virtual pad, producing zeros until the
+ * pad is exhausted). This is the standard fix for the under-determined
+ * iSTFT OLA windowSum at file boundaries — by virtually padding by
+ * `fftSize - hopSize` at each edge, the iSTFT reconstruction zone aligns
+ * with the original file's `[0, totalFrames)` range and no edge-guard
+ * trim is needed downstream.
  */
 async function readChunkIntoPadded(
 	chunkBuffer: ChunkBuffer,
@@ -94,22 +104,40 @@ async function readChunkIntoPadded(
 	out: Float32Array,
 	hopSize: number,
 	fftSize: number,
+	edgePadSamples = 0,
 ): Promise<void> {
 	out.fill(0);
 
-	const sampleOffset = startFrame * hopSize;
 	const samplesRequired = frames * hopSize + (fftSize - hopSize);
 
 	if (samplesRequired <= 0) return;
 
-	const chunk = await chunkBuffer.read(sampleOffset, samplesRequired);
+	// Virtual sample range covered by this read, mapped to real file samples
+	// by subtracting the leading virtual pad. When edgePadSamples=0 this
+	// reduces to the original behaviour.
+	const virtualStart = startFrame * hopSize;
+	const realStart = virtualStart - edgePadSamples;
+	const realEnd = realStart + samplesRequired;
+
+	// Intersect with the actual file range [0, totalFrames).
+	const totalFrames = chunkBuffer.frames;
+	const readStart = Math.max(0, realStart);
+	const readEnd = Math.min(totalFrames, realEnd);
+	const readLen = readEnd - readStart;
+
+	if (readLen <= 0) return; // Entire requested range is in the virtual zero pad.
+
+	const chunk = await chunkBuffer.read(readStart, readLen);
 	const channel = chunk.samples[channelIndex];
 
 	if (!channel) return;
 
-	const copyLength = Math.min(channel.length, out.length);
+	// Place the buffer samples into `out` at the offset that compensates for
+	// any leading virtual pad samples we skipped reading.
+	const writeOffset = readStart - realStart;
+	const copyLength = Math.min(channel.length, out.length - writeOffset);
 
-	out.set(channel.subarray(0, copyLength));
+	if (copyLength > 0) out.set(channel.subarray(0, copyLength), writeOffset);
 }
 
 /**
@@ -308,6 +336,17 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 		const { chunkFrames, numBins, referenceBuffers } = this;
 		const refCount = referenceBuffers.length;
 
+		// Per-stage timing accumulators — populated only when DEBLEED_PROFILE=1.
+		// Phase 5.1 instrumentation per plan-debleed-v2-rx-match.md. Off-by-default
+		// to keep production hot path branch-free; the env-var read is hoisted out
+		// of all loops here.
+		const profileEnabled = process.env.DEBLEED_PROFILE === "1";
+		const profileMs = { warmup: 0, stftRead: 0, msad: 0, kalman: 0, mwf: 0, nlm: 0, dftt: 0, applyMaskIstft: 0, write: 0 };
+		const _profStart = (): number => profileEnabled ? performance.now() : 0;
+		const _profAdd = (key: keyof typeof profileMs, t0: number): void => {
+			if (profileEnabled) profileMs[key] += performance.now() - t0;
+		};
+
 		// MEF parameter mappings per the design's parameter-surface decision.
 		const lambda = reductionStrengthToOversubtraction(reductionStrength);
 		const markovForgetting = adaptationSpeedToMarkovForgetting(adaptationSpeed);
@@ -331,6 +370,21 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 		const logicalTargetLength = Math.max(totalFrames, fftSize);
 		const paddedLength = logicalTargetLength + ((hopSize - ((logicalTargetLength - fftSize) % hopSize)) % hopSize);
 		const totalStftFrames = Math.floor((paddedLength - fftSize) / hopSize) + 1;
+
+		// Edge pad for the process pass. The iSTFT OLA windowSum is partial
+		// within `(fftSize - hopSize)` samples of any signal boundary — only
+		// 1..3 frames overlap there vs the steady-state `fftSize / hopSize`.
+		// We virtually extend the file with `edgePadSamples` zeros at the
+		// start AND end during the process pass; the iSTFT then reconstructs
+		// the original `[0, totalFrames)` range from a fully-determined
+		// windowSum and no edge-guard trim is needed. Warm-up still operates
+		// on the real-signal range (it wants real samples for H estimation,
+		// so `readChunkIntoPadded` is called there with `edgePadSamples=0`).
+		const edgePadSamples = fftSize - hopSize;
+		const virtualTotal = totalFrames + 2 * edgePadSamples;
+		const virtualLogicalLength = Math.max(virtualTotal, fftSize);
+		const virtualPaddedLength = virtualLogicalLength + ((hopSize - ((virtualLogicalLength - fftSize) % hopSize)) % hopSize);
+		const processStftFrames = Math.floor((virtualPaddedLength - fftSize) / hopSize) + 1;
 
 		// Warm-up scan: first WARMUP_SECONDS of audio, capped to total file length.
 		// `sampleRate` is provided by the framework; default to 48 kHz if missing.
@@ -366,7 +420,9 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 
 		for (let ch = 0; ch < channels; ch++) {
 			// --- Warm-up scan: per-reference H seed for this target channel ---
+			const _twarm = _profStart();
 			const seeds = await this.warmupSeedsForChannel(buffer, ch, warmupFrames, fftSize, hopSize);
+			_profAdd("warmup", _twarm);
 
 			// --- Allocate per-channel Kalman + MWF PSD state, seeded from warm-up ---
 			const kalmanStates: Array<KalmanState> = seeds.map((seed) => createKalmanState(numBins, seed));
@@ -380,24 +436,29 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 			const ispStates: Array<IspState> = Array.from({ length: refCount }, () => createIspState(numBins));
 
 			// --- Online process pass with carry ---
-			for (let outStart = 0; outStart < totalStftFrames; outStart += chunkFrames) {
-				const outFramesThisChunk = Math.min(chunkFrames, totalStftFrames - outStart);
+			// Iterates over the VIRTUAL signal (real audio padded by `edgePadSamples`
+			// zeros at start and end). Read calls pass `edgePadSamples` so the helper
+			// returns zeros for sample positions outside `[0, totalFrames)`.
+			for (let outStart = 0; outStart < processStftFrames; outStart += chunkFrames) {
+				const outFramesThisChunk = Math.min(chunkFrames, processStftFrames - outStart);
 				const winStart = Math.max(0, outStart - carry);
-				const winEnd = Math.min(totalStftFrames, outStart + outFramesThisChunk + carry);
+				const winEnd = Math.min(processStftFrames, outStart + outFramesThisChunk + carry);
 				const winFrames = winEnd - winStart;
 				const winSamples = winFrames * hopSize + (fftSize - hopSize);
 
-				await readChunkIntoPadded(buffer, ch, winStart, winFrames, targetPadded, hopSize, fftSize);
+				const _tstft = _profStart();
+				await readChunkIntoPadded(buffer, ch, winStart, winFrames, targetPadded, hopSize, fftSize, edgePadSamples);
 
 				const targetStft = stft(targetPadded.subarray(0, winSamples), fftSize, hopSize, targetStftOutput, this.fftBackend, this.fftAddonOptions);
 
 				const refStftsForChunk = new Array<StftOutput>(refCount);
 
 				for (let refIndex = 0; refIndex < refCount; refIndex++) {
-					await readChunkIntoPadded(referenceBuffers[refIndex]!, 0, winStart, winFrames, refPaddeds[refIndex]!, hopSize, fftSize);
+					await readChunkIntoPadded(referenceBuffers[refIndex]!, 0, winStart, winFrames, refPaddeds[refIndex]!, hopSize, fftSize, edgePadSamples);
 
 					refStftsForChunk[refIndex] = stft(refPaddeds[refIndex]!.subarray(0, winSamples), fftSize, hopSize, refStftOutputs[refIndex], this.fftBackend, this.fftAddonOptions);
 				}
+				_profAdd("stftRead", _tstft);
 
 				// Per-frame Stage 1 + Stage 2 update + mask compute.
 				// Scratch buffers reused across frames for `Ŝ_m = W · Y_m` (the
@@ -426,13 +487,16 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 						msadFrameImags[refIndex + 1] = refFrameImags[refIndex]!;
 					}
 
+					const _tmsad = _profStart();
 					const msadDecision = computeMsadDecision(msadFrameReals, msadFrameImags, msadChannelStates);
+					_profAdd("msad", _tmsad);
 
 					// --- Stage 1: FDAF Kalman update + combined-bleed prediction ---
 					// `targetActive = true` short-circuits the correction step (skip
 					// Eq. 18 + Eq. 22), preserving Ĥ at its prior value while target
 					// speech dominates. Equivalent to MEF Eq. 23's Ψ^S inflation
 					// driving Kalman gain → 0; the skip path is cleaner in code.
+					const _tkal = _profStart();
 					kalmanUpdateFrame(
 						frameReal,
 						frameImag,
@@ -453,9 +517,11 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 					for (let refIndex = 0; refIndex < refCount; refIndex++) {
 						applyIspRestoration(kalmanStates[refIndex]!, ispStates[refIndex]!, msadDecision.referenceActive[refIndex]!, ispThresholdFrames);
 					}
+					_profAdd("kalman", _tkal);
 
 					// --- Stage 2: MWF — update interferer PSD then compute gain mask ---
 					// Per MEF Eq. 28: Φ̂_DD smoothed from |D̂_m^total|².
+					const _tmwf = _profStart();
 					updateInterfererPsd(bleedTotalReal, bleedTotalImag, interfererPsd, mwfParams.temporalSmoothing);
 
 					const maskFrame = rawMask.subarray(frameOffset, frameOffset + numBins);
@@ -477,6 +543,7 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 					}
 
 					updatePrevOutputPsd(sHatRe, sHatIm, interfererPsd);
+					_profAdd("mwf", _tmwf);
 				}
 
 				// --- Stage 3: NLM + DFTT smoothing of the gain mask (unchanged) ---
@@ -484,6 +551,16 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 				const nlmView = nlmMask.subarray(0, winFrames * numBins);
 				const finalView = finalMask.subarray(0, winFrames * numBins);
 
+				const _tnlm = _profStart();
+				// pasteBlockSize=8 (was Lukin-Todd 4) per Phase 5.2 compute optimisation.
+				// Cuts NLM cost by ~74% (16/64 of original work) and brings the
+				// 60-s real-podcast render from 1.7× RT to 0.99× RT (Phase 5 goal).
+				// Quality trade-off measured: wide-band reduction shifts from +0.07
+				// to +0.26 dB vs RX (still well within Phase 3's 1 dB envelope);
+				// per-band reduction shifts uniformly by +0.1 to +0.45 dB
+				// (pattern preserved, structural shape unchanged from Phase 4
+				// known-difference characterisation). See design-de-bleed.md
+				// "2026-05-02: NLM pasteBlockSize=8 (Phase 5 1×-RT optimisation)".
 				applyNlmSmoothing(
 					rawView,
 					winFrames,
@@ -493,12 +570,14 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 						searchFreqRadius: 8,
 						searchTimePre: 16,
 						searchTimePost: 4,
-						pasteBlockSize: 4,
+						pasteBlockSize: Number(process.env.DEBLEED_NLM_PASTE) || 8,
 						threshold,
 					},
 					nlmView,
 				);
+				_profAdd("nlm", _tnlm);
 
+				const _tdftt = _profStart();
 				applyDfttSmoothing(
 					nlmView,
 					rawView,
@@ -515,8 +594,10 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 					this.dfttFftBackend,
 					this.dfttFftAddonOptions,
 				);
+				_profAdd("dftt", _tdftt);
 
 				// --- Stage 4: apply mask to target STFT, iSTFT, write back ---
+				const _tapp = _profStart();
 				const targetRealBuf = targetStft.real;
 				const targetImagBuf = targetStft.imag;
 
@@ -532,49 +613,55 @@ export class DeBleedAdaptiveStream extends BufferedTransformStream<DeBleedAdapti
 				}
 
 				const cleaned = istft(targetStft, hopSize, winSamples, this.fftBackend, this.fftAddonOptions);
+				_profAdd("applyMaskIstft", _tapp);
 
 				const centerStartFrame = outStart - winStart;
 				const centerStartSample = centerStartFrame * hopSize;
-				const isFinalChunk = outStart + outFramesThisChunk >= totalStftFrames;
+				const isFinalChunk = outStart + outFramesThisChunk >= processStftFrames;
 				const centerEndSample = isFinalChunk ? cleaned.length : (centerStartFrame + outFramesThisChunk) * hopSize;
 				const centerSamples = cleaned.subarray(centerStartSample, centerEndSample);
 
-				const writeOffset = winStart * hopSize + centerStartSample;
-				const maxWrite = totalFrames - writeOffset;
+				// Map the virtual write range back to real-file samples by subtracting
+				// the leading edge pad. iSTFT positions within the virtual pad zones
+				// (real < 0 or real >= totalFrames) are dropped — they correspond to
+				// the zero-pad boundaries that existed only to give the OLA windowSum
+				// full overlap at the real-file edges. No additional edge-guard is
+				// needed: the iSTFT now reconstructs `[0, totalFrames)` correctly.
+				const virtualWriteStart = winStart * hopSize + centerStartSample;
+				const realWriteStart = virtualWriteStart - edgePadSamples;
+				const realWriteEnd = realWriteStart + centerSamples.length;
+				const clipStart = Math.max(0, realWriteStart);
+				const clipEnd = Math.min(totalFrames, realWriteEnd);
 
-				if (maxWrite <= 0) continue;
+				if (clipEnd <= clipStart) continue;
 
-				const samplesToWrite = Math.min(centerSamples.length, maxWrite);
-
-				// Edge-guard: iSTFT cannot mathematically reconstruct samples within
-				// `(fftSize - hopSize)` of the file boundaries — only 1..3 frames
-				// overlap there (vs `fftSize / hopSize = 4` frames in steady state),
-				// so the OLA windowSum is partial. With aggressive masking (V2's MWF
-				// + post-filter changes the spectrum more than V1's mild Boll
-				// subtraction), the masked iFFT output near a frame boundary can be
-				// large; dividing it by a small windowSum produces head/tail spikes
-				// (sample 14 = ~0.5 dB on Pierce, sample N-14 = +12.8 dB on Richard
-				// at default knobs). The samples are genuinely unrecoverable from
-				// the available STFT evidence — preserving the raw target input in
-				// these edge zones is the most defensible behaviour. See plan-
-				// debleed-v2-rx-match.md Phase 1 + design-de-bleed.md edge-guard
-				// note for the full reasoning.
-				const edgeGuard = fftSize - hopSize;
-				const writeRangeStart = writeOffset;
-				const writeRangeEnd = writeOffset + samplesToWrite;
-				const guardedStart = Math.max(writeRangeStart, edgeGuard);
-				const guardedEnd = Math.min(writeRangeEnd, totalFrames - edgeGuard);
-
-				if (guardedEnd <= guardedStart) continue;
-
-				const sliceFromOffset = guardedStart - writeRangeStart;
-				const sliceLength = guardedEnd - guardedStart;
+				const sliceFromOffset = clipStart - realWriteStart;
+				const sliceLength = clipEnd - clipStart;
 				const writeSamples = centerSamples.subarray(sliceFromOffset, sliceFromOffset + sliceLength);
 
-				const existingChunk = await buffer.read(guardedStart, sliceLength);
+				const _twrite = _profStart();
+				const existingChunk = await buffer.read(clipStart, sliceLength);
 
-				await buffer.write(guardedStart, replaceChannel(existingChunk, ch, writeSamples, channels));
+				await buffer.write(clipStart, replaceChannel(existingChunk, ch, writeSamples, channels));
+				_profAdd("write", _twrite);
 			}
+		}
+
+		if (profileEnabled) {
+			const total = profileMs.warmup + profileMs.stftRead + profileMs.msad + profileMs.kalman + profileMs.mwf + profileMs.nlm + profileMs.dftt + profileMs.applyMaskIstft + profileMs.write;
+			const pct = (k: keyof typeof profileMs): string => `${(profileMs[k] / 1000).toFixed(2)}s (${((profileMs[k] / total) * 100).toFixed(1)}%)`;
+			// eslint-disable-next-line no-console -- profile output is opt-in via env var
+			console.log(`[deBleedAdaptive profile]
+  warmup        : ${pct("warmup")}
+  stft+read     : ${pct("stftRead")}
+  msad          : ${pct("msad")}
+  kalman+isp    : ${pct("kalman")}
+  mwf           : ${pct("mwf")}
+  nlm           : ${pct("nlm")}
+  dftt          : ${pct("dftt")}
+  applyMask+istft: ${pct("applyMaskIstft")}
+  write         : ${pct("write")}
+  TOTAL         : ${(total / 1000).toFixed(2)}s`);
 		}
 	}
 }

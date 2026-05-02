@@ -9,3 +9,4 @@
 2026-05-02T02:40:21.898Z | deBleedAdaptive                |   146758.3ms |              0 samples/sec |     0.21x RT | Node v22.20.0 win32
 2026-05-02T02:48:43.709Z | deBleedAdaptive                |   161748.8ms |              0 samples/sec |     0.19x RT | Node v22.20.0 win32
 2026-05-02T04:03:43.535Z | deBleedAdaptive                |    91499.0ms |              0 samples/sec |     0.33x RT | Node v22.20.0 win32
+2026-05-02T10:42:20.463Z | deBleedAdaptive                |    44929.5ms |              0 samples/sec |     0.68x RT | Node v22.20.0 win32

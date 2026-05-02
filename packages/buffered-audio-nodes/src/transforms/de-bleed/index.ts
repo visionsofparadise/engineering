@@ -59,6 +59,18 @@ function allocateStftOutput(frames: number, numBins: number): StftOutput {
  * out of range). Mutates `out`; caller must size it to at least
  * `frames * hopSize + (fftSize - hopSize)` samples.
  */
+/**
+ * Read `frames` STFT frames worth of samples from `chunkBuffer` channel
+ * `channelIndex` starting at virtual STFT frame `startFrame`, into `out`.
+ *
+ * When `edgePadSamples > 0`, the file is treated as if it were virtually
+ * extended by `edgePadSamples` zero samples at the start AND end. This
+ * fixes the under-determined iSTFT OLA windowSum at file boundaries:
+ * virtually padding by `(fftSize - hopSize)` makes the iSTFT
+ * reconstruction zone align with the real `[0, totalFrames)` range so no
+ * downstream edge-guard is needed. Pass `edgePadSamples=0` for analysis
+ * passes that want to scan real audio (e.g., cross-spectral H estimation).
+ */
 async function readChunkIntoPadded(
 	chunkBuffer: ChunkBuffer,
 	channelIndex: number,
@@ -67,22 +79,34 @@ async function readChunkIntoPadded(
 	out: Float32Array,
 	hopSize: number,
 	fftSize: number,
+	edgePadSamples = 0,
 ): Promise<void> {
 	out.fill(0);
 
-	const sampleOffset = startFrame * hopSize;
 	const samplesRequired = frames * hopSize + (fftSize - hopSize);
 
 	if (samplesRequired <= 0) return;
 
-	const chunk = await chunkBuffer.read(sampleOffset, samplesRequired);
+	const virtualStart = startFrame * hopSize;
+	const realStart = virtualStart - edgePadSamples;
+	const realEnd = realStart + samplesRequired;
+
+	const totalFrames = chunkBuffer.frames;
+	const readStart = Math.max(0, realStart);
+	const readEnd = Math.min(totalFrames, realEnd);
+	const readLen = readEnd - readStart;
+
+	if (readLen <= 0) return;
+
+	const chunk = await chunkBuffer.read(readStart, readLen);
 	const channel = chunk.samples[channelIndex];
 
 	if (!channel) return;
 
-	const copyLength = Math.min(channel.length, out.length);
+	const writeOffset = readStart - realStart;
+	const copyLength = Math.min(channel.length, out.length - writeOffset);
 
-	out.set(channel.subarray(0, copyLength));
+	if (copyLength > 0) out.set(channel.subarray(0, copyLength), writeOffset);
 }
 
 /**
@@ -231,6 +255,21 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 		const paddedLength = logicalTargetLength + ((hopSize - ((logicalTargetLength - fftSize) % hopSize)) % hopSize);
 		const totalStftFrames = Math.floor((paddedLength - fftSize) / hopSize) + 1;
 
+		// Edge pad for the process pass (Pass 2). The iSTFT OLA windowSum is
+		// partial within `(fftSize - hopSize)` samples of any signal boundary
+		// — only 1..3 frames overlap there vs the steady-state
+		// `fftSize / hopSize`. We virtually extend the file with
+		// `edgePadSamples` zeros at the start AND end during Pass 2; the
+		// iSTFT then reconstructs the original `[0, totalFrames)` range from
+		// a fully-determined windowSum and no edge-guard trim is needed.
+		// Pass 1b (cross-spectral analysis) still scans the real-signal range
+		// so its `readChunkIntoPadded` calls are made with `edgePadSamples=0`.
+		const edgePadSamples = fftSize - hopSize;
+		const virtualTotal = totalFrames + 2 * edgePadSamples;
+		const virtualLogicalLength = Math.max(virtualTotal, fftSize);
+		const virtualPaddedLength = virtualLogicalLength + ((hopSize - ((virtualLogicalLength - fftSize) % hopSize)) % hopSize);
+		const processStftFrames = Math.floor((virtualPaddedLength - fftSize) / hopSize) + 1;
+
 		// Window size for Pass 2: center chunk + carry on both sides. Pass 1 chunks
 		// never exceed chunkFrames, so the Pass-2 window sizes everything safely.
 		const windowFrames = chunkFrames + 2 * carry;
@@ -295,14 +334,17 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 			const transferImags: Array<Float32Array> = transfers.map((transfer) => transfer.imag);
 
 			// --- Pass 2: process with carry ---
-			for (let outStart = 0; outStart < totalStftFrames; outStart += chunkFrames) {
-				const outFramesThisChunk = Math.min(chunkFrames, totalStftFrames - outStart);
+			// Iterates over the VIRTUAL signal (real audio padded by `edgePadSamples`
+			// zeros at start and end). Reads pass `edgePadSamples` so the helper
+			// returns zeros for sample positions outside `[0, totalFrames)`.
+			for (let outStart = 0; outStart < processStftFrames; outStart += chunkFrames) {
+				const outFramesThisChunk = Math.min(chunkFrames, processStftFrames - outStart);
 				const winStart = Math.max(0, outStart - carry);
-				const winEnd = Math.min(totalStftFrames, outStart + outFramesThisChunk + carry);
+				const winEnd = Math.min(processStftFrames, outStart + outFramesThisChunk + carry);
 				const winFrames = winEnd - winStart;
 				const winSamples = winFrames * hopSize + (fftSize - hopSize);
 
-				await readChunkIntoPadded(buffer, ch, winStart, winFrames, targetPadded, hopSize, fftSize);
+				await readChunkIntoPadded(buffer, ch, winStart, winFrames, targetPadded, hopSize, fftSize, edgePadSamples);
 
 				const targetStft = stft(targetPadded.subarray(0, winSamples), fftSize, hopSize, targetStftOutput, this.fftBackend, this.fftAddonOptions);
 
@@ -310,7 +352,7 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 				const refStftsForChunk = new Array<StftOutput>(refCount);
 
 				for (let refIndex = 0; refIndex < refCount; refIndex++) {
-					await readChunkIntoPadded(referenceBuffers[refIndex]!, 0, winStart, winFrames, refPaddeds[refIndex]!, hopSize, fftSize);
+					await readChunkIntoPadded(referenceBuffers[refIndex]!, 0, winStart, winFrames, refPaddeds[refIndex]!, hopSize, fftSize, edgePadSamples);
 
 					refStftsForChunk[refIndex] = stft(refPaddeds[refIndex]!.subarray(0, winSamples), fftSize, hopSize, refStftOutputs[refIndex], this.fftBackend, this.fftAddonOptions);
 				}
@@ -393,43 +435,31 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 				// preserves that reconstruction without double-writing.
 				const centerStartFrame = outStart - winStart;
 				const centerStartSample = centerStartFrame * hopSize;
-				const isFinalChunk = outStart + outFramesThisChunk >= totalStftFrames;
+				const isFinalChunk = outStart + outFramesThisChunk >= processStftFrames;
 				const centerEndSample = isFinalChunk ? cleaned.length : (centerStartFrame + outFramesThisChunk) * hopSize;
 				const centerSamples = cleaned.subarray(centerStartSample, centerEndSample);
 
-				// On the final chunk, trim to totalFrames so we don't extend the
-				// target buffer past its original length (the padded tail is zero).
-				const writeOffset = winStart * hopSize + centerStartSample;
-				const maxWrite = totalFrames - writeOffset;
+				// Map the virtual write range back to real-file samples by subtracting
+				// the leading edge pad. iSTFT positions within the virtual pad zones
+				// (real < 0 or real >= totalFrames) are dropped — they correspond to
+				// the zero-pad boundaries that existed only to give the OLA windowSum
+				// full overlap at the real-file edges. No additional edge-guard is
+				// needed: the iSTFT now reconstructs `[0, totalFrames)` correctly.
+				const virtualWriteStart = winStart * hopSize + centerStartSample;
+				const realWriteStart = virtualWriteStart - edgePadSamples;
+				const realWriteEnd = realWriteStart + centerSamples.length;
+				const clipStart = Math.max(0, realWriteStart);
+				const clipEnd = Math.min(totalFrames, realWriteEnd);
 
-				if (maxWrite <= 0) continue;
+				if (clipEnd <= clipStart) continue;
 
-				const samplesToWrite = Math.min(centerSamples.length, maxWrite);
-
-				// Edge-guard: iSTFT cannot mathematically reconstruct samples within
-				// `(fftSize - hopSize)` of the file boundaries — only 1..3 frames
-				// overlap there vs the steady-state `fftSize / hopSize` frames, so
-				// the OLA windowSum is partial. The samples are genuinely
-				// unrecoverable from the available STFT evidence — preserving the
-				// raw target input in these edge zones is the most defensible
-				// behaviour. V1 is much less prone to amplification here than V2
-				// (mild Boll subtraction vs aggressive MWF), but the same correct
-				// behaviour applies. See plan-debleed-v2-rx-match.md Phase 1.
-				const edgeGuard = fftSize - hopSize;
-				const writeRangeStart = writeOffset;
-				const writeRangeEnd = writeOffset + samplesToWrite;
-				const guardedStart = Math.max(writeRangeStart, edgeGuard);
-				const guardedEnd = Math.min(writeRangeEnd, totalFrames - edgeGuard);
-
-				if (guardedEnd <= guardedStart) continue;
-
-				const sliceFromOffset = guardedStart - writeRangeStart;
-				const sliceLength = guardedEnd - guardedStart;
+				const sliceFromOffset = clipStart - realWriteStart;
+				const sliceLength = clipEnd - clipStart;
 				const writeSamples = centerSamples.subarray(sliceFromOffset, sliceFromOffset + sliceLength);
 
-				const existingChunk = await buffer.read(guardedStart, sliceLength);
+				const existingChunk = await buffer.read(clipStart, sliceLength);
 
-				await buffer.write(guardedStart, replaceChannel(existingChunk, ch, writeSamples, channels));
+				await buffer.write(clipStart, replaceChannel(existingChunk, ch, writeSamples, channels));
 			}
 		}
 	}
