@@ -32,6 +32,7 @@ export { ffmpeg, FfmpegNode, FfmpegStream, type FfmpegProperties } from "./trans
 // Transforms - loudness
 export { loudnessShaper, LoudnessShaperNode, LoudnessShaperStream, type LoudnessShaperProperties } from "./transforms/loudness-shaper";
 export { loudnessNormalize, LoudnessNormalizeNode, LoudnessNormalizeStream, type LoudnessNormalizeProperties } from "./transforms/loudness-normalize";
+export { truePeakNormalize, TruePeakNormalizeNode, TruePeakNormalizeStream, type TruePeakNormalizeProperties } from "./transforms/true-peak-normalize";
 
 // Transforms - hosted
 export { deBleed, DeBleedNode, DeBleedStream, type DeBleedProperties } from "./transforms/de-bleed";

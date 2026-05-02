@@ -17,6 +17,7 @@ export { replaceChannel } from "./replace-channel";
 export { resampleDirect } from "./resample-direct";
 export { bitReverse, butterflyStages, createFftWorkspace, fft, hanningWindow, ifft, istft, stft } from "./stft";
 export type { FftWorkspace, StftOutput, StftResult } from "./stft";
+export { TruePeakAccumulator } from "./true-peak";
 export { applyDfttSmoothing } from "./dftt-smoothing";
 export type { DfttParams } from "./dftt-smoothing";
 export { applyNlmSmoothing } from "./nlm-smoothing";
