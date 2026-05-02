@@ -35,6 +35,7 @@ export { loudnessNormalize, LoudnessNormalizeNode, LoudnessNormalizeStream, type
 
 // Transforms - hosted
 export { deBleed, DeBleedNode, DeBleedStream, type DeBleedProperties } from "./transforms/de-bleed";
+export { deBleedAdaptive, DeBleedAdaptiveNode, DeBleedAdaptiveStream, type DeBleedAdaptiveProperties } from "./transforms/de-bleed-adaptive";
 export { deepFilterNet3, DeepFilterNet3Node, DeepFilterNet3Stream, type DeepFilterNet3Properties } from "./transforms/deep-filter-net-3";
 export { dtln, DtlnNode, DtlnStream, type DtlnProperties } from "./transforms/dtln";
 export { htdemucs, HtdemucsNode, HtdemucsStream, type HtdemucsProperties, type StemGains } from "./transforms/htdemucs";
