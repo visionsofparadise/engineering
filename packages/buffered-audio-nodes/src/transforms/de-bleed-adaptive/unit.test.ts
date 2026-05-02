@@ -33,8 +33,18 @@ describe("DeBleedAdaptive", () => {
 			expect(adaptationSpeedToMarkovForgetting(3)).toBeCloseTo(0.998, 6);
 		});
 
-		it("reductionStrength=5 maps to lambda=1.5 (MEF Table 1 default)", () => {
-			expect(reductionStrengthToOversubtraction(5)).toBeCloseTo(1.5, 6);
+		// Production LAMBDA_SCALE was retuned 2026-05-02 from MEF's λ=1.5-at-mid
+		// (LAMBDA_SCALE=0.3) to LAMBDA_SCALE=5.0 to close the body HP@100 RMS
+		// gap to within 1 dB of iZotope RX at max strength on real podcast
+		// audio. With the new scale, reductionStrength=5 → λ=25. See
+		// design-de-bleed.md "2026-05-02: RX-parity tuning (Phase 3)" for
+		// sweep data and the trade-off rationale.
+		it("reductionStrength=5 maps to lambda=25 (LAMBDA_SCALE=5.0 production default)", () => {
+			expect(reductionStrengthToOversubtraction(5)).toBeCloseTo(25, 6);
+		});
+
+		it("reductionStrength=10 maps to lambda=50 (LAMBDA_SCALE=5.0 production max)", () => {
+			expect(reductionStrengthToOversubtraction(10)).toBeCloseTo(50, 6);
 		});
 
 		it("reductionStrength=0 maps to lambda=0 (no subtraction)", () => {

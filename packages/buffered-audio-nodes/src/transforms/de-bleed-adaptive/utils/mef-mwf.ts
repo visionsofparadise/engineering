@@ -89,18 +89,19 @@
  *   Chapter 9.
  */
 
-// MEF Table 1 hyperparameters for the §3.1.1 dominant-bin construction.
-// Hardcoded — not user-exposed per the 2026-05-01 parameter-surface decision.
-//   λ_dom + λ^Y_res + λ^Ŝ_res = 1.0 (paper requires sum-to-one).
+// MEF §3.1.1 dominant-bin construction weights. Defaults tuned 2026-05-02
+// against iZotope RX as the calibration target — see design-de-bleed.md
+// "2026-05-02: RX-parity tuning (Phase 3)" for the full sweep data and
+// rationale. MEF Table 1 paper defaults were (0.6, 0.25, 0.15); we ship
+// LAMBDA_DOM=0.2 to tilt Φ̂_SS toward suppression on dominant bleed bins
+// while keeping Y_RES/S_RES at MEF values (we did not need to tune those
+// during the Phase 3 sweep — LAMBDA_DOM alone gave us most of the
+// per-band shaping headroom).
 //
-// Env-var overrides for tuning experiments only (QA against external
-// reference implementations). When all three are unset, MEF defaults apply.
-// Lowering all three together shrinks Φ̂_SS uniformly → Wiener tilts
-// toward suppression. Sum-to-one is NOT enforced when overrides are set;
-// values < 1 produce more aggressive bleed reduction at the cost of
-// target preservation. Document any chosen non-default values in
-// design-de-bleed.md as a deviation if shipped.
-const LAMBDA_DOM = Number(process.env.DEBLEED_LAMBDA_DOM) || 0.6;
+// Env-var overrides remain available for future tuning experiments. Sum-
+// to-one is NOT enforced when overrides are set; lower combined values
+// produce more aggressive bleed reduction at the cost of target preservation.
+const LAMBDA_DOM = Number(process.env.DEBLEED_LAMBDA_DOM) || 0.2;
 const LAMBDA_Y_RES = Number(process.env.DEBLEED_LAMBDA_Y_RES) || 0.25;
 const LAMBDA_S_RES = Number(process.env.DEBLEED_LAMBDA_S_RES) || 0.15;
 
@@ -139,16 +140,18 @@ export interface MwfParams {
 
 /**
  * Map user-facing `reductionStrength` (0–10, default 5) to MEF's λ
- * overestimation factor. Default of 5 must produce λ = 1.5 (MEF Table 1).
+ * overestimation factor.
  *
- * Mapping: `λ(s) = LAMBDA_SCALE · s`. Linear, default 1.5 at s=5,
- * range [0, 10·LAMBDA_SCALE].
+ * Mapping: `λ(s) = LAMBDA_SCALE · s`. Linear, range [0, 10·LAMBDA_SCALE].
  *
- * Env override `DEBLEED_LAMBDA_SCALE` for tuning experiments. Default
- * 0.3 → max λ = 3.0 (MEF Table 1 max). Higher values push max
- * suppression further at the cost of more target distortion.
+ * Default tuned 2026-05-02: `LAMBDA_SCALE = 5.0` so `reductionStrength = 10`
+ * produces λ = 50 (well past MEF Table 1's λ = 1.5 max). The aggressive
+ * default is calibrated against iZotope RX at max strength on real podcast
+ * audio — see design-de-bleed.md "2026-05-02: RX-parity tuning (Phase 3)"
+ * for sweep data, post-tune residual, and target-preservation trade-off
+ * notes. Env override `DEBLEED_LAMBDA_SCALE` remains available.
  */
-const LAMBDA_SCALE = Number(process.env.DEBLEED_LAMBDA_SCALE) || 0.3;
+const LAMBDA_SCALE = Number(process.env.DEBLEED_LAMBDA_SCALE) || 5.0;
 
 export function reductionStrengthToOversubtraction(reductionStrength: number): number {
 	return LAMBDA_SCALE * reductionStrength;
