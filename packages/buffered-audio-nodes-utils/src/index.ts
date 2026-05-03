@@ -1,6 +1,8 @@
 /* eslint-disable barrel-files/avoid-barrel-files */
+export { AmplitudeHistogramAccumulator } from "./amplitude-histogram-accumulator";
 export { bandpass } from "./bandpass";
 export { biquadFilter, highPassCoefficients, lowPassCoefficients, preFilterCoefficients, rlbFilterCoefficients, zeroPhaseBiquadFilter } from "./biquad";
+export { BlockSumAccumulator } from "./block-sum";
 export { dbToLinear, linearToDb } from "./db";
 export { decimate, integerDecimationRate } from "./decimator";
 export { smoothEnvelope } from "./envelope";
@@ -9,7 +11,9 @@ export type { FftBackend, FftBackendConfig } from "./fft-backend";
 export { amplitudeHistogram } from "./histogram";
 export type { AmplitudeHistogram } from "./histogram";
 export { deinterleaveBuffer, interleave } from "./interleave";
-export { IntegratedLufsAccumulator } from "./loudness";
+export { KWeightedSquaredSum } from "./k-weighted-squared-sum";
+export { IntegratedLufsAccumulator, LoudnessAccumulator } from "./loudness";
+export type { LoudnessAccumulatorResult } from "./loudness";
 export { MixedRadixFft } from "./mixed-radix-fft";
 export { Oversampler } from "./oversample";
 export type { OversamplingFactor } from "./oversample";
