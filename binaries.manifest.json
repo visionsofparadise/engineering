@@ -16,28 +16,55 @@
       "key": null,
       "platform": "darwin",
       "arch": "arm64",
-      "filename": "onnxruntime-darwin-arm64.dylib",
+      "filename": "libonnxruntime-darwin-arm64.dylib",
       "sha256": "2b885992d3d6fa4130d39ec84a80d7504ff52750027c547bb22c86165f19406a",
       "size": 33481272,
-      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.1.0"
     },
     {
       "key": null,
       "platform": "linux",
       "arch": "x64",
-      "filename": "onnxruntime-linux-x64.so",
-      "sha256": "3da6146e14e7b8aaec625dde11d6114c7457c87a5f93d744897da8781e35c673",
-      "size": 21042416,
-      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+      "filename": "libonnxruntime_providers_cuda.so",
+      "sha256": "937e28f8d3fca43c77be9afa6795b6b600fe5bc6c97ba4e513fe05f0ee22a546",
+      "size": 345463416,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.1.0"
+    },
+    {
+      "key": null,
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "libonnxruntime_providers_shared.so",
+      "sha256": "ebbfc73b7da61d56eba58cb3eb76caa6dcba8b3026f1d75626bb580ffe3cb69b",
+      "size": 14632,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.1.0"
+    },
+    {
+      "key": null,
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "onnxruntime-linux-x64.so.1.22.0",
+      "sha256": "5ede9537894434c221de73323aa1f644967afeed6569fd570ea356a366e98ecd",
+      "size": 22571728,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.1.0"
+    },
+    {
+      "key": null,
+      "platform": "win32",
+      "arch": "x64",
+      "filename": "DirectML.dll",
+      "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1",
+      "size": 18527776,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.1.0"
     },
     {
       "key": null,
       "platform": "win32",
       "arch": "x64",
       "filename": "onnxruntime-win32-x64.dll",
-      "sha256": "579b636403983254346a5c1d80bd28f1519cd1e284cd204f8d4ff41f8d711559",
-      "size": 12418080,
-      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+      "sha256": "95366724919f4e95ecc60010912ed538ad9804b6683fbd0aad389749102834b9",
+      "size": 16471584,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.1.0"
     },
     {
       "key": "Kim_Vocal_2",
@@ -170,27 +197,27 @@
       "platform": "darwin",
       "arch": "arm64",
       "filename": "onnx-runtime-addon-darwin-arm64.node",
-      "sha256": "a6d702486a1c78cd799c88da3613b6bea134fa19f28eb51e295a8961732518d8",
-      "size": 106208,
-      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+      "sha256": "12b3e970fc141bdcd8aadf32692cf2bcd6acd52d06ee235af583e4fcc5492183",
+      "size": 106952,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.1.0"
     },
     {
       "key": "onnx-addon",
       "platform": "linux",
       "arch": "x64",
       "filename": "onnx-runtime-addon-linux-x64.node",
-      "sha256": "9b6491e14bffc2275c2918d27e8b4061b9fabecf3a9cce62e516b98bb71042d5",
-      "size": 103984,
-      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+      "sha256": "d33cc716ee6c573f64d20103cd7e38df176c6dad8f330b47cb5659344a7e5c26",
+      "size": 99984,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.1.0"
     },
     {
       "key": "onnx-addon",
       "platform": "win32",
       "arch": "x64",
       "filename": "onnx-runtime-addon-win32-x64.node",
-      "sha256": "d9fd34248eb294d967b6283162205b3a3a83e9e8c7d24d6925a634934b17fdf2",
-      "size": 470016,
-      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.0.1"
+      "sha256": "a0bbc5a86764be4d7e3998403b87f5c820c1d8ef29c529b68b482a089b63a6f1",
+      "size": 473088,
+      "source": "https://github.com/visionsofparadise/onnx-runtime-addon/releases/tag/v1.1.0"
     },
     {
       "key": "vkfft-addon",

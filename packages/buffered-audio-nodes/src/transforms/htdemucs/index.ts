@@ -2,7 +2,6 @@ import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { bandpass, resampleDirect } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
-import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
 import { computeStftScaled, reflectPad } from "./utils/dsp";
 import { buildModelInput, extractStems, mixStems, normalizeAudio, type StftWorkspace } from "./utils/stems";
@@ -45,7 +44,14 @@ export class HtdemucsStream extends BufferedTransformStream<HtdemucsProperties> 
 	private session!: OnnxSession;
 
 	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
-		this.session = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: filterOnnxProviders(context.executionProviders) });
+		// HTDemucs is forced to CPU regardless of context.executionProviders.
+		// The DirectML EP rejects an operator in the HTDemucs graph at session
+		// create time (MLOperatorAuthorImpl.cpp:2816 throws E_INVALIDARG /
+		// 0x80070057). ORT auto-falls-through at register time but not when
+		// CreateSession itself throws, so DML failure means the entire session
+		// fails — we have to opt out of GPU here entirely. Documented in
+		// design-gpu-acceleration.md (2026-05-03).
+		this.session = createOnnxSession(this.properties.onnxAddonPath, this.properties.modelPath, { executionProviders: ["cpu"] });
 
 		return super._setup(input, context);
 	}
