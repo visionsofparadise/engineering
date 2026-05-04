@@ -193,8 +193,9 @@ describe("iterateForTarget", () => {
 	it("preservePeaks = false (peak === null): converges and produces well-formed results", async () => {
 		// The expander mode lets the body lift continue above bodyHigh
 		// without an upper roll-off. Convergence properties are similar to
-		// preservePeaks=true at moderate boosts; the LUT just covers a
-		// flat region above bodyHigh instead of ramping down to zero.
+		// preservePeaks=true at moderate boosts; the curve is just flat
+		// above bodyHigh instead of ramping down to zero (curve evaluated
+		// directly per sample).
 		const source = makeSyntheticSource(0x1234_5678, 0.2);
 		const sourceLUFS = measureSourceLufs(source);
 		const params = makeParams(0.005, 0.02, 0.18, null);

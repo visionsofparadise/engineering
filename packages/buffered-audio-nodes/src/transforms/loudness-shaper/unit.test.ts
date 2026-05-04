@@ -127,8 +127,13 @@ async function runStream(channels: ReadonlyArray<Float32Array>, sampleRate: numb
 /**
  * Drive the LoudnessShaperStream by writing the source as multiple
  * chunks rather than a single whole-source chunk. Used by the streaming
- * regression test to exercise the chunk-by-chunk `_unbuffer` apply path
- * with persistent oversamplers.
+ * regression test to exercise the per-chunk `_unbuffer` apply path: each
+ * `_unbuffer` call runs `applyFinalChunk` (per-channel
+ * oversample → per-sample curve → downsample) using the persistent per-
+ * channel `Oversampler` instances allocated in `_process`. With the
+ * oversampler biquad states carrying across chunk boundaries, identical
+ * inputs split into chunks must produce identical bytes regardless of
+ * chunk boundaries.
  */
 async function runStreamChunked(channels: ReadonlyArray<Float32Array>, sampleRate: number, properties: ShaperRunOptions, chunkFrames: number): Promise<Array<Float32Array>> {
 	const channelCount = channels.length;
@@ -330,13 +335,14 @@ describe("LoudnessShaper end-to-end", () => {
 			if (absolute > outputPeak) outputPeak = absolute;
 		}
 
-		// Allow ~15% headroom: the curve geometry anchors the LUT at the
-		// (base-rate) source peak, but the 4× upsample produces inter-
-		// sample values that can exceed source peak, and those get boosted
-		// before the downsample. The check below is a "no large overshoot"
-		// sanity test, not a strict peak-preservation guarantee — the
-		// design's "preservePeaks" semantics constrain the LUT, not the
-		// final-apply pipeline's anti-alias filter ripple.
+		// Allow ~15% headroom: the curve geometry anchors the upper ramp
+		// at the (base-rate) source peak, but the 4× upsample produces
+		// inter-sample values that can exceed source peak slightly. With
+		// the curve evaluated directly per oversampled sample (no envelope,
+		// memoryless waveshaper per design), the upper ramp rolls off at
+		// the oversampled rate. The remaining slack is the AA filter
+		// ripple. Bounded peak semantics: output is bounded by source
+		// peak plus filter ripple.
 		expect(outputPeak).toBeLessThan(sourcePeak * 1.15);
 	}, TEST_TIMEOUT_MS);
 
@@ -417,7 +423,9 @@ describe("LoudnessShaper end-to-end", () => {
 		expect(warm[0]?.length).toBe(channel.length);
 
 		// Differ in any sample beyond float-rounding noise → asymmetric
-		// peak anchor produced a different LUT.
+		// peak anchor produced a different curve evaluation per sample.
+		// The curve is evaluated directly (no LUT, no envelope); each
+		// sample's sign picks posParams or negParams.
 		let differingSamples = 0;
 
 		for (let index = 0; index < channel.length; index++) {
@@ -458,7 +466,7 @@ describe("LoudnessShaper end-to-end", () => {
 		expect(differingSamples).toBeGreaterThan(leftOut.length / 2);
 	}, TEST_TIMEOUT_MS);
 
-	it("multi-chunk input matches single-chunk input (oversampler state is chunk-continuous)", async () => {
+	it("multi-chunk input matches single-chunk input (per-chunk oversample with persistent state)", async () => {
 		const input = makeSynthetic(TEST_FRAMES, TEST_SAMPLE_RATE, 7);
 		const sourceLufs = measureLufs([input], TEST_SAMPLE_RATE);
 		const target = Math.round((sourceLufs + 3) * 10) / 10;

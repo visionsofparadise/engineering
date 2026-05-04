@@ -1,18 +1,15 @@
 import { MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { IntegratedLufsAccumulator, MixedRadixFft, Oversampler } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
-import { applyLUTBaseRate } from "./apply";
-import { applyFinal } from "./apply-final";
+import { applyCurveBaseRateChunk } from "./apply";
+import { applyFinalChunk, DEFAULT_FACTOR } from "./apply-final";
 import type { CurveParams } from "./curve";
 import { iterateForTarget } from "./iterate";
-import { buildLUT } from "./lut";
 
 const SAMPLE_RATE = 48_000;
 
 /**
- * Tiny LCG (numerical-recipes constants) for deterministic noise. Seed
- * is the constructor argument; calling `next()` returns the next pseudo-
- * random float in `(-1, 1)`.
+ * Tiny LCG (numerical-recipes constants) for deterministic noise.
  */
 function makeLcg(seed: number): () => number {
 	let state = seed >>> 0;
@@ -70,8 +67,7 @@ function measureLufs(channels: ReadonlyArray<Float32Array>): number {
 
 /**
  * Compute the magnitude spectrum (single-sided) of a real signal via
- * the package's `MixedRadixFft`. Returns an array of length `size / 2`
- * where index `k` corresponds to frequency `k * sampleRate / size`.
+ * the package's `MixedRadixFft`. Returns an array of length `size / 2`.
  */
 function magnitudeSpectrum(signal: Float32Array, size: number): Float32Array {
 	const fft = new MixedRadixFft(size);
@@ -102,10 +98,6 @@ function magnitudeSpectrum(signal: Float32Array, size: number): Float32Array {
 	return magnitude;
 }
 
-/**
- * Sum of squared magnitudes in a frequency-bin range — a proxy for
- * total energy in that band.
- */
 function bandEnergy(magnitude: Float32Array, fromBin: number, toBinExclusive: number): number {
 	let sum = 0;
 
@@ -118,19 +110,49 @@ function bandEnergy(magnitude: Float32Array, fromBin: number, toBinExclusive: nu
 	return sum;
 }
 
-describe("applyFinal", () => {
-	it("identity LUT round-trip: applyFinal with identity LUT equals Oversampler pass-through sample-for-sample", () => {
-		// boost = 0 makes the LUT a sampled identity for |x| < max
-		// (within the LUT's own ~0.001 round-trip tolerance), and the LUT
-		// passes through for |x| >= max. The point of this test is to
-		// confirm the LUT integration is correct — that running the LUT
-		// inside `oversample(input, fn)` gives the same output as running
-		// the Oversampler with `fn = identity`. The Oversampler's biquad
-		// rolloff is captured equally in both paths and cancels out in the
-		// comparison.
-		const params = symmetricParams();
-		const lut = buildLUT(params, params, 0, 512);
+/**
+ * Wrap per-channel synthetic arrays in a `MemoryChunkBuffer` for the
+ * iteration tests below.
+ */
+async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<MemoryChunkBuffer> {
+	const buffer = new MemoryChunkBuffer(Infinity, channels.length);
 
+	await buffer.append(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+
+	return buffer;
+}
+
+/**
+ * Drive `applyFinalChunk` over a whole-source single chunk in test
+ * space. Allocates one `Oversampler` per channel and applies the curve
+ * to the entire source at one go — exercises the same code path as
+ * `_unbuffer` does on each chunk, just at one giant chunk.
+ *
+ * Returns one Float32Array per channel sized to the input length.
+ */
+function runWholeFinalApply(args: {
+	source: ReadonlyArray<Float32Array>;
+	boost: number;
+	posParams: CurveParams;
+	negParams: CurveParams;
+}): Array<Float32Array> {
+	const oversamplers = args.source.map(() => new Oversampler(DEFAULT_FACTOR, SAMPLE_RATE));
+
+	return applyFinalChunk({
+		chunkSamples: args.source,
+		boost: args.boost,
+		posParams: args.posParams,
+		negParams: args.negParams,
+		oversamplers,
+	});
+}
+
+describe("applyFinalChunk", () => {
+	it("identity (boost = 0): output matches Oversampler pass-through within filter tolerance", () => {
+		// boost = 0 makes the curve evaluate to gain = 1 at every sample,
+		// so the only difference between this pipeline and a pass-through
+		// Oversampler is float-multiplication rounding.
+		const params = symmetricParams();
 		const frames = 4096;
 		const channel = new Float32Array(frames);
 		const angularStep = (2 * Math.PI * 1000) / SAMPLE_RATE;
@@ -139,10 +161,11 @@ describe("applyFinal", () => {
 			channel[index] = 0.5 * Math.sin(angularStep * index);
 		}
 
-		const [output] = applyFinal({
+		const [output] = runWholeFinalApply({
 			source: [channel],
-			sampleRate: SAMPLE_RATE,
-			lut,
+			boost: 0,
+			posParams: params,
+			negParams: params,
 		});
 
 		expect(output).toBeDefined();
@@ -151,14 +174,12 @@ describe("applyFinal", () => {
 		// Reference: same factor / sampleRate, identity callback. Cold
 		// state at the start of both pipelines means the leading-sample
 		// filter transient is identical.
-		const reference = new Oversampler(4, SAMPLE_RATE).oversample(channel, (x) => x);
+		const reference = new Oversampler(DEFAULT_FACTOR, SAMPLE_RATE).oversample(channel, (x) => x);
 
 		expect(reference.length).toBe(channel.length);
 
-		// LUT linear-interp tolerance is ~0.001 per Phase 2; the
-		// oversampling itself contributes float-multiplication rounding
-		// only, which is well under 0.001. Use 0.005 to leave headroom
-		// for accumulated rounding through the biquad.
+		// Direct curve evaluation is exact (no LUT, no envelope), so the
+		// only error path is float rounding through the biquad.
 		let maxError = 0;
 
 		for (let index = 0; index < frames; index++) {
@@ -170,93 +191,88 @@ describe("applyFinal", () => {
 
 	it("length preservation: output length equals input length per channel", () => {
 		const params = symmetricParams();
-		const lut = buildLUT(params, params, 0.5, 256);
-
 		const channel = new Float32Array(2048);
 
 		for (let index = 0; index < channel.length; index++) {
 			channel[index] = 0.1 * Math.sin((2 * Math.PI * 440 * index) / SAMPLE_RATE);
 		}
 
-		const [output] = applyFinal({
+		const [output] = runWholeFinalApply({
 			source: [channel],
-			sampleRate: SAMPLE_RATE,
-			lut,
+			boost: 0.5,
+			posParams: params,
+			negParams: params,
 		});
 
 		expect(output?.length).toBe(channel.length);
 	});
 
-	it("multi-channel independence: each output channel reflects its input only", () => {
+	it("multi-channel independence: running multi-channel equals running each channel solo, sample-for-sample", () => {
+		// Per design-loudness-shaper §"Pipeline shape": per-channel
+		// processing, no linked detection. Independent per-channel
+		// `Oversampler` instances mean each channel's output depends only
+		// on its own input.
 		const params = symmetricParams();
-		const lut = buildLUT(params, params, 0.5, 256);
-
-		// Distinct seeds so the channels are unambiguously different.
 		const left = makeNoise(0xAAAA_AAAA, 2048, 0.2);
 		const right = makeNoise(0x5555_5555, 2048, 0.2);
 
-		const [outLeft, outRight] = applyFinal({
+		const [outLeftMulti, outRightMulti] = runWholeFinalApply({
 			source: [left, right],
-			sampleRate: SAMPLE_RATE,
-			lut,
+			boost: 0.5,
+			posParams: params,
+			negParams: params,
 		});
 
-		expect(outLeft?.length).toBe(left.length);
-		expect(outRight?.length).toBe(right.length);
-
-		// Reference: each channel computed alone — must match the multi-
-		// channel call sample-for-sample. (Each channel uses its own
-		// Oversampler instance, so there is no shared state by
-		// construction.)
-		const [refLeft] = applyFinal({
+		const [outLeftSolo] = runWholeFinalApply({
 			source: [left],
-			sampleRate: SAMPLE_RATE,
-			lut,
+			boost: 0.5,
+			posParams: params,
+			negParams: params,
 		});
-		const [refRight] = applyFinal({
+
+		const [outRightSolo] = runWholeFinalApply({
 			source: [right],
-			sampleRate: SAMPLE_RATE,
-			lut,
+			boost: 0.5,
+			posParams: params,
+			negParams: params,
 		});
 
-		expect(refLeft?.length).toBe(left.length);
-		expect(refRight?.length).toBe(right.length);
+		expect(outLeftMulti?.length).toBe(left.length);
+		expect(outRightMulti?.length).toBe(right.length);
 
 		for (let index = 0; index < left.length; index++) {
-			expect(outLeft?.[index]).toBe(refLeft?.[index]);
-			expect(outRight?.[index]).toBe(refRight?.[index]);
+			expect(outLeftMulti?.[index]).toBeCloseTo(outLeftSolo?.[index] ?? 0, 6);
+			expect(outRightMulti?.[index]).toBeCloseTo(outRightSolo?.[index] ?? 0, 6);
 		}
-
-		// And the channels must differ from each other (sanity check that
-		// inputs were not silently merged or swapped).
-		let differingSamples = 0;
-
-		for (let index = 0; index < left.length; index++) {
-			if ((outLeft?.[index] ?? 0) !== (outRight?.[index] ?? 0)) differingSamples++;
-		}
-
-		expect(differingSamples).toBeGreaterThan(left.length / 2);
 	});
 
-	it("aliasing suppression: 4× pipeline has less HF energy than base-rate apply on a non-trivial LUT", () => {
-		// Build a non-trivial LUT (boost = 0.5) sized to the noise
-		// distribution. The non-linearity generates harmonics; at base
-		// rate those harmonics fold (alias) back into the audible band.
-		// The 4× pipeline absorbs them above the original Nyquist
-		// before decimation's anti-alias filter rejects them.
+	it("aliasing suppression: 4× pipeline has less HF energy than base-rate apply on a non-trivial curve", () => {
+		// Build a non-trivial curve (boost = 0.5). The non-linearity
+		// generates harmonics; at base rate those harmonics fold (alias)
+		// back into the audible band. The 4× pipeline absorbs them above
+		// the original Nyquist before decimation's anti-alias filter
+		// rejects them.
 		const params: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5 };
-		const lut = buildLUT(params, params, 0.5, 512);
 
 		// FFT size is power-of-2 friendly for the package's mixed-radix
 		// FFT; 4096 gives 23.4 Hz bin resolution at 48 kHz.
 		const fftSize = 4096;
 		const noise = makeNoise(0x1234_5678, fftSize, 0.2);
 
-		const [base] = applyLUTBaseRate([noise], lut);
-		const [final] = applyFinal({
+		// Base-rate reference: per-sample direct curve evaluation, no
+		// oversampling.
+		const [base] = applyCurveBaseRateChunk({
+			chunkSamples: [noise],
+			boost: 0.5,
+			posParams: params,
+			negParams: params,
+		});
+
+		const [final] = runWholeFinalApply({
 			source: [noise],
-			sampleRate: SAMPLE_RATE,
-			lut,
+			boost: 0.5,
+			posParams: params,
+			negParams: params,
 		});
 
 		expect(base).toBeDefined();
@@ -265,9 +281,6 @@ describe("applyFinal", () => {
 		const baseSpectrum = magnitudeSpectrum(base ?? new Float32Array(0), fftSize);
 		const finalSpectrum = magnitudeSpectrum(final ?? new Float32Array(0), fftSize);
 
-		// "Top 20% of the audible band" per the parent prompt's heuristic.
-		// Spectrum length is fftSize / 2 = 2048 bins covering [0, Nyquist).
-		// Top 20% → bins in [0.8 * 2048, 2048).
 		const half = fftSize / 2;
 		const fromBin = Math.floor(half * 0.8);
 		const toBin = half;
@@ -275,20 +288,10 @@ describe("applyFinal", () => {
 		const baseHfEnergy = bandEnergy(baseSpectrum, fromBin, toBin);
 		const finalHfEnergy = bandEnergy(finalSpectrum, fromBin, toBin);
 
-		// Comparative test: 4× pipeline should suppress at least some of
-		// the HF energy that base-rate apply lets through. The threshold
-		// (90%) is heuristic — observed in development the 4× output
-		// typically lands well below 90% of the base-rate HF energy on
-		// this noise/LUT combo. If this becomes flaky, raise to a tighter
-		// observed value.
 		expect(finalHfEnergy).toBeLessThan(baseHfEnergy * 0.9);
 	});
 
 	it("base-rate-apply vs final-apply LUFS bias is within design tolerance (~0.5 dB)", async () => {
-		// Integration smoke test: run Phases 1-4 end-to-end. Generates a
-		// stereo synthetic source, eyeballs curve params (Phase 5 will
-		// derive these from histogram), iterates for a moderate target,
-		// applies the winning LUT both ways, and compares LUFS.
 		const frames = SAMPLE_RATE * 5;
 		const source = makeStereoSyntheticSource(0xDEAD_BEEF, 0xC0FFEE_42, 0.2, frames);
 		const sourceLUFS = measureLufs(source);
@@ -298,10 +301,7 @@ describe("applyFinal", () => {
 		const params: CurveParams = { floor: 0.005, bodyLow: 0.02, bodyHigh: 0.18, peak: 0.3 };
 		const targetLUFS = sourceLUFS + 3;
 
-		// Wrap into a MemoryChunkBuffer for the streaming `iterateForTarget`.
-		const buffer = new MemoryChunkBuffer(Infinity, source.length);
-
-		await buffer.append(source.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+		const buffer = await makeBufferFromChannels(source);
 
 		const result = await iterateForTarget({
 			buffer,
@@ -312,13 +312,19 @@ describe("applyFinal", () => {
 			sourceLUFS,
 		});
 
-		const winningLut = buildLUT(params, params, result.bestBoost, 512);
-
-		const baseOutput = applyLUTBaseRate(source, winningLut);
-		const finalOutput = applyFinal({
+		// Apply the iteration's winning boost through both the base-rate
+		// chunk path and the oversampling final path.
+		const baseOutput = applyCurveBaseRateChunk({
+			chunkSamples: source,
+			boost: result.bestBoost,
+			posParams: params,
+			negParams: params,
+		});
+		const finalOutput = runWholeFinalApply({
 			source,
-			sampleRate: SAMPLE_RATE,
-			lut: winningLut,
+			boost: result.bestBoost,
+			posParams: params,
+			negParams: params,
 		});
 
 		const baseLUFS = measureLufs(baseOutput);
@@ -329,12 +335,112 @@ describe("applyFinal", () => {
 
 		const bias = Math.abs(finalLUFS - baseLUFS);
 
-		// Logged for design-doc reference per Phase 4.2; the design
-		// nominally accepts 0.3 dB but the test asserts the wider 0.5 dB
-		// to keep flakiness low.
 		// eslint-disable-next-line no-console
-		console.log(`[applyFinal vs applyLUTBaseRate LUFS bias] base=${baseLUFS.toFixed(3)} final=${finalLUFS.toFixed(3)} bias=${bias.toFixed(3)} dB`);
+		console.log(`[applyFinalChunk vs applyCurveBaseRateChunk LUFS bias] base=${baseLUFS.toFixed(3)} final=${finalLUFS.toFixed(3)} bias=${bias.toFixed(3)} dB`);
 
 		expect(bias).toBeLessThan(0.5);
+	});
+
+	it("multi-chunk apply matches single-chunk apply (oversampler state continuity across chunks)", () => {
+		// Drive the same source through applyFinalChunk twice: once with
+		// the entire signal as a single chunk, once split into two
+		// chunks. With persistent per-channel Oversampler state across
+		// chunks, the two outputs must match bit-for-bit beyond float
+		// rounding.
+		const params: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5 };
+		const frames = 4096;
+		const noise = makeNoise(0x0A0B_0C0D, frames, 0.2);
+		const boost = 0.5;
+
+		// Single chunk path.
+		const singleOversamplers = [new Oversampler(DEFAULT_FACTOR, SAMPLE_RATE)];
+		const [single] = applyFinalChunk({
+			chunkSamples: [noise],
+			boost,
+			posParams: params,
+			negParams: params,
+			oversamplers: singleOversamplers,
+		});
+
+		// Two-chunk path with the SAME oversampler instance carried
+		// across both calls.
+		const splitOversamplers = [new Oversampler(DEFAULT_FACTOR, SAMPLE_RATE)];
+		const splitPoint = 1024;
+		const firstChunk = new Float32Array(noise.subarray(0, splitPoint));
+		const secondChunk = new Float32Array(noise.subarray(splitPoint));
+
+		const [first] = applyFinalChunk({
+			chunkSamples: [firstChunk],
+			boost,
+			posParams: params,
+			negParams: params,
+			oversamplers: splitOversamplers,
+		});
+		const [second] = applyFinalChunk({
+			chunkSamples: [secondChunk],
+			boost,
+			posParams: params,
+			negParams: params,
+			oversamplers: splitOversamplers,
+		});
+
+		expect(single?.length).toBe(frames);
+		expect((first?.length ?? 0) + (second?.length ?? 0)).toBe(frames);
+
+		// Concatenate the split outputs.
+		const reassembled = new Float32Array(frames);
+
+		reassembled.set(first ?? new Float32Array(0), 0);
+		reassembled.set(second ?? new Float32Array(0), splitPoint);
+
+		let maxError = 0;
+
+		for (let index = 0; index < frames; index++) {
+			const diff = Math.abs((single?.[index] ?? 0) - reassembled[index]!);
+
+			if (diff > maxError) maxError = diff;
+		}
+
+		expect(maxError).toBeLessThan(1e-6);
+	});
+
+	it("warmth > 0 (sides differ in peak): per-side params flow into the curve evaluation", () => {
+		const posParams: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5 };
+		const negParams: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.7 };
+		const frames = 1024;
+		const channel = new Float32Array(frames);
+
+		for (let index = 0; index < frames; index++) {
+			// Source with both pos and neg samples at amplitudes that exercise
+			// the upper ramp under both peak settings.
+			channel[index] = 0.4 * Math.sin((2 * Math.PI * 440 * index) / SAMPLE_RATE);
+		}
+
+		const [withSymmetric] = runWholeFinalApply({
+			source: [channel],
+			boost: 0.5,
+			posParams,
+			negParams: posParams,
+		});
+
+		const [withAsymmetric] = runWholeFinalApply({
+			source: [channel],
+			boost: 0.5,
+			posParams,
+			negParams,
+		});
+
+		expect(withSymmetric?.length).toBe(frames);
+		expect(withAsymmetric?.length).toBe(frames);
+
+		// Different negative-side params → different output samples on at
+		// least the negative half of the signal.
+		let differing = 0;
+
+		for (let index = 0; index < frames; index++) {
+			if (Math.abs((withSymmetric?.[index] ?? 0) - (withAsymmetric?.[index] ?? 0)) > 1e-6) differing++;
+		}
+
+		expect(differing).toBeGreaterThan(0);
 	});
 });

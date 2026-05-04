@@ -1,6 +1,8 @@
 /* eslint-disable barrel-files/avoid-barrel-files */
 export { AmplitudeHistogramAccumulator } from "./amplitude-histogram-accumulator";
 export { bandpass } from "./bandpass";
+export { BidirectionalIir } from "./bidirectional-iir";
+export type { BidirectionalIirOptions } from "./bidirectional-iir";
 export { biquadFilter, highPassCoefficients, lowPassCoefficients, preFilterCoefficients, rlbFilterCoefficients, zeroPhaseBiquadFilter } from "./biquad";
 export { BlockSumAccumulator } from "./block-sum";
 export { dbToLinear, linearToDb } from "./db";

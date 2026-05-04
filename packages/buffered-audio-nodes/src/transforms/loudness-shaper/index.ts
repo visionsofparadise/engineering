@@ -2,28 +2,15 @@ import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { Oversampler } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
+import { applyFinalChunk } from "./utils/apply-final";
 import type { CurveParams } from "./utils/curve";
 import { iterateForTarget } from "./utils/iterate";
-import { buildLUT, type LUT, lookupLUT } from "./utils/lut";
 import { measureSourceLufsAndPeaks } from "./utils/measurement";
 
 /**
- * Default LUT point count target. 512 cosine-spaced points across the
- * two ramp regions plus the flat-body / pass-through boundaries gives
- * a comfortable round-trip tolerance under linear interpolation.
- */
-const DEFAULT_POINT_COUNT_TARGET = 512;
-
-/**
- * Streaming chunk size for the learn pass's source measurement and the
- * per-attempt iteration walk. Matches `iterate.ts` and
- * `loudness-normalize/utils/measurement.ts`.
- */
-const CHUNK_FRAMES = 44100;
-
-/**
- * Oversampling factor for the streaming apply pass. Matches the design
- * doc's 4×; keep in sync with `apply-final.ts`'s `DEFAULT_FACTOR`.
+ * Oversampling factor for the final-apply pass. Matches the design
+ * doc's 4×; passed through to `apply-final.ts` per-channel
+ * Oversampler instances.
  */
 const OVERSAMPLE_FACTOR = 4;
 
@@ -66,37 +53,46 @@ export interface LoudnessShaperProperties extends z.infer<typeof schema>, Transf
 
 export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaperProperties> {
 	/**
-	 * The winning LUT from the learn pass. Set in `_process`; consumed
-	 * per-chunk in `_unbuffer`. Null means pass-through (silent /
-	 * degenerate / sub-block-length input).
+	 * Per-side `CurveParams` resolved from user dB anchors + per-side
+	 * peaks at iteration time. Consumed per chunk by `_unbuffer` (the
+	 * curve is evaluated directly per oversampled sample). `null` when
+	 * the stream passes through (silent / sub-floor / degenerate guard).
 	 */
-	private winningLut: LUT | null = null;
+	private winningPosParams: CurveParams | null = null;
+	private winningNegParams: CurveParams | null = null;
 
 	/**
-	 * Per-channel oversamplers, allocated once at the end of the learn
-	 * pass and reused across every `_unbuffer` call. The Oversampler's
-	 * biquad anti-alias state persists across calls (per
-	 * `oversample.ts` design), so consecutive chunk emissions remain
-	 * continuous — no chunk-boundary glitch.
+	 * Boost factor `B` chosen by the secant iteration. `null` when the
+	 * stream passes through (no curve was learned).
 	 */
-	private oversamplers: Array<Oversampler> = [];
+	private winningBoost: number | null = null;
 
 	/**
-	 * Per-chunk wall-clock time spent in `_unbuffer` (the final-apply
-	 * oversampled LUT path). Accumulated across all `_unbuffer` calls so
-	 * the QA driver can read it after `render()` to break out the
-	 * base-rate vs final-apply cost — useful for projecting render cost
-	 * at higher oversample factors.
+	 * Per-channel `Oversampler` instances allocated in `_process` and
+	 * reused across all `_unbuffer` calls. The biquad states persist
+	 * across chunks so chunk boundaries are continuous in the AA
+	 * filter response — multi-chunk runs match single-chunk runs.
+	 */
+	private oversamplers: Array<Oversampler> | null = null;
+
+	/**
+	 * Per-chunk wall-clock time spent in `_unbuffer` (oversampling +
+	 * per-sample curve + downsampling per chunk). Accumulated across
+	 * all `_unbuffer` calls.
 	 */
 	public unbufferElapsedMs = 0;
 
 	/**
-	 * Wall-clock breakdown of the learn pass. Set in `_process`; read by
-	 * the QA driver for cost projection.
+	 * Wall-clock breakdown of the learn pass and final-apply
+	 * preparation. `finalApply` here measures only the per-channel
+	 * `Oversampler` allocation; the actual oversample → curve →
+	 * downsample cost is per-chunk in `_unbuffer` and accumulated
+	 * separately as `unbufferElapsedMs`.
 	 */
-	public learnTimingMs: { sourceMeasurement: number; iteration: number } = {
+	public learnTimingMs: { sourceMeasurement: number; iteration: number; finalApply: number } = {
 		sourceMeasurement: 0,
 		iteration: 0,
+		finalApply: 0,
 	};
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
@@ -163,9 +159,10 @@ export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaper
 			return;
 		}
 
-		// 4. Iterate to find the winning boost. Each attempt re-walks the
-		//    buffer via `buffer.iterate` and applies the LUT chunk-by-chunk
-		//    into a per-channel scratch buffer.
+		// 4. Iterate to find the winning boost. `iterateForTarget`
+		//    streams the source via `buffer.iterate(CHUNK_FRAMES)` per
+		//    attempt — no source-sized Float32Array materialisation. Per-
+		//    attempt allocation is bounded by chunk size.
 		const tIter0 = Date.now();
 		const result = await iterateForTarget({
 			buffer,
@@ -174,22 +171,28 @@ export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaper
 			negParams,
 			targetLUFS: target,
 			sourceLUFS,
-			pointCountTarget: DEFAULT_POINT_COUNT_TARGET,
-			chunkFrames: CHUNK_FRAMES,
 		});
 
 		this.learnTimingMs.iteration = Date.now() - tIter0;
 
-		// 5. Build the winning LUT and stand up the per-channel oversamplers
-		//    used by `_unbuffer`. One Oversampler per channel; their biquad
-		//    states persist across `_unbuffer` calls so consecutive chunks
-		//    are continuous at chunk boundaries.
-		this.winningLut = buildLUT(posParams, negParams, result.bestBoost, DEFAULT_POINT_COUNT_TARGET);
-		this.oversamplers = [];
+		this.winningPosParams = posParams;
+		this.winningNegParams = negParams;
+		this.winningBoost = result.bestBoost;
+
+		// 5. Allocate per-channel Oversampler instances. State persists
+		//    across `_unbuffer` calls so chunk boundaries are
+		//    continuous in the AA filter response — multi-chunk runs
+		//    match single-chunk runs.
+		const tFinal0 = Date.now();
+		const oversamplers: Array<Oversampler> = [];
 
 		for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
-			this.oversamplers.push(new Oversampler(OVERSAMPLE_FACTOR, sampleRate));
+			oversamplers.push(new Oversampler(OVERSAMPLE_FACTOR, sampleRate));
 		}
+
+		this.oversamplers = oversamplers;
+
+		this.learnTimingMs.finalApply = Date.now() - tFinal0;
 
 		const lastAttempt = result.attempts[result.attempts.length - 1];
 		const lastIterationLufs = lastAttempt?.outputLUFS;
@@ -206,16 +209,18 @@ export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaper
 
 	override _teardown(): void {
 		// Print the wall-clock breakdown before the stream is destroyed so
-		// the QA driver can read it from stdout. The unbuffer accumulator
-		// captures the entire final-apply (oversampled LUT) cost; the
-		// learn-pass numbers come from `_process`.
-		if (this.winningLut !== null) {
-			const total = this.learnTimingMs.sourceMeasurement + this.learnTimingMs.iteration + this.unbufferElapsedMs;
+		// the QA driver can read it from stdout. `finalApply` measures
+		// only the oversampler setup; per-chunk
+		// oversample → curve → downsample shows up as
+		// `unbufferElapsedMs`.
+		if (this.winningBoost !== null) {
+			const total = this.learnTimingMs.sourceMeasurement + this.learnTimingMs.iteration + this.learnTimingMs.finalApply + this.unbufferElapsedMs;
 
 			console.log(
 				`[loudness-shaper timing] sourceMeasurement=${this.learnTimingMs.sourceMeasurement}ms ` +
 					`iteration=${this.learnTimingMs.iteration}ms ` +
-					`finalApply=${this.unbufferElapsedMs}ms ` +
+					`finalApply=${this.learnTimingMs.finalApply}ms ` +
+					`unbufferOversample=${this.unbufferElapsedMs}ms ` +
 					`total=${total}ms ` +
 					`baseRate=${this.learnTimingMs.sourceMeasurement + this.learnTimingMs.iteration}ms`,
 			);
@@ -223,25 +228,23 @@ export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaper
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {
-		const lut = this.winningLut;
+		const posParams = this.winningPosParams;
+		const negParams = this.winningNegParams;
+		const boost = this.winningBoost;
+		const oversamplers = this.oversamplers;
 
-		if (lut === null) return chunk;
+		// Pass-through when no curve was learned (silent / sub-floor /
+		// degenerate guard). Preserves the existing pass-through
+		// semantics from the prior architecture.
+		if (posParams === null || negParams === null || boost === null || oversamplers === null) return chunk;
 
 		const tStart = Date.now();
-		const oversamplers = this.oversamplers;
-		const transformed: Array<Float32Array> = chunk.samples.map((channel, channelIndex) => {
-			const oversampler = oversamplers[channelIndex];
-
-			if (oversampler === undefined || channel.length === 0) {
-				// No oversampler for this channel (shouldn't happen — the
-				// learn pass allocates one per channel) or empty input.
-				// Pass through unchanged.
-				return channel;
-			}
-
-			// LUT geometry handles below-floor and (when preservePeaks=true)
-			// above-peak pass-through by construction — no per-sample gate.
-			return oversampler.oversample(channel, (sample) => lookupLUT(lut, sample));
+		const transformed = applyFinalChunk({
+			chunkSamples: chunk.samples,
+			boost,
+			posParams,
+			negParams,
+			oversamplers,
 		});
 
 		this.unbufferElapsedMs += Date.now() - tStart;
