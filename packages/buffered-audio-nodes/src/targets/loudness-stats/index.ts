@@ -21,8 +21,6 @@ export interface AmplitudeDistribution {
 
 export interface LoudnessStats {
 	readonly integrated: number;
-	readonly shortTerm: Array<number>;
-	readonly momentary: Array<number>;
 	readonly truePeak: number;
 	readonly range: number;
 	readonly amplitude: AmplitudeDistribution;
@@ -80,8 +78,6 @@ export class LoudnessStatsStream extends BufferedTargetStream<LoudnessStatsPrope
 	override async _close(): Promise<void> {
 		const loudness = this.loudnessAccumulator?.finalize() ?? {
 			integrated: -Infinity,
-			momentary: [],
-			shortTerm: [],
 			range: 0,
 		};
 		const histogram = this.histogramAccumulator?.finalize() ?? {
@@ -133,8 +129,6 @@ export class LoudnessStatsStream extends BufferedTargetStream<LoudnessStatsPrope
 
 		this._stats = {
 			integrated: loudness.integrated,
-			shortTerm: loudness.shortTerm,
-			momentary: loudness.momentary,
 			truePeak,
 			range: loudness.range,
 			amplitude,
@@ -143,8 +137,6 @@ export class LoudnessStatsStream extends BufferedTargetStream<LoudnessStatsPrope
 		if (this.fileHandle) {
 			const serializable = {
 				integrated: this._stats.integrated,
-				shortTerm: this._stats.shortTerm,
-				momentary: this._stats.momentary,
 				truePeak: this._stats.truePeak,
 				range: this._stats.range,
 				amplitude: {
@@ -167,7 +159,7 @@ export class LoudnessStatsNode extends TargetNode<LoudnessStatsProperties> {
 	static override readonly moduleName = "Loudness Stats";
 	static override readonly packageName = PACKAGE_NAME;
 	static override readonly packageVersion = PACKAGE_VERSION;
-	static override readonly moduleDescription = "Measure integrated loudness, true peak, loudness range, and short-term/momentary loudness per EBU R128";
+	static override readonly moduleDescription = "Measure integrated loudness, true peak, and loudness range per EBU R128, plus an amplitude-distribution histogram";
 	static override readonly schema = schema;
 
 	static override is(value: unknown): value is LoudnessStatsNode {

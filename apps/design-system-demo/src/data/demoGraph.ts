@@ -73,7 +73,7 @@ const demoNodes: Array<Node<AudioNodeData>> = [
     position: { x: COL_1, y: 0 },
     data: {
       label: "Loudness Control",
-      description: "Measure integrated, short-term, and momentary loudness",
+      description: "Measure integrated loudness, true peak, and amplitude distribution",
       category: "transform",
       state: "rendered",
       bypassed: false,

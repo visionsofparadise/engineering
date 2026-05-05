@@ -219,24 +219,9 @@ describe("loudness-stats", () => {
 		const stats = stream.stats;
 
 		expect(stats).toBeDefined();
-		// Silent stereo input: integrated is -Infinity, range is 0,
-		// momentary/shortTerm arrays are non-empty (signal is long
-		// enough for many full blocks).
+		// Silent stereo input: integrated is -Infinity, range is 0.
 		expect(stats!.integrated).toBe(-Infinity);
 		expect(stats!.range).toBe(0);
-		expect(stats!.momentary.length).toBeGreaterThan(0);
-		expect(stats!.shortTerm.length).toBeGreaterThan(0);
-
-		for (const value of stats!.momentary) {
-			expect(Number.isFinite(value) || value === -Infinity).toBe(true);
-			expect(Number.isNaN(value)).toBe(false);
-		}
-
-		for (const value of stats!.shortTerm) {
-			expect(Number.isFinite(value) || value === -Infinity).toBe(true);
-			expect(Number.isNaN(value)).toBe(false);
-		}
-
 		expect(Number.isNaN(stats!.truePeak)).toBe(false);
 		expect(stats!.amplitude.buckets.length).toBe(1024);
 	}, 60_000);
@@ -283,16 +268,14 @@ describe("loudness-stats", () => {
 
 			const parsed = JSON.parse(readFileSync(path, "utf8")) as {
 				integrated: number;
-				shortTerm: Array<number>;
-				momentary: Array<number>;
 				truePeak: number;
 				range: number;
 				amplitude: { buckets: Array<number>; bucketMax: number; totalSamples: number; median: number };
 			};
 
 			expect(typeof parsed.integrated).toBe("number");
-			expect(Array.isArray(parsed.shortTerm)).toBe(true);
-			expect(Array.isArray(parsed.momentary)).toBe(true);
+			expect("shortTerm" in parsed).toBe(false);
+			expect("momentary" in parsed).toBe(false);
 			expect(typeof parsed.truePeak).toBe("number");
 			expect(typeof parsed.range).toBe("number");
 			expect(parsed.amplitude).toBeDefined();
