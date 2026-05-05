@@ -654,7 +654,7 @@ export class DeBleedStream extends BufferedTransformStream<DeBleedProperties> {
 
 		if (profileEnabled) {
 			const total = profileMs.warmup + profileMs.stftRead + profileMs.msad + profileMs.kalman + profileMs.mwf + profileMs.nlm + profileMs.dftt + profileMs.applyMaskIstft + profileMs.write;
-			const pct = (k: keyof typeof profileMs): string => `${(profileMs[k] / 1000).toFixed(2)}s (${((profileMs[k] / total) * 100).toFixed(1)}%)`;
+			const pct = (key: keyof typeof profileMs): string => `${(profileMs[key] / 1000).toFixed(2)}s (${((profileMs[key] / total) * 100).toFixed(1)}%)`;
 
 			// eslint-disable-next-line no-console -- profile output is opt-in via env var
 			console.log(`[deBleed profile]
