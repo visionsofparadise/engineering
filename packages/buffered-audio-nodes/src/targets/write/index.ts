@@ -12,12 +12,21 @@ export interface EncodingOptions {
 	readonly format: "wav" | "flac" | "mp3" | "aac";
 	readonly bitrate?: string;
 	readonly vbr?: number;
+	readonly sampleRate?: number;
 }
+
+export const encodingSchema = z.object({
+	format: z.enum(["wav", "flac", "mp3", "aac"]),
+	bitrate: z.string().optional(),
+	vbr: z.number().optional(),
+	sampleRate: z.number().int().positive().optional().describe("Output sample rate (Hz). When set, ffmpeg resamples on encode."),
+});
 
 export const schema = z.object({
 	path: z.string().default("").meta({ input: "file", mode: "save" }),
 	ffmpegPath: z.string().default("").meta({ input: "file", mode: "open", binary: "ffmpeg", download: "https://ffmpeg.org/download.html" }).describe("FFmpeg — audio/video processing tool"),
 	bitDepth: z.enum(["16", "24", "32", "32f"]).default("16"),
+	encoding: encodingSchema.optional().describe("Encode through ffmpeg to a non-WAV format. Requires `ffmpegPath`."),
 });
 
 export interface WriteProperties extends TargetNodeProperties {
@@ -189,6 +198,10 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 			case "aac":
 				args.push("-codec:a", "aac", "-b:a", encoding.bitrate ?? "192k");
 				break;
+		}
+
+		if (encoding.sampleRate !== undefined) {
+			args.push("-ar", String(encoding.sampleRate));
 		}
 
 		args.push("-y", this.properties.path);
