@@ -54,6 +54,8 @@ const symmetricParams = (overrides: Partial<CurveParams> = {}): CurveParams => (
 	bodyLow: 0.05,
 	bodyHigh: 0.4,
 	peak: 0.8,
+	tensionLow: 1,
+	tensionHigh: 1,
 	...overrides,
 });
 
@@ -252,7 +254,7 @@ describe("applyFinalChunk", () => {
 		// back into the audible band. The 4× pipeline absorbs them above
 		// the original Nyquist before decimation's anti-alias filter
 		// rejects them.
-		const params: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5 };
+		const params: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5, tensionLow: 1, tensionHigh: 1 };
 
 		// FFT size is power-of-2 friendly for the package's mixed-radix
 		// FFT; 4096 gives 23.4 Hz bin resolution at 48 kHz.
@@ -298,7 +300,7 @@ describe("applyFinalChunk", () => {
 
 		expect(Number.isFinite(sourceLUFS)).toBe(true);
 
-		const params: CurveParams = { floor: 0.005, bodyLow: 0.02, bodyHigh: 0.18, peak: 0.3 };
+		const params: CurveParams = { floor: 0.005, bodyLow: 0.02, bodyHigh: 0.18, peak: 0.3, tensionLow: 1, tensionHigh: 1 };
 		const targetLUFS = sourceLUFS + 3;
 
 		const buffer = await makeBufferFromChannels(source);
@@ -347,7 +349,7 @@ describe("applyFinalChunk", () => {
 		// chunks. With persistent per-channel Oversampler state across
 		// chunks, the two outputs must match bit-for-bit beyond float
 		// rounding.
-		const params: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5 };
+		const params: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5, tensionLow: 1, tensionHigh: 1 };
 		const frames = 4096;
 		const noise = makeNoise(0x0A0B_0C0D, frames, 0.2);
 		const boost = 0.5;
@@ -405,8 +407,8 @@ describe("applyFinalChunk", () => {
 	});
 
 	it("warmth > 0 (sides differ in peak): per-side params flow into the curve evaluation", () => {
-		const posParams: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5 };
-		const negParams: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.7 };
+		const posParams: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.5, tensionLow: 1, tensionHigh: 1 };
+		const negParams: CurveParams = { floor: 0.01, bodyLow: 0.05, bodyHigh: 0.3, peak: 0.7, tensionLow: 1, tensionHigh: 1 };
 		const frames = 1024;
 		const channel = new Float32Array(frames);
 

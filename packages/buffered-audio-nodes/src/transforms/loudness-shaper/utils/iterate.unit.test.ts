@@ -76,7 +76,7 @@ function measureSourceLufs(source: ReadonlyArray<Float32Array>): number {
  * amplitude range so the LUFS-vs-boost mapping is monotonic.
  */
 function makeParams(floor: number, bodyLow: number, bodyHigh: number, peak: number | null): CurveParams {
-	return { floor, bodyLow, bodyHigh, peak };
+	return { floor, bodyLow, bodyHigh, peak, tensionLow: 1, tensionHigh: 1 };
 }
 
 describe("iterateForTarget", () => {

@@ -7,6 +7,8 @@ const symmetricParams = (overrides: Partial<CurveParams> = {}): CurveParams => (
 	bodyLow: 0.05,
 	bodyHigh: 0.4,
 	peak: 0.8,
+	tensionLow: 1,
+	tensionHigh: 1,
 	...overrides,
 });
 

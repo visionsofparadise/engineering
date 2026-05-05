@@ -47,7 +47,15 @@ import { IntegratedLufsAccumulator } from "@e9g/buffered-audio-nodes-utils";
 import { applyCurveBaseRateChunk } from "./apply";
 import type { CurveParams } from "./curve";
 
-const DEFAULT_MAX_ATTEMPTS = 5;
+/**
+ * Max attempts: 10 (default; user-tunable via the schema). Raised from 5
+ * on 2026-05-05 to support the standalone-shaper workflow where the node
+ * is expected to land on target LUFS without a downstream
+ * `loudnessNormalize` correction. See design-loudness-shaper §"Tolerance
+ * and maxAttempts exposed as user parameters; default attempts raised to 10"
+ * (2026-05-05 decision).
+ */
+const DEFAULT_MAX_ATTEMPTS = 10;
 const DEFAULT_TOLERANCE_LUFS_DB = 0.5;
 
 /**

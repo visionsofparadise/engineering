@@ -36,14 +36,32 @@ const OVERSAMPLE_FACTOR = 4;
  * side has the larger magnitude (an earlier formulation that only
  * lerped the negative side produced zero asymmetry when
  * `negPeak >= posPeak`).
+ *
+ * `tensionLow` / `tensionHigh` are superellipse tensions on the two
+ * ramps (floor → bodyLow and bodyHigh → peak respectively). `1` is the
+ * linear default — minimum max-gradient across the ramp, minimum
+ * body-region harmonic content. `> 1` bows convex (above the diagonal);
+ * `< 1` bows concave. See the 2026-05-05 design decision for why linear
+ * replaced smootherstep. `tensionHigh` is silently ignored when
+ * `preservePeaks = false` (no upper ramp exists in that mode).
+ *
+ * Iteration is user-tunable via `tolerance` and `maxAttempts`. Defaults
+ * (`0.5` LUFS dB / `10` attempts) are sized for the standalone-shaper
+ * workflow where `loudnessShaper` is expected to land on target LUFS
+ * without a downstream `loudnessNormalize` correction step. See the
+ * 2026-05-05 "Tolerance and maxAttempts exposed" design decision.
  */
 export const schema = z.object({
 	target:        z.number().min(-50).max(0).multipleOf(0.1).default(-16).describe("Target integrated loudness (LUFS)"),
 	floor:         z.number().lt(0).describe("Lower geometric anchor (dB). Below: pass-through."),
 	bodyLow:       z.number().lt(0).describe("Low edge of full-boost body region (dB)."),
 	bodyHigh:      z.number().lt(0).describe("High edge of full-boost body region (dB)."),
-	preservePeaks: z.boolean().default(true).describe("true → smootherstep ramp 1 → 0 to source peak; false → body lift continues above bodyHigh"),
+	preservePeaks: z.boolean().default(true).describe("true → tensioned ramp (linear default) 1 → 0 to source peak; false → body lift continues above bodyHigh"),
 	warmth:        z.number().min(0).max(1).default(0).describe("Per-side asymmetry blend (0 = symmetric, 1 = per-side peak)"),
+	tensionLow:    z.number().gt(0).default(1).describe("Superellipse tension on the floor → bodyLow ramp. (0, ∞), 1 = linear. > 1 convex (above diagonal); < 1 concave."),
+	tensionHigh:   z.number().gt(0).default(1).describe("Superellipse tension on the bodyHigh → peak ramp. (0, ∞), 1 = linear. Silently ignored when preservePeaks = false."),
+	tolerance:     z.number().gt(0).default(0.5).describe("Iteration exit threshold (LUFS dB). Smaller = more iterations to converge."),
+	maxAttempts:   z.number().int().min(1).default(10).describe("Hard cap on iteration attempts. Closest-attempt fallback applies if exhausted."),
 }).refine(
 	({ floor, bodyLow, bodyHigh }) => floor < bodyLow && bodyLow <= bodyHigh && bodyHigh < 0,
 	{ message: "loudnessShaper requires floor < bodyLow ≤ bodyHigh < 0 (dB)" },
@@ -102,7 +120,7 @@ export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaper
 
 		if (frames === 0 || channelCount === 0) return;
 
-		const { target, floor, bodyLow, bodyHigh, preservePeaks, warmth } = this.properties;
+		const { target, floor, bodyLow, bodyHigh, preservePeaks, warmth, tensionLow, tensionHigh, tolerance, maxAttempts } = this.properties;
 
 		// --- Learn pass ---
 		// 1. Source integrated LUFS + per-side peaks. Single streaming
@@ -143,12 +161,16 @@ export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaper
 			bodyLow: bodyLowLin,
 			bodyHigh: bodyHighLin,
 			peak: preservePeaks ? posPeakLin : null,
+			tensionLow,
+			tensionHigh,
 		};
 		const negParams: CurveParams = {
 			floor: floorLin,
 			bodyLow: bodyLowLin,
 			bodyHigh: bodyHighLin,
 			peak: preservePeaks ? negPeakLin : null,
+			tensionLow,
+			tensionHigh,
 		};
 
 		// Degenerate guards: if the source has no audible signal on a
@@ -171,6 +193,8 @@ export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaper
 			negParams,
 			targetLUFS: target,
 			sourceLUFS,
+			toleranceLUFSdB: tolerance,
+			maxAttempts,
 		});
 
 		this.learnTimingMs.iteration = Date.now() - tIter0;
@@ -203,7 +227,9 @@ export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaper
 				`attempts=${String(result.attempts.length)} ` +
 				`iterationLUFS=${lastIterationLufs === undefined ? "n/a" : lastIterationLufs.toFixed(2)} ` +
 				`floor=${floor} bodyLow=${bodyLow} bodyHigh=${bodyHigh} ` +
-				`preservePeaks=${String(preservePeaks)} warmth=${warmth}`,
+				`preservePeaks=${String(preservePeaks)} warmth=${warmth} ` +
+				`tensionLow=${tensionLow} tensionHigh=${tensionHigh} ` +
+				`tolerance=${tolerance} maxAttempts=${maxAttempts}`,
 		);
 	}
 
@@ -278,7 +304,7 @@ export class LoudnessShaperNode extends TransformNode<LoudnessShaperProperties> 
 	}
 }
 
-export function loudnessShaper(options: { target?: number; floor: number; bodyLow: number; bodyHigh: number; preservePeaks?: boolean; warmth?: number; id?: string }): LoudnessShaperNode {
+export function loudnessShaper(options: { target?: number; floor: number; bodyLow: number; bodyHigh: number; preservePeaks?: boolean; warmth?: number; tensionLow?: number; tensionHigh?: number; tolerance?: number; maxAttempts?: number; id?: string }): LoudnessShaperNode {
 	const parsed = schema.parse(options);
 
 	return new LoudnessShaperNode({ ...parsed, id: options.id });

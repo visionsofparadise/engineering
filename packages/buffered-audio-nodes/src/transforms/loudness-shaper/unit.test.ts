@@ -46,6 +46,10 @@ interface ShaperRunOptions {
 	bodyHigh: number;
 	preservePeaks?: boolean;
 	warmth?: number;
+	tensionLow?: number;
+	tensionHigh?: number;
+	tolerance?: number;
+	maxAttempts?: number;
 }
 
 /**
@@ -63,6 +67,10 @@ async function runStream(channels: ReadonlyArray<Float32Array>, sampleRate: numb
 		bodyHigh: properties.bodyHigh,
 		preservePeaks: properties.preservePeaks ?? true,
 		warmth: properties.warmth ?? 0,
+		tensionLow: properties.tensionLow ?? 1,
+		tensionHigh: properties.tensionHigh ?? 1,
+		tolerance: properties.tolerance ?? 0.5,
+		maxAttempts: properties.maxAttempts ?? 10,
 		bufferSize: Infinity,
 		overlap: 0,
 	});
@@ -144,6 +152,10 @@ async function runStreamChunked(channels: ReadonlyArray<Float32Array>, sampleRat
 		bodyHigh: properties.bodyHigh,
 		preservePeaks: properties.preservePeaks ?? true,
 		warmth: properties.warmth ?? 0,
+		tensionLow: properties.tensionLow ?? 1,
+		tensionHigh: properties.tensionHigh ?? 1,
+		tolerance: properties.tolerance ?? 0.5,
+		maxAttempts: properties.maxAttempts ?? 10,
 		bufferSize: Infinity,
 		overlap: 0,
 	});
@@ -218,10 +230,14 @@ describe("LoudnessShaper schema", () => {
 		expect(parsed.target).toBe(-16);
 		expect(parsed.preservePeaks).toBe(true);
 		expect(parsed.warmth).toBe(0);
+		expect(parsed.tensionLow).toBe(1);
+		expect(parsed.tensionHigh).toBe(1);
+		expect(parsed.tolerance).toBe(0.5);
+		expect(parsed.maxAttempts).toBe(10);
 	});
 
 	it("accepts explicit valid values", () => {
-		const parsed = schema.parse({ target: -10, floor: -50, bodyLow: -35, bodyHigh: -15, preservePeaks: false, warmth: 0.5 });
+		const parsed = schema.parse({ target: -10, floor: -50, bodyLow: -35, bodyHigh: -15, preservePeaks: false, warmth: 0.5, tensionLow: 2, tensionHigh: 0.5, tolerance: 0.1, maxAttempts: 20 });
 
 		expect(parsed.target).toBe(-10);
 		expect(parsed.floor).toBe(-50);
@@ -229,6 +245,10 @@ describe("LoudnessShaper schema", () => {
 		expect(parsed.bodyHigh).toBe(-15);
 		expect(parsed.preservePeaks).toBe(false);
 		expect(parsed.warmth).toBeCloseTo(0.5, 10);
+		expect(parsed.tensionLow).toBe(2);
+		expect(parsed.tensionHigh).toBe(0.5);
+		expect(parsed.tolerance).toBeCloseTo(0.1, 10);
+		expect(parsed.maxAttempts).toBe(20);
 	});
 
 	it("requires floor, bodyLow, bodyHigh (no defaults)", () => {
@@ -269,8 +289,21 @@ describe("LoudnessShaper schema", () => {
 		expect(() => schema.parse({ ...validAnchors, target: 5 })).toThrow();
 	});
 
+	it("rejects tension values <= 0", () => {
+		expect(() => schema.parse({ ...validAnchors, tensionLow: 0 })).toThrow();
+		expect(() => schema.parse({ ...validAnchors, tensionHigh: -1 })).toThrow();
+	});
+
+	it("rejects tolerance <= 0 and non-positive maxAttempts", () => {
+		expect(() => schema.parse({ ...validAnchors, tolerance: 0 })).toThrow();
+		expect(() => schema.parse({ ...validAnchors, tolerance: -0.1 })).toThrow();
+		expect(() => schema.parse({ ...validAnchors, maxAttempts: 0 })).toThrow();
+		expect(() => schema.parse({ ...validAnchors, maxAttempts: 1.5 })).toThrow();
+		expect(() => schema.parse({ ...validAnchors, maxAttempts: -1 })).toThrow();
+	});
+
 	it("loudnessShaper() factory parses options through the schema", () => {
-		const node = loudnessShaper({ target: -12, floor: -55, bodyLow: -42, bodyHigh: -20, warmth: 0.2 });
+		const node = loudnessShaper({ target: -12, floor: -55, bodyLow: -42, bodyHigh: -20, warmth: 0.2, tensionLow: 3, tensionHigh: 0.5, tolerance: 0.2, maxAttempts: 15 });
 
 		expect(node.properties.target).toBe(-12);
 		expect(node.properties.floor).toBe(-55);
@@ -278,6 +311,10 @@ describe("LoudnessShaper schema", () => {
 		expect(node.properties.bodyHigh).toBe(-20);
 		expect(node.properties.preservePeaks).toBe(true);
 		expect(node.properties.warmth).toBeCloseTo(0.2, 10);
+		expect(node.properties.tensionLow).toBe(3);
+		expect(node.properties.tensionHigh).toBe(0.5);
+		expect(node.properties.tolerance).toBeCloseTo(0.2, 10);
+		expect(node.properties.maxAttempts).toBe(15);
 	});
 });
 
@@ -489,5 +526,180 @@ describe("LoudnessShaper end-to-end", () => {
 		}
 
 		expect(maxError).toBeLessThan(1e-6);
+	}, TEST_TIMEOUT_MS);
+
+	it("non-default tension changes the output", async () => {
+		const input = makeSynthetic(TEST_FRAMES, TEST_SAMPLE_RATE, 31);
+		const sourceLufs = measureLufs([input], TEST_SAMPLE_RATE);
+
+		if (!Number.isFinite(sourceLufs)) return;
+
+		const target = Math.round((sourceLufs + 3) * 10) / 10;
+
+		// Run 1: linear default (tensionLow: 1, tensionHigh: 1)
+		const run1 = await (async () => {
+			const stream = new LoudnessShaperStream({
+				target,
+				...synthAnchors,
+				preservePeaks: true,
+				warmth: 0,
+				tensionLow: 1,
+				tensionHigh: 1,
+				tolerance: 0.5,
+				maxAttempts: 10,
+				bufferSize: Infinity,
+				overlap: 0,
+			});
+			const transformStream = stream.createTransformStream();
+			const writer = transformStream.writable.getWriter();
+			const reader = transformStream.readable.getReader();
+			const drain = (async () => {
+				const pieces: Array<Array<Float32Array>> = [];
+
+				while (true) {
+					const next = await reader.read();
+
+					if (next.done) return pieces;
+
+					pieces.push(next.value.samples);
+				}
+			})();
+
+			await writer.write({ samples: [input], offset: 0, sampleRate: TEST_SAMPLE_RATE, bitDepth: 32 });
+			await writer.close();
+
+			const pieces = await drain;
+			let totalLen = 0;
+
+			for (const p of pieces) totalLen += p[0]?.length ?? 0;
+
+			const out = new Float32Array(totalLen);
+			let off = 0;
+
+			for (const p of pieces) {
+				const slice = p[0];
+
+				if (slice) { out.set(slice, off); off += slice.length; }
+			}
+
+			return out;
+		})();
+
+		// Run 2: convex on both ramps (tensionLow: 2, tensionHigh: 2)
+		const run2 = await (async () => {
+			const stream = new LoudnessShaperStream({
+				target,
+				...synthAnchors,
+				preservePeaks: true,
+				warmth: 0,
+				tensionLow: 2,
+				tensionHigh: 2,
+				tolerance: 0.5,
+				maxAttempts: 10,
+				bufferSize: Infinity,
+				overlap: 0,
+			});
+			const transformStream = stream.createTransformStream();
+			const writer = transformStream.writable.getWriter();
+			const reader = transformStream.readable.getReader();
+			const drain = (async () => {
+				const pieces: Array<Array<Float32Array>> = [];
+
+				while (true) {
+					const next = await reader.read();
+
+					if (next.done) return pieces;
+
+					pieces.push(next.value.samples);
+				}
+			})();
+
+			await writer.write({ samples: [input], offset: 0, sampleRate: TEST_SAMPLE_RATE, bitDepth: 32 });
+			await writer.close();
+
+			const pieces = await drain;
+			let totalLen = 0;
+
+			for (const p of pieces) totalLen += p[0]?.length ?? 0;
+
+			const out = new Float32Array(totalLen);
+			let off = 0;
+
+			for (const p of pieces) {
+				const slice = p[0];
+
+				if (slice) { out.set(slice, off); off += slice.length; }
+			}
+
+			return out;
+		})();
+
+		expect(run1.length).toBe(input.length);
+		expect(run2.length).toBe(input.length);
+
+		let differingSamples = 0;
+
+		for (let index = 0; index < input.length; index++) {
+			if (Math.abs((run1[index] ?? 0) - (run2[index] ?? 0)) > 1e-5) differingSamples++;
+		}
+
+		expect(differingSamples).toBeGreaterThan(0);
+	}, TEST_TIMEOUT_MS);
+
+	it("tight tolerance and high maxAttempts yields closer convergence", async () => {
+		const input = makeSynthetic(TEST_FRAMES, TEST_SAMPLE_RATE, 41);
+		const sourceLufs = measureLufs([input], TEST_SAMPLE_RATE);
+		const target = Math.round((sourceLufs + 3) * 10) / 10;
+
+		const stream = new LoudnessShaperStream({
+			target,
+			...synthAnchors,
+			preservePeaks: true,
+			warmth: 0,
+			tensionLow: 1,
+			tensionHigh: 1,
+			tolerance: 0.05,
+			maxAttempts: 20,
+			bufferSize: Infinity,
+			overlap: 0,
+		});
+		const transformStream = stream.createTransformStream();
+		const writer = transformStream.writable.getWriter();
+		const reader = transformStream.readable.getReader();
+
+		const drain = (async () => {
+			const pieces: Array<Array<Float32Array>> = [];
+
+			while (true) {
+				const next = await reader.read();
+
+				if (next.done) return pieces;
+
+				pieces.push(next.value.samples);
+			}
+		})();
+
+		await writer.write({ samples: [input], offset: 0, sampleRate: TEST_SAMPLE_RATE, bitDepth: 32 });
+		await writer.close();
+
+		const pieces = await drain;
+		let totalLen = 0;
+
+		for (const p of pieces) totalLen += p[0]?.length ?? 0;
+
+		const out = new Float32Array(totalLen);
+		let off = 0;
+
+		for (const p of pieces) {
+			const slice = p[0];
+
+			if (slice) { out.set(slice, off); off += slice.length; }
+		}
+
+		expect(out.length).toBe(input.length);
+
+		const measured = measureLufs([out], TEST_SAMPLE_RATE);
+
+		expect(Math.abs(measured - target)).toBeLessThan(0.5);
 	}, TEST_TIMEOUT_MS);
 });
