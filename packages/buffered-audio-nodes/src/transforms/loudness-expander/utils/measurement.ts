@@ -18,12 +18,11 @@ import { IntegratedLufsAccumulator } from "@e9g/buffered-audio-nodes-utils";
 
 /**
  * Iteration chunk size — one second's worth of frames at 44.1 kHz.
- * Matches the convention in `loudness-shaper/utils/measurement.ts`,
- * `loudness-normalize/utils/measurement.ts`, and
- * `transforms/ffmpeg/utils/process.ts`. Re-declared locally (matching the
- * shaper's pattern of each measurement / iterate file owning its own
- * constant) so this module doesn't introduce a cross-file coupling for a
- * single integer.
+ * Matches the convention in `loudness-shaper/utils/measurement.ts` and
+ * `loudness-normalize/utils/measurement.ts`. Re-declared locally
+ * (matching the shaper's pattern of each measurement / iterate file
+ * owning its own constant) so this module doesn't introduce a cross-file
+ * coupling for a single integer.
  */
 const CHUNK_FRAMES = 44_100;
 

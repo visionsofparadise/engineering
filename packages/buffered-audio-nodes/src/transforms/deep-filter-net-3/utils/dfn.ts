@@ -6,45 +6,74 @@ export const DFN3_FFT_SIZE = 960;
 export const DFN3_STATE_SIZE = 45304;
 
 /**
- * Run the DeepFilterNet3 (48 kHz) ONNX model over a mono audio signal.
+ * Carried per-stream inference state for DeepFilterNet3. The recurrent ONNX state
+ * tensor and a 1-element atten buffer; both reused across `processDfnBlock` calls
+ * to avoid per-frame allocation. The state is mutated in place via `state.set()`
+ * after each ONNX call.
+ */
+export interface DfnState {
+	state: Float32Array;
+	atten: Float32Array;
+}
+
+/**
+ * Allocate a fresh DFN3 state. Called once per channel per stream lifetime in
+ * `DeepFilterNet3Stream._setup`.
+ */
+export function createDfnState(): DfnState {
+	return {
+		state: new Float32Array(DFN3_STATE_SIZE),
+		atten: new Float32Array(1),
+	};
+}
+
+/**
+ * Run DeepFilterNet3 inference over a block of mono 48 kHz audio whose length is
+ * a multiple of `DFN3_HOP_SIZE`. Mutates `dfnState.state` in place across hops so
+ * the model's recurrent state carries across invocations of this function within
+ * a stream lifetime.
  *
- * Framing matches the reference Python implementation:
- * - Pad the tail with `(hop - len % hop) % hop` zeros so total length is a multiple of hop.
- * - Append an extra `fft_size` (960) zero tail before chunking.
- * - Chunk into fixed-size `hop_size` (480) frames.
- * - Feed each frame plus the carried `[45304]` state tensor and the scalar `atten_lim_db`.
- * - Concatenate outputs and trim `fft_size - hop_size = 480` leading samples to realign,
- *   then slice to the original length.
+ * The trailing partial-block case (length not a hop multiple) only happens during
+ * `handleFlush`'s single final call: the input is zero-padded internally up to the
+ * next hop boundary, inference runs across the padded frames, and the returned
+ * output is trimmed back to the actual input length. The recurrent state is
+ * "dirty" after this trim but the stream is over.
  *
- * STFT/iSTFT is internal to the ONNX graph — no JS overlap-add.
+ * STFT/iSTFT is internal to the ONNX graph — no JS overlap-add. The
+ * whole-file-only realignment trim and FFT-tail padding from the prior reference
+ * implementation are gone: realignment is implicit in the model's recurrent state
+ * across calls in streaming mode.
  *
+ * @param dfnState The carried per-stream state. Mutated.
  * @param signal Input audio at 48 kHz (mono Float32Array).
  * @param session ONNX session for `dfn3.onnx`.
  * @param attenLimDb Attenuation cap in dB (0 = no cap).
  * @returns Enhanced signal of the same length as the input.
  */
-export function processDfnFrames(signal: Float32Array, session: OnnxSession, attenLimDb: number): Float32Array {
+export function processDfnBlock(dfnState: DfnState, signal: Float32Array, session: OnnxSession, attenLimDb: number): Float32Array {
 	const originalLength = signal.length;
-	const hopPadding = (DFN3_HOP_SIZE - (originalLength % DFN3_HOP_SIZE)) % DFN3_HOP_SIZE;
-	const paddedLength = originalLength + hopPadding + DFN3_FFT_SIZE;
-	const padded = new Float32Array(paddedLength);
+	const hopRemainder = originalLength % DFN3_HOP_SIZE;
+	const paddedLength = hopRemainder === 0 ? originalLength : originalLength + (DFN3_HOP_SIZE - hopRemainder);
+	const padded = paddedLength === originalLength ? signal : new Float32Array(paddedLength);
 
-	padded.set(signal);
+	if (padded !== signal) {
+		padded.set(signal);
+	}
 
 	const numFrames = paddedLength / DFN3_HOP_SIZE;
-	const concat = new Float32Array(paddedLength);
+	const output = new Float32Array(originalLength);
+	const { state, atten } = dfnState;
 
-	let state = new Float32Array(DFN3_STATE_SIZE);
-	const attenBuffer = new Float32Array([attenLimDb]);
+	atten[0] = attenLimDb;
 
 	for (let frameIndex = 0; frameIndex < numFrames; frameIndex++) {
 		const offset = frameIndex * DFN3_HOP_SIZE;
-		const inputFrame = padded.slice(offset, offset + DFN3_HOP_SIZE);
+		const inputFrame = padded.subarray(offset, offset + DFN3_HOP_SIZE);
 
 		const result = session.run({
 			input_frame: { data: inputFrame, dims: [DFN3_HOP_SIZE] },
 			states: { data: state, dims: [DFN3_STATE_SIZE] },
-			atten_lim_db: { data: attenBuffer, dims: [1] },
+			atten_lim_db: { data: atten, dims: [1] },
 		});
 
 		const enhanced = result.enhanced_audio_frame;
@@ -52,26 +81,23 @@ export function processDfnFrames(signal: Float32Array, session: OnnxSession, att
 
 		if (enhanced) {
 			const outFrame = enhanced.data;
-			const copyLen = Math.min(outFrame.length, DFN3_HOP_SIZE);
+			const writeStart = offset;
+			// Trim against `originalLength` so the final partial block doesn't write
+			// past the output buffer end (the padded zeros beyond originalLength are
+			// inferred but not emitted).
+			const writeEnd = Math.min(writeStart + DFN3_HOP_SIZE, originalLength);
+			const copyLen = writeEnd - writeStart;
 
 			for (let index = 0; index < copyLen; index++) {
-				concat[offset + index] = outFrame[index] ?? 0;
+				output[writeStart + index] = outFrame[index] ?? 0;
 			}
 		}
 
 		if (newStates) {
-			state = new Float32Array(newStates.data);
+			state.set(newStates.data);
 		}
-	}
-
-	// Trim leading fft_size - hop_size samples (the reference realignment) and clip to
-	// original length.
-	const trimStart = DFN3_FFT_SIZE - DFN3_HOP_SIZE;
-	const output = new Float32Array(originalLength);
-
-	for (let index = 0; index < originalLength; index++) {
-		output[index] = concat[trimStart + index] ?? 0;
 	}
 
 	return output;
 }
+

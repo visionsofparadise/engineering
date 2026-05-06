@@ -1,10 +1,10 @@
 import type { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { IntegratedLufsAccumulator } from "@e9g/buffered-audio-nodes-utils";
 
-// Match the iteration chunk size used elsewhere in the package
-// (see `transforms/ffmpeg/utils/process.ts`). One second's worth of
-// frames at 44.1 kHz is a sane balance between per-iteration overhead
-// and per-chunk allocation pressure.
+// One second's worth of frames at 44.1 kHz — a sane balance between
+// per-iteration overhead and per-chunk allocation pressure when streaming
+// a `ChunkBuffer` through an accumulator. Same constant is used by the
+// other loudness-* measurement helpers; keep them in sync.
 const CHUNK_FRAMES = 44100;
 
 /**

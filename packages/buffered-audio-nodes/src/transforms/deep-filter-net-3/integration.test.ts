@@ -54,10 +54,12 @@ function computeRms(signal: Float32Array): number {
 
 describeIfFixtureSet("deep-filter-net-3", () => {
 	it("processes voice audio", async () => {
+		// test-voice.wav is 44100 Hz — DFN3 chains internal up/down resamplers around the 48 kHz inference stream.
 		const transform = deepFilterNet3({
 			modelPath: binaries.dfn3,
 			ffmpegPath: binaries.ffmpeg,
 			onnxAddonPath: binaries.onnxAddon,
+			sampleRate: 44100,
 		});
 		const { input, output, context } = await runTransform(audio.testVoice, transform);
 
@@ -95,6 +97,7 @@ describeIfFixtureSet("deep-filter-net-3", () => {
 				modelPath: binaries.dfn3,
 				ffmpegPath: binaries.ffmpeg,
 				onnxAddonPath: binaries.onnxAddon,
+				sampleRate,
 			});
 			const { input, output } = await runTransform(tempPath, transform);
 			const inputRms = computeRms(input[0] ?? new Float32Array());
@@ -107,6 +110,66 @@ describeIfFixtureSet("deep-filter-net-3", () => {
 			const reductionDb = 20 * Math.log10((inputRms + 1e-12) / (outputRms + 1e-12));
 
 			expect(reductionDb).toBeGreaterThanOrEqual(1);
+			expect(notAnomalous(output).pass).toBe(true);
+		} finally {
+			try {
+				await unlink(tempPath);
+			} catch {
+				// best-effort cleanup
+			}
+		}
+	}, 240_000);
+
+	it("processes a 44.1 kHz fixture via internal up/down resample composition", async () => {
+		// Verifies Phase 3.3: when sampleRate ≠ 48000, _setup chains FfmpegStream
+		// instances around the inference stream so the source rate round-trips
+		// correctly. Synthetic 44.1 kHz fixture: 2-second 220 Hz sine + white noise.
+		const sampleRate = 44100;
+		const durationSeconds = 2;
+		const numSamples = sampleRate * durationSeconds;
+		const signalAmp = 0.2;
+		const noiseAmp = 0.1;
+		const noisy = new Float32Array(numSamples);
+
+		for (let index = 0; index < numSamples; index++) {
+			const sine = signalAmp * Math.sin((2 * Math.PI * 220 * index) / sampleRate);
+			const noise = noiseAmp * (Math.random() * 2 - 1);
+
+			noisy[index] = sine + noise;
+		}
+
+		const tempPath = join(tmpdir(), `dfn-44k-${randomBytes(8).toString("hex")}.wav`);
+
+		await writeFile(tempPath, encodeWavFloat32(noisy, sampleRate));
+
+		try {
+			const transform = deepFilterNet3({
+				modelPath: binaries.dfn3,
+				ffmpegPath: binaries.ffmpeg,
+				onnxAddonPath: binaries.onnxAddon,
+				sampleRate,
+			});
+			const { input, output } = await runTransform(tempPath, transform);
+			const inputChannel = input[0] ?? new Float32Array();
+			const outputChannel = output[0] ?? new Float32Array();
+
+			// Output length matches input length within ±2 frames (resample roundtrip
+			// can drift by a small fractional amount; same tolerance as the ffmpeg
+			// resample-roundtrip test).
+			expect(Math.abs(outputChannel.length - inputChannel.length)).toBeLessThanOrEqual(2);
+
+			// Output is non-silent: at least one sample exceeds a small floor.
+			let maxAbs = 0;
+
+			for (let index = 0; index < outputChannel.length; index++) {
+				const v = Math.abs(outputChannel[index] ?? 0);
+
+				if (v > maxAbs) maxAbs = v;
+			}
+
+			expect(maxAbs).toBeGreaterThan(1e-3);
+
+			// Output is well-behaved (no NaN, denorm, DC, clip anomalies).
 			expect(notAnomalous(output).pass).toBe(true);
 		} finally {
 			try {

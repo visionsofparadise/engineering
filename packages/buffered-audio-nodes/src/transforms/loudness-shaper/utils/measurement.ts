@@ -3,11 +3,10 @@ import { IntegratedLufsAccumulator } from "@e9g/buffered-audio-nodes-utils";
 
 /**
  * Iteration chunk size — one second's worth of frames at 44.1 kHz.
- * Matches the convention in `loudness-normalize/utils/measurement.ts`
- * and `transforms/ffmpeg/utils/process.ts`. Keep in sync with the
- * `CHUNK_FRAMES` constant exported by this module's neighbour
- * `iterate.ts` so the apply pass and learn pass walk the buffer at the
- * same granularity.
+ * Matches the convention in `loudness-normalize/utils/measurement.ts`.
+ * Keep in sync with the `CHUNK_FRAMES` constant exported by this
+ * module's neighbour `iterate.ts` so the apply pass and learn pass walk
+ * the buffer at the same granularity.
  */
 const CHUNK_FRAMES = 44100;
 

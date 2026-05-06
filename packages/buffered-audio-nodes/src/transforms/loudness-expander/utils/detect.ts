@@ -22,9 +22,8 @@ import type { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 
 /**
  * Iteration chunk size — one second's worth of frames at 44.1 kHz.
- * Matches the convention in `loudness-shaper/utils/measurement.ts`,
- * `loudness-normalize/utils/measurement.ts`, and
- * `transforms/ffmpeg/utils/process.ts`. Keep in sync with the same
+ * Matches the convention in `loudness-shaper/utils/measurement.ts` and
+ * `loudness-normalize/utils/measurement.ts`. Keep in sync with the same
  * constant declared in this module's neighbours so the detect, learn,
  * and apply walks all use the same granularity.
  */
