@@ -6,6 +6,19 @@ import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { waitForDrain } from "../../utils/ffmpeg";
 import { getBytesPerSample, writeSample, buildWavHeader, buildRf64Header } from "./utils/wav";
 
+function bitDepthToPcmFormat(bitDepth: WavBitDepth): string {
+	switch (bitDepth) {
+		case "16":
+			return "s16le";
+		case "24":
+			return "s24le";
+		case "32":
+			return "s32le";
+		case "32f":
+			return "f32le";
+	}
+}
+
 export type WavBitDepth = "16" | "24" | "32" | "32f";
 
 export interface EncodingOptions {
@@ -48,12 +61,10 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 	private channels = 0;
 	private bytesWritten = 0;
 	private useEncoding = false;
-	private headerWritten = false;
 	private initialized = false;
 
 	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<void> {
 		this.bytesWritten = 0;
-		this.headerWritten = false;
 		this.initialized = false;
 
 		const encoding = this.properties.encoding;
@@ -64,36 +75,7 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 
 		this.useEncoding = encoding !== undefined && encoding.format !== "wav" && !!this.properties.ffmpegPath;
 
-		if (this.useEncoding && encoding) {
-			const ffmpegPath = this.properties.ffmpegPath;
-
-			if (!ffmpegPath) throw new Error("ffmpegPath is required for encoding");
-
-			const args = this.buildFfmpegArgs(encoding);
-
-			const proc = spawn(ffmpegPath, args, {
-				stdio: ["pipe", "ignore", "pipe"],
-			});
-
-			this.ffmpegProcess = proc;
-			this.ffmpegStdin = proc.stdin;
-
-			this.ffmpegStdin.on("error", () => {});
-
-			this.ffmpegDone = new Promise<void>((resolve, reject) => {
-				proc.on("close", (code) => {
-					if (code !== 0) {
-						reject(new Error(`ffmpeg exited with code ${code}`));
-					} else {
-						resolve();
-					}
-				});
-
-				proc.on("error", (error) => {
-					reject(new Error(`Failed to spawn ffmpeg: ${error.message}`));
-				});
-			});
-		} else {
+		if (!this.useEncoding) {
 			this.fileHandle = await open(this.properties.path, "w");
 		}
 
@@ -107,11 +89,45 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 		this.sampleRate = chunk.sampleRate;
 		this.channels = chunk.samples.length;
 
-		if (!this.useEncoding && this.fileHandle) {
+		if (this.useEncoding) {
+			this.spawnFfmpeg();
+		} else if (this.fileHandle) {
 			const header = buildWavHeader(0, this.sampleRate, this.channels, this.properties.bitDepth);
 
 			await this.fileHandle.write(header, 0, WAV_HEADER_SIZE, 0);
 		}
+	}
+
+	private spawnFfmpeg(): void {
+		const encoding = this.properties.encoding;
+		const ffmpegPath = this.properties.ffmpegPath;
+
+		if (!encoding || !ffmpegPath) throw new Error("ffmpeg encoding misconfigured");
+
+		const args = this.buildFfmpegArgs(encoding);
+
+		const proc = spawn(ffmpegPath, args, {
+			stdio: ["pipe", "ignore", "pipe"],
+		});
+
+		this.ffmpegProcess = proc;
+		this.ffmpegStdin = proc.stdin;
+
+		this.ffmpegStdin.on("error", () => {});
+
+		this.ffmpegDone = new Promise<void>((resolve, reject) => {
+			proc.on("close", (code) => {
+				if (code !== 0) {
+					reject(new Error(`ffmpeg exited with code ${code}`));
+				} else {
+					resolve();
+				}
+			});
+
+			proc.on("error", (error) => {
+				reject(new Error(`Failed to spawn ffmpeg: ${error.message}`));
+			});
+		});
 	}
 
 	override async _write(chunk: AudioChunk): Promise<void> {
@@ -120,13 +136,6 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 		const bytes = this.convertChunk(chunk);
 
 		if (this.useEncoding && this.ffmpegStdin) {
-			if (!this.headerWritten) {
-				const header = buildWavHeader(0xffffffff, this.sampleRate, this.channels, this.properties.bitDepth);
-
-				await this.writeToStdin(header);
-				this.headerWritten = true;
-			}
-
 			await this.writeToStdin(bytes);
 		} else if (this.fileHandle) {
 			await this.fileHandle.write(bytes, 0, bytes.length, WAV_HEADER_SIZE + this.bytesWritten);
@@ -180,7 +189,8 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 	}
 
 	private buildFfmpegArgs(encoding: EncodingOptions): Array<string> {
-		const args = ["-f", "wav", "-i", "pipe:0"];
+		const pcmFormat = bitDepthToPcmFormat(this.properties.bitDepth);
+		const args = ["-f", pcmFormat, "-ar", String(this.sampleRate), "-ac", String(this.channels), "-i", "pipe:0"];
 
 		switch (encoding.format) {
 			case "flac":
