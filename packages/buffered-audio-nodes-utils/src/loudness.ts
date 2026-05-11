@@ -223,6 +223,108 @@ function computeLraFromShortTerm(shortTermLoudness: ReadonlyArray<number>): numb
 }
 
 /**
+ * Stats over the BS.1770 / EBU R128 LRA "considered" set: short-term
+ * blocks that survive both the absolute gate (-70 LUFS) and the
+ * relative gate (-20 LU below the absolute-gated linear-energy mean).
+ *
+ * - `min`: lowest considered LUFS. Used as auto-derived `floor` in
+ *   loudnessTarget (the absolute lower bound of the gain-riding
+ *   zone; samples below this level were not loud enough to
+ *   participate in perceived loudness).
+ * - `median`: 50th-percentile considered LUFS. Used as auto-derived
+ *   `pivot` in loudnessTarget (the "typical" body level — anchor
+ *   where the body's average loudness sits). Median is chosen over
+ *   mean because the gated set can be skewed by transient-rich or
+ *   noise-floor-heavy material; median is robust to either tail.
+ *
+ * Both fields are `Number.POSITIVE_INFINITY` when `shortTerm` is
+ * empty or every block is gated out — callers treat this as "no
+ * considered set" and choose a sentinel fallback.
+ */
+export interface LraConsideredStats {
+	readonly min: number;
+	readonly median: number;
+}
+
+/**
+ * Returns the {@link LraConsideredStats} (min + median) of the
+ * BS.1770 / EBU R128 LRA "considered" set in a single pass.
+ *
+ * Same gating sequence as {@link computeLraFromShortTerm}; all three
+ * share the `LRA_ABSOLUTE_GATE_LUFS` and `LRA_RELATIVE_GATE_OFFSET_LU`
+ * constants defined in this module, including the strict `>`
+ * comparisons used by the EBU Tech 3342 reference.
+ *
+ * Median follows the standard convention: for `n` considered blocks
+ * sorted ascending, `n` odd → element at index `(n-1)/2`; `n` even →
+ * arithmetic mean of indices `n/2 - 1` and `n/2`. Computation
+ * happens in dB units (not linear), matching how the values are
+ * consumed positionally as dBFS anchors on the loudnessTarget curve.
+ */
+export function getLraConsideredStats(shortTerm: ReadonlyArray<number>): LraConsideredStats {
+	// Stage 1: absolute gate at -70 LUFS.
+	const aboveAbsolute: Array<number> = [];
+
+	for (let index = 0; index < shortTerm.length; index++) {
+		const lufs = shortTerm[index] ?? 0;
+
+		if (lufs > LRA_ABSOLUTE_GATE_LUFS) {
+			aboveAbsolute.push(lufs);
+		}
+	}
+
+	if (aboveAbsolute.length === 0) {
+		return { min: Number.POSITIVE_INFINITY, median: Number.POSITIVE_INFINITY };
+	}
+
+	// Stage 2: relative gate at -20 LU below the absolute-gated linear-
+	// energy mean. Mirrors `computeLraFromShortTerm`'s inline arithmetic:
+	// the LUFS_OFFSET cancels out of the comparison and is omitted from
+	// both the mean and the threshold.
+	let absoluteSum = 0;
+
+	for (let index = 0; index < aboveAbsolute.length; index++) {
+		absoluteSum += Math.pow(10, (aboveAbsolute[index] ?? 0) / 10);
+	}
+
+	const absoluteMean = absoluteSum / aboveAbsolute.length;
+	const relativeThreshold = 10 * Math.log10(absoluteMean) + LRA_RELATIVE_GATE_OFFSET_LU;
+
+	const considered: Array<number> = [];
+
+	for (let index = 0; index < aboveAbsolute.length; index++) {
+		const lufs = aboveAbsolute[index] ?? 0;
+
+		if (lufs > relativeThreshold) {
+			considered.push(lufs);
+		}
+	}
+
+	if (considered.length === 0) {
+		return { min: Number.POSITIVE_INFINITY, median: Number.POSITIVE_INFINITY };
+	}
+
+	considered.sort((left, right) => left - right);
+
+	const min = considered[0] ?? Number.POSITIVE_INFINITY;
+	const middleIndex = considered.length >> 1;
+	const median = considered.length % 2 === 1
+		? considered[middleIndex] ?? Number.POSITIVE_INFINITY
+		: ((considered[middleIndex - 1] ?? 0) + (considered[middleIndex] ?? 0)) / 2;
+
+	return { min, median };
+}
+
+/**
+ * Backwards-compatible wrapper returning only `min(considered)`.
+ * Prefer {@link getLraConsideredStats} for new call sites that need
+ * either statistic.
+ */
+export function getLraConsideredMinLufs(shortTerm: ReadonlyArray<number>): number {
+	return getLraConsideredStats(shortTerm).min;
+}
+
+/**
  * Aggregate result from {@link LoudnessAccumulator.finalize}.
  *
  * - `integrated`: BS.1770-4 integrated LUFS (two-stage gate, 400 ms / 100 ms).

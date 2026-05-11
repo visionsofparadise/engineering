@@ -22,8 +22,24 @@ export interface BidirectionalIirOptions {
  * `applyCausal` is the single-pass form. State is carried by the
  * caller via `{ value: number }` so chunked use can be continuous.
  *
- * At `smoothingMs <= 0` both methods are identity (a fresh copy of
- * the input is returned).
+ * `applyForwardPass` is the chunked-streaming forward HALF of the
+ * bidirectional cascade — same loop body as `applyCausal`, but using
+ * `alphaBidirectional` (the sqrt(2)-compensated alpha) so the result,
+ * when followed by `applyBackwardPassInPlace`, matches
+ * `applyBidirectional` byte-for-byte. State is caller-managed
+ * `{ value: number }` for chunk-boundary continuity.
+ *
+ * `applyBackwardPassInPlace` runs the backward HALF of the bidirectional
+ * cascade IN PLACE on a buffer (overwrites it). Whole-array, not
+ * chunked — backward IIR cannot stream forward through chunks because
+ * it must walk end-to-start. The "in place" qualifier is the savings:
+ * the caller hands in the post-forward buffer; this method overwrites
+ * it with the final smoothed result without allocating a separate
+ * output array. Init from `buffer[buffer.length - 1]`, matching
+ * `applyBidirectional`'s second pass.
+ *
+ * At `smoothingMs <= 0` all methods are identity (forward / causal
+ * return a fresh copy of the input; in-place backward is a no-op).
  */
 export class BidirectionalIir {
 	private readonly smoothingMs: number;
@@ -113,5 +129,73 @@ export class BidirectionalIir {
 		state.value = y;
 
 		return output;
+	}
+
+	/**
+	 * Forward HALF of the bidirectional cascade, chunked. Same loop body
+	 * as `applyCausal`, but uses `alphaBidirectional` (the sqrt(2)-
+	 * compensated alpha) so the output, after a subsequent
+	 * `applyBackwardPassInPlace` on the concatenated forward result,
+	 * matches `applyBidirectional`'s output byte-for-byte.
+	 *
+	 * State is carried by the caller via `{ value: number }`. For the
+	 * very first chunk the caller must seed `state.value = input[0]`
+	 * (matching `applyBidirectional`'s "init from first sample" rule);
+	 * for subsequent chunks `state.value` carries the previous chunk's
+	 * trailing forward state.
+	 *
+	 * Identity when smoothingMs <= 0 (returns a fresh copy of the
+	 * input).
+	 */
+	applyForwardPass(input: Float32Array, state: { value: number }): Float32Array {
+		const output = Float32Array.from(input);
+
+		if (this.smoothingMs <= 0) return output;
+
+		const alpha = this.alphaBidirectional;
+		const oneMinusAlpha = 1 - alpha;
+		let y = state.value;
+
+		for (let index = 0; index < output.length; index++) {
+			const x = output[index] ?? 0;
+
+			y = alpha * x + oneMinusAlpha * y;
+			output[index] = y;
+		}
+
+		state.value = y;
+
+		return output;
+	}
+
+	/**
+	 * Backward HALF of the bidirectional cascade, run IN PLACE on a
+	 * whole-array buffer. The buffer is expected to hold the result of
+	 * the forward HALF (e.g. produced by chunked `applyForwardPass`
+	 * calls concatenated together). Overwrites `buffer` with the final
+	 * smoothed result.
+	 *
+	 * Init from `buffer[buffer.length - 1]`, matching the second pass of
+	 * `applyBidirectional`. Uses `alphaBidirectional`.
+	 *
+	 * Whole-array (not chunked) — backward IIR cannot stream forward
+	 * because it must walk end-to-start.
+	 *
+	 * Identity (no-op) when smoothingMs <= 0.
+	 */
+	applyBackwardPassInPlace(buffer: Float32Array): void {
+		if (this.smoothingMs <= 0) return;
+		if (buffer.length === 0) return;
+
+		const alpha = this.alphaBidirectional;
+		const oneMinusAlpha = 1 - alpha;
+		let y = buffer[buffer.length - 1] ?? 0;
+
+		for (let index = buffer.length - 1; index >= 0; index--) {
+			const x = buffer[index] ?? 0;
+
+			y = alpha * x + oneMinusAlpha * y;
+			buffer[index] = y;
+		}
 	}
 }

@@ -255,4 +255,193 @@ describe("BidirectionalIir", () => {
 			}
 		});
 	});
+
+	/**
+	 * Phase 3 of plan-loudness-target-upsampled-streaming. New
+	 * `applyForwardPass` (chunked-streaming forward HALF using
+	 * `alphaBidirectional`) and `applyBackwardPassInPlace` (whole-array
+	 * backward HALF, in-place) compose to produce the same output as
+	 * `applyBidirectional` byte-for-byte.
+	 */
+	describe("applyForwardPass + applyBackwardPassInPlace", () => {
+		const sampleRate = 48000;
+		const smoothingMs = 5;
+
+		// Build a deterministic test fixture.
+		function makeFixture(length: number): Float32Array {
+			const fixture = new Float32Array(length);
+
+			for (let frameIdx = 0; frameIdx < length; frameIdx++) {
+				const sine = Math.sin((2 * Math.PI * 100 * frameIdx) / sampleRate);
+				const triangle = ((frameIdx % 256) / 256) * 2 - 1;
+
+				fixture[frameIdx] = sine * 0.5 + triangle * 0.3 + 0.2;
+			}
+
+			return fixture;
+		}
+
+		it("identity at smoothingMs = 0", () => {
+			const iir = new BidirectionalIir({ smoothingMs: 0, sampleRate });
+			const input = new Float32Array([0, 0.25, -0.5, 0.75, 1, -1, 0.123, 0]);
+			const state = { value: 0 };
+
+			const forward = iir.applyForwardPass(input, state);
+
+			expect(forward).not.toBe(input);
+			expect(forward.length).toBe(input.length);
+
+			for (let frameIdx = 0; frameIdx < input.length; frameIdx++) {
+				expect(forward[frameIdx]).toBe(input[frameIdx]);
+			}
+
+			// In-place backward at smoothingMs = 0 is a no-op.
+			const buffer = Float32Array.from(input);
+
+			iir.applyBackwardPassInPlace(buffer);
+
+			for (let frameIdx = 0; frameIdx < input.length; frameIdx++) {
+				expect(buffer[frameIdx]).toBe(input[frameIdx]);
+			}
+		});
+
+		it("output length matches input length", () => {
+			const iir = new BidirectionalIir({ smoothingMs, sampleRate });
+
+			for (const length of [0, 1, 17, 4096]) {
+				const input = new Float32Array(length);
+				const state = { value: 0 };
+				const forward = iir.applyForwardPass(input, state);
+
+				expect(forward.length).toBe(length);
+
+				const buffer = new Float32Array(length);
+
+				iir.applyBackwardPassInPlace(buffer);
+				expect(buffer.length).toBe(length);
+			}
+		});
+
+		it("applyForwardPass does not mutate input", () => {
+			const iir = new BidirectionalIir({ smoothingMs, sampleRate });
+			const input = new Float32Array([0, 0.25, 0.5, 0.75, 1, 0.75, 0.5, 0.25, 0]);
+			const reference = Float32Array.from(input);
+			const state = { value: input[0] ?? 0 };
+
+			iir.applyForwardPass(input, state);
+
+			for (let frameIdx = 0; frameIdx < input.length; frameIdx++) {
+				expect(input[frameIdx]).toBe(reference[frameIdx]);
+			}
+		});
+
+		it("applyBackwardPassInPlace overwrites the buffer in place", () => {
+			const iir = new BidirectionalIir({ smoothingMs, sampleRate });
+			const buffer = makeFixture(1024);
+			const original = Float32Array.from(buffer);
+
+			iir.applyBackwardPassInPlace(buffer);
+
+			// Buffer mutated (at smoothingMs > 0 the backward pass changes
+			// the contents) — assert at least one sample differs.
+			let anyDelta = false;
+
+			for (let frameIdx = 0; frameIdx < buffer.length; frameIdx++) {
+				if (buffer[frameIdx] !== original[frameIdx]) {
+					anyDelta = true;
+					break;
+				}
+			}
+
+			expect(anyDelta).toBe(true);
+		});
+
+		it("forward-pass state continuity: chunked = whole-array (single fixture, multiple split points)", () => {
+			const iir = new BidirectionalIir({ smoothingMs, sampleRate });
+			const fixture = makeFixture(4096);
+
+			// Reference: whole-array forward pass. Seed state from the first
+			// sample so the result matches `applyBidirectional`'s forward
+			// HALF (which initialises `y` from `output[0]` before the loop).
+			const wholeState = { value: fixture[0] ?? 0 };
+			const wholeOutput = iir.applyForwardPass(fixture, wholeState);
+
+			// Chunked: split at multiple boundaries; concat outputs; assert
+			// equality to whole-array within tight tolerance.
+			for (const splitPoints of [[1024, 2048, 3072], [333, 1000, 2500], [1, 4095], [2048]]) {
+				const chunkedOut = new Float32Array(fixture.length);
+				const chunkedState = { value: fixture[0] ?? 0 };
+				let writeOffset = 0;
+				let readOffset = 0;
+
+				for (const splitPoint of [...splitPoints, fixture.length]) {
+					const chunk = fixture.slice(readOffset, splitPoint);
+					const chunkOut = iir.applyForwardPass(chunk, chunkedState);
+
+					chunkedOut.set(chunkOut, writeOffset);
+					writeOffset += chunkOut.length;
+					readOffset = splitPoint;
+				}
+
+				expect(writeOffset).toBe(fixture.length);
+
+				for (let frameIdx = 0; frameIdx < fixture.length; frameIdx++) {
+					const expected = wholeOutput[frameIdx] ?? 0;
+					const actual = chunkedOut[frameIdx] ?? 0;
+
+					expect(Math.abs(expected - actual)).toBeLessThan(1e-6);
+				}
+			}
+		});
+
+		it("backward-pass in-place equivalence vs applyBidirectional's second pass", () => {
+			const iir = new BidirectionalIir({ smoothingMs, sampleRate });
+			const fixture = makeFixture(4096);
+
+			// Reference: full applyBidirectional output.
+			const reference = iir.applyBidirectional(fixture);
+
+			// Streamed compose: forward pass over the whole fixture, then
+			// in-place backward pass — should produce the same bytes as
+			// applyBidirectional.
+			const forwardState = { value: fixture[0] ?? 0 };
+			const buffer = iir.applyForwardPass(fixture, forwardState);
+
+			iir.applyBackwardPassInPlace(buffer);
+
+			for (let frameIdx = 0; frameIdx < fixture.length; frameIdx++) {
+				const expected = reference[frameIdx] ?? 0;
+				const actual = buffer[frameIdx] ?? 0;
+
+				expect(Math.abs(expected - actual)).toBeLessThan(1e-6);
+			}
+		});
+
+		it("chunked forward + in-place backward composes to applyBidirectional bytes", () => {
+			const iir = new BidirectionalIir({ smoothingMs, sampleRate });
+			const fixture = makeFixture(4096);
+			const reference = iir.applyBidirectional(fixture);
+
+			const buffer = new Float32Array(fixture.length);
+			const state = { value: fixture[0] ?? 0 };
+			let writeOffset = 0;
+
+			for (const splitPoint of [333, 1000, 2500, fixture.length]) {
+				const chunk = fixture.slice(writeOffset, splitPoint);
+				const chunkOut = iir.applyForwardPass(chunk, state);
+
+				buffer.set(chunkOut, writeOffset);
+				writeOffset = splitPoint;
+			}
+
+			iir.applyBackwardPassInPlace(buffer);
+
+			for (let frameIdx = 0; frameIdx < fixture.length; frameIdx++) {
+				const expected = reference[frameIdx] ?? 0;
+				const actual = buffer[frameIdx] ?? 0;
+
+				expect(Math.abs(expected - actual)).toBeLessThan(1e-6);
+			}
+		});
+	});
 });

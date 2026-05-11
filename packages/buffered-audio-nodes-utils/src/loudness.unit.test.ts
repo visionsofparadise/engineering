@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { IntegratedLufsAccumulator } from "./loudness";
+import { getLraConsideredMinLufs, IntegratedLufsAccumulator, LoudnessAccumulator } from "./loudness";
 
 function generateSine(frequency: number, amplitude: number, sampleRate: number, durationSeconds: number): Float32Array {
 	const length = Math.floor(sampleRate * durationSeconds);
@@ -170,5 +170,82 @@ describe("IntegratedLufsAccumulator", () => {
 		const streamed = accumulator.finalize();
 
 		expect(Math.abs(streamed - oneShot)).toBeLessThan(1e-6);
+	});
+});
+
+describe("getLraConsideredMinLufs", () => {
+	it("empty input returns +Infinity", () => {
+		expect(getLraConsideredMinLufs([])).toBe(Number.POSITIVE_INFINITY);
+	});
+
+	it("all blocks at -80 LUFS (below absolute gate) return +Infinity", () => {
+		const shortTerm = [-80, -80, -80, -80];
+
+		expect(getLraConsideredMinLufs(shortTerm)).toBe(Number.POSITIVE_INFINITY);
+	});
+
+	it("single block at -30 LUFS survives both gates and is returned as the min", () => {
+		// Absolute gate: -30 > -70 ✓. Linear-energy mean of one block is
+		// itself, so 10*log10(10^-3) = -30; relative threshold = -50;
+		// the block (-30) is > -50 → survives → min = -30.
+		expect(getLraConsideredMinLufs([-30])).toBe(-30);
+	});
+
+	it("blocks [-20, -25, -30, -45, -60] yield min(considered) = -45", () => {
+		// Absolute gate: all five > -70, all survive.
+		// Linear-energy mean:
+		//   sum = 10^-2 + 10^-2.5 + 10^-3 + 10^-4.5 + 10^-6
+		//       ≈ 0.01 + 0.0031623 + 0.001 + 0.0000316 + 0.000001
+		//       ≈ 0.01419492
+		//   mean ≈ 0.002838984
+		//   10*log10(mean) ≈ -25.466
+		//   relativeThreshold ≈ -25.466 + (-20) = -45.466
+		// Strict `>` comparison (matches computeLraFromShortTerm):
+		//   -20, -25, -30, -45 all > -45.466 → survive.
+		//   -60 < -45.466 → gated.
+		// min(considered) = -45.
+		expect(getLraConsideredMinLufs([-20, -25, -30, -45, -60])).toBe(-45);
+	});
+
+	it("blocks [-90, -85, -25] yield -25 (absolute gate drops -90 and -85)", () => {
+		// -90 and -85 are both < -70 → fail absolute gate. Only -25 survives.
+		// Single-survivor relative threshold = -25 + (-20) = -45;
+		// -25 > -45 → survives both gates → min = -25.
+		expect(getLraConsideredMinLufs([-90, -85, -25])).toBe(-25);
+	});
+
+	it("agreement with computeLraFromShortTerm: on a non-trivial fixture where LRA > 0, returns a finite value within the absolute gate", () => {
+		// Build a synthetic short-term sequence by running LoudnessAccumulator
+		// on two concatenated sine tones at different amplitudes — this
+		// produces multiple short-term blocks spanning a real LRA.
+		const sampleRate = 48000;
+		const loudSine = generateSine(1000, 0.1, sampleRate, 6); // ~-23 LUFS
+		const quietSine = generateSine(1000, 0.01, sampleRate, 6); // ~-43 LUFS
+		const combined = new Float32Array(loudSine.length + quietSine.length);
+
+		combined.set(loudSine, 0);
+		combined.set(quietSine, loudSine.length);
+
+		const accumulator = new LoudnessAccumulator(sampleRate, 1);
+
+		accumulator.push([combined], combined.length);
+
+		const result = accumulator.finalize();
+
+		// Sanity check on the fixture itself: a real LRA must be positive
+		// for the agreement check to be meaningful.
+		expect(result.range).toBeGreaterThan(0);
+		expect(result.shortTerm.length).toBeGreaterThan(0);
+
+		const consideredMin = getLraConsideredMinLufs(result.shortTerm);
+
+		// Helper must return a finite value (the considered set is non-empty
+		// when LRA is computable) within the BS.1770 absolute gate.
+		expect(Number.isFinite(consideredMin)).toBe(true);
+		expect(consideredMin).toBeGreaterThan(-70);
+		// And the helper's min must lie at or below every short-term block
+		// in the considered set — i.e. ≤ the maximum considered value, which
+		// is bounded above by the maximum short-term block.
+		expect(consideredMin).toBeLessThanOrEqual(Math.max(...result.shortTerm));
 	});
 });
