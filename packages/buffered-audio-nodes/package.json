@@ -1,6 +1,6 @@
 {
   "name": "@e9g/buffered-audio-nodes",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "exports": {
     ".": {
