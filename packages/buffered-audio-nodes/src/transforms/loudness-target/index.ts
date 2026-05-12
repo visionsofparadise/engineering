@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type FileChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { Oversampler } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
-import { applyOversampledChunk } from "./utils/apply";
+import { applyOversampledChunkFromCache } from "./utils/apply";
 import { OVERSAMPLE_FACTOR, iterateForTargets } from "./utils/iterate";
 import { measureSource } from "./utils/measurement";
 
@@ -85,13 +85,15 @@ export interface LoudnessTargetProperties extends z.infer<typeof schema>, Transf
 export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTargetProperties> {
 	/**
 	 * 4×-upsampled peak-respecting smoothed gain envelope produced by
-	 * the winning iteration attempt. Size is `frames * OVERSAMPLE_FACTOR`.
-	 * `_unbuffer` passes it directly into `applyOversampledChunk`, which
-	 * does the source-rate-`offset`-to-upsampled-index mapping
-	 * internally. `null` when the stream passes through (silent / sub-
-	 * block-length source).
+	 * the winning iteration attempt, held as a disk-backed single-
+	 * channel `FileChunkBuffer` of size `frames * OVERSAMPLE_FACTOR`.
+	 * Per Phase 3 of `plan-loudness-target-stream-caching`, the
+	 * envelope is read chunk-by-chunk in `_unbuffer` rather than held
+	 * as a flat `Float32Array` — keeps RAM at ~10 MB regardless of
+	 * source length. `null` when the stream passes through (silent /
+	 * sub-block-length source).
 	 */
-	private winningSmoothedEnvelope: Float32Array | null = null;
+	private winningSmoothedEnvelopeBuffer: FileChunkBuffer | null = null;
 
 	/**
 	 * Body gain `B` chosen by 1D secant iteration on the LUFS error
@@ -124,17 +126,33 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 	private winningPeakGainDb: number | null = null;
 
 	/**
-	 * Per-channel `Oversampler` instances allocated in `_process` and
-	 * reused across all `_unbuffer` calls. The biquad states persist
-	 * across chunks so chunk boundaries are continuous in the AA
-	 * filter response — multi-chunk runs match single-chunk runs.
+	 * 4×-upsampled per-channel source cache produced by
+	 * `iterateForTargets` and shared with the final `_unbuffer` apply
+	 * pass. The cache lives from the end of `_process` (when
+	 * iteration returns it) through every `_unbuffer` chunk read; it
+	 * is closed in `_teardown` to release the backing temp file.
 	 *
-	 * Mirrors `loudnessShaper`'s persistent-oversampler pattern. These
-	 * are the FINAL apply set — distinct from any per-walk oversamplers
-	 * the iteration loop allocates internally (those would absorb the
-	 * source's history and corrupt the apply path if reused here).
+	 * `null` when the stream passes through (silent / sub-block-length
+	 * source — no iteration ran, no cache exists).
 	 */
-	private oversamplers: Array<Oversampler> | null = null;
+	private upsampledSourceCache: FileChunkBuffer | null = null;
+
+	/**
+	 * Per-channel downsampler instances allocated in `_process` and
+	 * reused across all `_unbuffer` calls. ONLY the downsample side
+	 * is used here — the upsample side was consumed during the
+	 * cache build inside `iterateForTargets`. The biquad states for
+	 * the AA decimation filter persist across chunks so chunk
+	 * boundaries are continuous — multi-chunk runs match single-
+	 * chunk runs.
+	 *
+	 * These are the FINAL apply downsamplers — distinct from the
+	 * per-attempt downsamplers `measureAttemptOutput` allocates
+	 * internally (those would have absorbed each attempt's
+	 * post-multiply input history and would corrupt the apply path
+	 * if reused here).
+	 */
+	private downsamplers: Array<Oversampler> | null = null;
 
 	/**
 	 * Per-chunk wall-clock time spent in `_unbuffer` (oversample +
@@ -286,31 +304,32 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 		});
 
 		this.learnTimingMs.iteration = Date.now() - tIterate0;
-		this.winningSmoothedEnvelope = result.bestSmoothedEnvelope;
+		this.winningSmoothedEnvelopeBuffer = result.bestSmoothedEnvelopeBuffer;
 		this.winningB = result.bestB;
 		this.winningLimitDb = result.bestLimitDb;
 		this.winningPeakGainDb = result.bestPeakGainDb;
+		// Inherit the shared upsampled-source cache from iteration so
+		// `_unbuffer` can skip the per-stream upsample step. Lifetime
+		// extends through every `_unbuffer` chunk read — closed in
+		// `_teardown`. `null` only on the zero-frame / zero-channel
+		// short-circuit inside `iterateForTargets`.
+		this.upsampledSourceCache = result.upsampledSource;
 
-		// Allocate per-channel `Oversampler` instances for the final
-		// apply pass. State persists across `_unbuffer` calls so chunk
-		// boundaries are continuous in the AA filter response —
-		// multi-chunk runs match single-chunk runs. Mirrors
-		// `loudnessShaper`'s pattern (see `loudness-shaper/index.ts`).
-		// Phase 4: the winning envelope (`bestSmoothedEnvelope`) is at
-		// 4× rate. `_unbuffer` passes both the envelope and the
-		// source-rate `chunk.offset` into `applyOversampledChunk`,
-		// which does the upsample → multiply by 4×-rate gain →
-		// downsample. These oversamplers are DISTINCT from any
-		// per-walk oversamplers the iteration loop allocates internally
-		// (those have absorbed the source's history during measurement
-		// walks and would corrupt the apply path if reused here).
-		const oversamplers: Array<Oversampler> = [];
+		// Allocate per-channel downsamplers for the final apply pass.
+		// ONLY the downsample side is used — the upsample step ran
+		// once during iteration's cache build. State persists across
+		// `_unbuffer` calls so chunk boundaries are continuous in the
+		// AA decimation filter response. DISTINCT from any per-attempt
+		// downsamplers `measureAttemptOutput` allocates internally —
+		// those have absorbed each attempt's post-multiply input and
+		// would corrupt the final apply path if reused here.
+		const downsamplers: Array<Oversampler> = [];
 
 		for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
-			oversamplers.push(new Oversampler(OVERSAMPLE_FACTOR, sampleRate));
+			downsamplers.push(new Oversampler(OVERSAMPLE_FACTOR, sampleRate));
 		}
 
-		this.oversamplers = oversamplers;
+		this.downsamplers = downsamplers;
 
 		const lastAttempt = result.attempts[result.attempts.length - 1];
 		const outputLufsRepr = lastAttempt ? (targetLufs + lastAttempt.lufsErr).toFixed(2) : "n/a";
@@ -371,6 +390,7 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			if (attempt === undefined) continue;
 			console.log(
 				`[loudness-target] attempt ${(attemptIdx + 1).toString().padStart(2)}: ` +
+					`phase=${attempt.phase} ` +
 					`B=${attempt.boost.toFixed(4).padStart(9)} ` +
 					`peakGainDb=${attempt.peakGainDb.toFixed(4).padStart(9)} ` +
 					`lufsErr=${attempt.lufsErr.toFixed(4).padStart(8)} ` +
@@ -380,8 +400,17 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			);
 		}
 
+		// Format `undefined` as `off` for the three optional-on-the-BAG
+		// budget / tolerance fields (per Phase 4.2 of
+		// `plan-loudness-target-stream-caching`). Other numeric fields
+		// (`sourceLufs`, `outputLufs`, etc.) always have values, so
+		// `String(...)` / `.toFixed(...)` are sufficient there.
+		const fmt = (x: number | undefined): string => (x === undefined ? "off" : String(x));
+
 		console.log(
-			`[loudness-target] iteration: attempts=${result.attempts.length} converged=${String(result.converged)} ` +
+			`[loudness-target] iteration: attempts=${result.attempts.length} ` +
+				`peakAttempts=${result.peakAttempts} boostAttempts=${result.boostAttempts} ` +
+				`converged=${String(result.converged)} ` +
 				`bestB=${result.bestB.toFixed(4)} bestLimitDb=${bestLimitDbRepr} bestPeakGainDb=${bestPeakGainDbRepr} ` +
 				`outputLufs=${outputLufsRepr} (Δ${lufsDeltaRepr}) outputLra=${outputLraRepr} ` +
 				`outputTruePeakDb=${outputTruePeakRepr} (Δ${peakDeltaRepr}) ` +
@@ -390,7 +419,7 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 				`limitDb=${limitDbRepr} limitPercentile=${limitPercentile} ` +
 				`sourceLufs=${sourceLufs.toFixed(2)} sourcePeakDb=${sourcePeakDb.toFixed(2)} sourceLra=${sourceLra.toFixed(2)} ` +
 				`pivot=${pivotRepr} floor=${floorRepr} ` +
-				`smoothing=${smoothing} tolerance=${tolerance} peakTolerance=${peakTolerance} maxAttempts=${maxAttempts}` +
+				`smoothing=${smoothing} tolerance=${fmt(tolerance)} peakTolerance=${fmt(peakTolerance)} maxAttempts=${fmt(maxAttempts)}` +
 				expansionSuffix,
 		);
 
@@ -401,13 +430,13 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 		}
 	}
 
-	override _teardown(): void {
+	override async _teardown(): Promise<void> {
 		// Print the wall-clock breakdown before the stream is destroyed
 		// so the QA driver can read it from stdout. Mirrors the
 		// expander's timing summary. `iteration` is the wall time
 		// spent inside `iterateForTargets` (per-attempt envelope build
 		// + measurement walk × attempts).
-		if (this.winningSmoothedEnvelope !== null) {
+		if (this.winningSmoothedEnvelopeBuffer !== null) {
 			const total = this.learnTimingMs.sourceMeasurement + this.learnTimingMs.detection + this.learnTimingMs.iteration + this.unbufferElapsedMs;
 			const bRepr = this.winningB === null ? "n/a" : this.winningB.toFixed(4);
 			const limitDbRepr = this.winningLimitDb === null ? "n/a" : this.winningLimitDb.toFixed(4);
@@ -421,24 +450,71 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 					`total=${total}ms winningB=${bRepr} winningLimitDb=${limitDbRepr} winningPeakGainDb=${peakGainDbRepr}`,
 			);
 		}
+
+		// Release the shared upsampled-source cache. The cache outlived
+		// `iterateForTargets` so `_unbuffer` could read from it; now
+		// that the stream is being torn down, close the temp file.
+		// Safe to await on a `null` guard — `close` is the only side
+		// effect, no other consumer remains.
+		if (this.upsampledSourceCache !== null) {
+			await this.upsampledSourceCache.close();
+			this.upsampledSourceCache = null;
+		}
+
+		// Same for the winning-envelope buffer — closed here so the
+		// backing temp file is released after `_unbuffer` finishes
+		// draining.
+		if (this.winningSmoothedEnvelopeBuffer !== null) {
+			await this.winningSmoothedEnvelopeBuffer.close();
+			this.winningSmoothedEnvelopeBuffer = null;
+		}
 	}
 
-	override _unbuffer(chunk: AudioChunk): AudioChunk {
-		const smoothedGain = this.winningSmoothedEnvelope;
-		const oversamplers = this.oversamplers;
+	override async _unbuffer(chunk: AudioChunk): Promise<AudioChunk> {
+		const envelopeBuffer = this.winningSmoothedEnvelopeBuffer;
+		const downsamplers = this.downsamplers;
+		const upsampledSourceCache = this.upsampledSourceCache;
 
 		// Pass-through when no envelope was learned (silent /
 		// sub-block-length source, no curve to apply). The
-		// pass-through bail at the top of `_process` leaves
-		// `oversamplers` at `null`, mirrored here for safety.
-		if (smoothedGain === null || oversamplers === null) return chunk;
+		// pass-through bail at the top of `_process` leaves all three
+		// state fields at `null`, mirrored here for safety. A
+		// zero-frame envelope buffer (the iterator's pass-through
+		// return shape) also routes to pass-through.
+		if (envelopeBuffer === null || envelopeBuffer.frames === 0 || downsamplers === null || upsampledSourceCache === null) {
+			return chunk;
+		}
 
 		const tStart = Date.now();
-		const transformed = applyOversampledChunk({
-			chunkSamples: chunk.samples,
-			smoothedGain,
-			offset: chunk.offset,
-			oversamplers,
+		const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+		if (chunkFrames === 0) {
+			this.unbufferElapsedMs += Date.now() - tStart;
+
+			return chunk;
+		}
+
+		// Per Phase 3.5 of `plan-loudness-target-stream-caching`: read
+		// both the upsampled-source chunk AND the envelope chunk from
+		// their respective `FileChunkBuffer`s, then feed both into
+		// `applyOversampledChunkFromCache`. The envelope is single-
+		// channel; `samples[0]` is the chunk-aligned slice.
+		const upsampledOffset = chunk.offset * OVERSAMPLE_FACTOR;
+		const upsampledLength = chunkFrames * OVERSAMPLE_FACTOR;
+		const upsampledChunk = await upsampledSourceCache.read(upsampledOffset, upsampledLength);
+		const envelopeChunk = await envelopeBuffer.read(upsampledOffset, upsampledLength);
+		const envelopeSlice = envelopeChunk.samples[0];
+
+		if (envelopeSlice?.length !== upsampledLength) {
+			throw new Error(
+				`loudnessTarget _unbuffer: envelope ChunkBuffer returned ${envelopeSlice?.length ?? 0} samples; expected ${upsampledLength}`,
+			);
+		}
+
+		const transformed = applyOversampledChunkFromCache({
+			upsampledChunkSamples: upsampledChunk.samples,
+			smoothedGain: envelopeSlice,
+			downsamplers,
 			factor: OVERSAMPLE_FACTOR,
 		});
 

@@ -1,11 +1,14 @@
 /**
- * 1D secant iteration on body gain `B` for the loudnessTarget node.
+ * Sequential two-stage iteration for the loudnessTarget node — Phase A
+ * converges `peakGainDb` (TP control) with `B` held constant; Phase B
+ * converges `B` via 1D secant with `peakGainDb` frozen at Phase A's
+ * terminal value.
  *
  * Per design-loudness-target §"Iteration" (post
- * `plan-loudness-target-percentile-limit` rewrite). Per design-transforms
- * §"Memory discipline": the source itself is streamed via
- * `buffer.iterate(CHUNK_FRAMES)`; never materialised as a full-source-
- * sized Float32Array at this level.
+ * `plan-loudness-target-sequential-iteration` rewrite). Per
+ * design-transforms §"Memory discipline": the source itself is
+ * streamed via `buffer.iterate(CHUNK_FRAMES)`; never materialised as a
+ * full-source-sized Float32Array at this level.
  *
  * Single perceptual target — `targetLufs` — converges on a single curve
  * parameter, body gain `B` (dB). The limit anchor `limitDb` is set
@@ -24,12 +27,31 @@
  * — there is no LRA target axis (see `plan-loudness-target-percentile-
  * limit` §"Decisions").
  *
+ * ## Sequential architecture (Phase A → Phase B)
+ *
  * The third axis, `peakGainDb` (upper-segment right-endpoint anchor),
- * starts at the closed-form `effectiveTargetTp − limitDb` and adjusts
- * per attempt via proportional feedback on observed `outputTruePeakDb`
- * overshoot — preserved from `plan-loudness-target-tp-iteration`. Since
- * `limitDb` is constant the closed-form baseline never changes; only
- * the feedback adjustment moves across attempts.
+ * starts at the closed-form `effectiveTargetTp − limitDb`. It is
+ * converged in **Phase A** via proportional feedback on observed
+ * `outputTruePeakDb` overshoot — preserved from
+ * `plan-loudness-target-tp-iteration`. Throughout Phase A `currentBoost`
+ * is held constant at the RMS-shift initialiser; only `peakGainDb`
+ * moves. Phase A exits when `peakOvershoot ≤ peakTolerance` (or budget
+ * exhaustion, or `skipPeak`). Its terminal `peakGainDb` is **frozen**.
+ *
+ * **Phase B** then runs a 1D secant on `B` against LUFS error with
+ * `peakGainDb` held at the frozen Phase A value. Phase B's first probe
+ * applies the RMS-shift correction `B - lufsErr` to Phase A's last
+ * measurement so that after one Phase B render the secant has 2 history
+ * points at the same `peakGainDb` — a stationary fit. Subsequent
+ * attempts feed `computeBoostStep` the **Phase-B-only filtered history**
+ * so the slope estimate is not contaminated by Phase A points (whose
+ * `peakGainDb` was different — non-stationary geometry, the bug this
+ * architecture exists to prevent).
+ *
+ * The two phases share a single `bestScore` accumulator and the same
+ * `forwardScratch` so the best-attempt fallback spans both phases.
+ * Total attempt budget is `maxAttempts`. Phase A consumes up to
+ * `PEAK_MAX_ATTEMPTS_DEFAULT` of it; Phase B gets the remainder.
  *
  * When `peakGainDb > B` the upper segment of the curve is expansive
  * (positive slope between pivot and limit). This is geometrically valid
@@ -39,7 +61,8 @@
  * tail-region amplification (per `plan-loudness-target-percentile-
  * limit` §"Open question O4").
  *
- * Pipeline per attempt (post-Phase-4 4×-upsampled fused-streaming form):
+ * Pipeline per attempt (post-Phase-4 4×-upsampled fused-streaming form),
+ * identical for Phase A and Phase B:
  *   1. Build anchors `{ floorDb, pivotDb, limitDb, B, peakGainDb }`.
  *   2. **Walk A — fused streaming 4×-upsampled detect + max-pool +
  *      curve + forward IIR**: stream the source once via
@@ -79,21 +102,52 @@
  *      `frames * 4`) into a fresh `Float32Array`. Either converge or
  *      step.
  *
- * Stepping (1D on `B`):
- *   - Attempt 1 → 2 (one history point): full RMS-shift correction
- *     `B_next = B - lufsErr`.
- *   - Attempt ≥ 2: classical 1D secant on the most recent two history
- *     points; minimum slope `0.05` to avoid degenerate steps.
- *   - Step magnitude clamped to half the previous step (line-search
- *     damping) on attempts ≥ 2.
+ * Phase A stepping (`peakGainDb` only, `B` held constant):
+ *   - Proportional feedback: after each attempt, if `peakOvershoot >
+ *     peakTolerance`, the next attempt's `currentPeakGainDb` is shifted
+ *     down by `peakOvershoot * PEAK_DAMPING`. Bounded below by
+ *     `PEAK_GAIN_DB_FLOOR`. Undershoot leaves the value untouched.
+ *   - Exit: `peakOvershoot ≤ peakTolerance`, OR `skipPeak`, OR Phase A
+ *     budget (`PEAK_MAX_ATTEMPTS_DEFAULT`) exhausted.
+ *   - `lufsErr` is NOT a Phase A exit condition. Phase A only chases
+ *     peak overshoot; LUFS convergence is Phase B's job.
+ *
+ * Phase B stepping (1D on `B`, `peakGainDb` frozen at Phase A's
+ * terminal value):
+ *   - First probe (seeded from Phase A's last measurement): full
+ *     RMS-shift correction `B_next = B - lufsErr`.
+ *   - Attempt ≥ 2 (one Phase B history point): classical 1D secant on
+ *     the most recent two **Phase B** history points; minimum slope
+ *     `MIN_SECANT_SLOPE` (0.05) to avoid degenerate steps. The history
+ *     is filtered to `phase === "B"` so the secant fits slope on
+ *     stationary `peakGainDb` only.
+ *   - Step-magnitude damping is **asymmetric** (see `computeBoostStep`
+ *     JSDoc for full rationale): same-sign consecutive errors
+ *     (monotonic descent) → no cap; sign-flipped consecutive errors
+ *     (overshoot crossed target) → cap at 1× previous step magnitude.
+ *     Replaces a symmetric 0.5× cap that geometrically bounded total
+ *     reach to `2 × previous_step` regardless of iteration budget.
  *   - `B` clamped to `[-30, 30]` dB (sanity bound — avoids runaway on
  *     numerically degenerate sources).
  *
- * Proportional feedback on `peakGainDb`: after each attempt, if
- * `peakOvershoot > peakTolerance`, the next attempt's
- * `currentPeakGainDb` is shifted down by `peakOvershoot * PEAK_DAMPING`
- * (damped to avoid oscillation against the `B`-secant). Bounded below
- * by `PEAK_GAIN_DB_FLOOR`. Undershoot leaves the value untouched.
+ * Phase B convergence — two gates (checked in order each attempt):
+ *   1. **Two-decimal-precision gate (always active)**: fires when
+ *      `round(|lufsErr| × 100) === 0` AND
+ *      `skipPeak || round(peakOvershoot × 100) === 0`. This is the
+ *      "perfect to the user-visible precision" exit — the
+ *      iteration-end log line reports `outputLufs` / `outputTruePeakDb`
+ *      to two decimal places, so once both axes round to their
+ *      targets at that precision additional attempts cannot improve
+ *      the reported result. Unconditional — does NOT consult
+ *      `tolerance` / `peakTolerance`.
+ *   2. **Tolerance-based gate**: fires when `|lufsErr| < tolerance`
+ *      AND `skipPeak || peakOvershoot ≤ peakTolerance`. Skipped
+ *      silently when `tolerance` / `peakTolerance` are undefined
+ *      (per the "undefined ⇒ run to budget" contract on the BAG
+ *      schema). When both fields are defined, this gate may fire on
+ *      attempts that do not round perfectly to two decimal places —
+ *      callers who want strictly-perfect exits can omit both
+ *      tolerances and rely solely on the precision gate.
  *
  * Memory at peak (this module, post-Phase-4 4×-upsampled form):
  *   - One source-rate-×4 `forwardScratch` (`frames × OVERSAMPLE_FACTOR
@@ -130,11 +184,12 @@
  * question O3").
  */
 
-import type { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
-import { BidirectionalIir, LoudnessAccumulator, Oversampler, SlidingWindowMaxStream, TruePeakAccumulator, linearToDb } from "@e9g/buffered-audio-nodes-utils";
-import { applyOversampledChunk } from "./apply";
+import { FileChunkBuffer, type ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { BidirectionalIir, LoudnessAccumulator, Oversampler, TruePeakAccumulator, linearToDb } from "@e9g/buffered-audio-nodes-utils";
+import { applyOversampledChunkFromCache } from "./apply";
 import { type Anchors, gainDbAt } from "./curve";
-import { windowSamplesFromMs } from "./envelope";
+import { applyBackwardPassOverChunkBuffer, windowSamplesFromMs } from "./envelope";
+import { buildSourceUpsampledAndDetectionCaches } from "./source-caches";
 
 /**
  * 4× oversampling factor for the upsampled detection / max-pool /
@@ -209,8 +264,29 @@ export const DEFAULT_MAX_ATTEMPTS = 10;
 /** Default LUFS tolerance per design decision. */
 export const DEFAULT_TOLERANCE = 0.5;
 
+/**
+ * Default cap on Phase A (peakGainDb-only) attempts within the total
+ * `maxAttempts` budget. Proportional feedback on TP overshoot
+ * typically converges in 2–4 attempts; 5 leaves headroom for slow
+ * sources without starving Phase B (B-secant). When `maxAttempts` is
+ * smaller than this value, Phase A is capped at `maxAttempts` and
+ * Phase B receives 0 attempts. Per
+ * `plan-loudness-target-sequential-iteration` §"Approach".
+ */
+const PEAK_MAX_ATTEMPTS_DEFAULT = 5;
+
 /** Single attempt's recorded state. */
 export interface IterationAttempt {
+	/**
+	 * Which sub-iteration this attempt belongs to. `"A"` — Phase A
+	 * (peakGainDb-only proportional feedback, `B` held constant).
+	 * `"B"` — Phase B (1D secant on `B`, `peakGainDb` frozen at Phase
+	 * A's terminal value). Diagnostic / dump-formatting field; also
+	 * used internally to filter Phase B history when feeding
+	 * `computeBoostStep` (so the secant only fits slope on
+	 * stationary-`peakGainDb` points).
+	 */
+	phase: "A" | "B";
 	boost: number;
 	/**
 	 * Constant across attempts within a single `iterateForTargets` call
@@ -262,12 +338,38 @@ export interface IterationAttempt {
  */
 export interface IterateResult {
 	/**
-	 * 4× upsampled smoothed gain envelope (size `frames *
-	 * OVERSAMPLE_FACTOR`). Consumed by `_unbuffer`'s
-	 * `applyOversampledChunk` call — the helper does the
-	 * source-rate-`offset`-to-upsampled-index mapping internally.
+	 * 4× upsampled smoothed gain envelope as a single-channel
+	 * `FileChunkBuffer` (size `frames * OVERSAMPLE_FACTOR`). Per
+	 * Phase 3 of `plan-loudness-target-stream-caching`, the envelope
+	 * is disk-backed rather than a flat `Float32Array` — `_unbuffer`
+	 * reads chunk-aligned slices via `read(offset, frames)` and feeds
+	 * them to `applyOversampledChunkFromCache`. The buffer's RAM
+	 * footprint stays at ~10 MB (per `FileChunkBuffer`'s
+	 * `DEFAULT_STORAGE_THRESHOLD`) regardless of source length.
+	 *
+	 * Lifetime: extends beyond `iterateForTargets`. The stream class
+	 * stores this in its persistent state; `_unbuffer` reads from it
+	 * chunk-by-chunk; teardown closes it.
 	 */
-	bestSmoothedEnvelope: Float32Array;
+	bestSmoothedEnvelopeBuffer: FileChunkBuffer;
+	/**
+	 * 4×-upsampled per-channel source cache built ONCE at iteration
+	 * entry and shared across every per-attempt Walk B (apply +
+	 * measure) AND `_unbuffer`'s final apply pass. Per Phase 2 of
+	 * `plan-loudness-target-stream-caching`, this eliminates the
+	 * per-attempt upsample pass — across N attempts, savings are
+	 * `(N − 1) × channelCount` upsamples per attempt loop.
+	 *
+	 * Lifetime: extends beyond `iterateForTargets`. The stream class
+	 * (`LoudnessTargetStream._process`) stores this in its persistent
+	 * state; `_unbuffer` reads from it chunk-by-chunk; the stream's
+	 * teardown closes it. Caller is responsible for `close()` after
+	 * the final `_unbuffer` chunk emits.
+	 *
+	 * `null` when iteration short-circuited on a zero-frame / zero-
+	 * channel source (no cache was built).
+	 */
+	upsampledSource: FileChunkBuffer | null;
 	bestB: number;
 	/**
 	 * The (constant) limit anchor `limitDb` used by every attempt.
@@ -284,6 +386,19 @@ export interface IterateResult {
 	 */
 	bestPeakGainDb: number;
 	attempts: ReadonlyArray<IterationAttempt>;
+	/**
+	 * Count of Phase A attempts in `attempts` (peakGainDb-only
+	 * sub-iteration). Equal to `attempts.filter(a => a.phase === "A").
+	 * length` but exposed directly so consumers (the `index.ts._process`
+	 * iteration-end log line) don't have to recompute. Per
+	 * `plan-loudness-target-sequential-iteration` §1.3.
+	 */
+	peakAttempts: number;
+	/**
+	 * Count of Phase B attempts in `attempts` (B-secant sub-iteration).
+	 * Equal to `attempts.filter(a => a.phase === "B").length`.
+	 */
+	boostAttempts: number;
 	converged: boolean;
 }
 
@@ -332,11 +447,15 @@ export interface IterateForTargetsArgs {
 }
 
 /**
- * Run the 1D secant iteration on `B` until `|lufsErr| < tolerance` and
- * `peakOvershoot <= peakTolerance`, or `maxAttempts` is exhausted.
- * Returns the best attempt's smoothed envelope (held by reference for
- * the apply pass), its `(B, limitDb, peakGainDb)`, and the attempt
- * history.
+ * Run the sequential two-phase iteration. Phase A converges
+ * `peakGainDb` via proportional feedback on TP overshoot with `B`
+ * held constant; Phase B converges `B` via 1D secant on LUFS error
+ * with `peakGainDb` frozen at Phase A's terminal value. Total
+ * attempt budget is `maxAttempts`, split as up to
+ * `PEAK_MAX_ATTEMPTS_DEFAULT` for Phase A and the remainder for
+ * Phase B. Returns the best attempt's smoothed envelope (held by
+ * reference for the apply pass), its `(B, limitDb, peakGainDb)`,
+ * the attempt history, and per-phase attempt counts.
  */
 export async function iterateForTargets(args: IterateForTargetsArgs): Promise<IterateResult> {
 	const {
@@ -359,12 +478,19 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 	const frames = buffer.frames;
 
 	if (channelCount === 0 || frames === 0) {
+		// Pass-through bail: build a zero-frame envelope buffer so the
+		// return shape stays consistent with the normal-path returns.
+		// `_unbuffer` checks `winningSmoothedEnvelopeBuffer.frames` (or
+		// short-circuits on the null `upsampledSource`) before reading.
 		return {
-			bestSmoothedEnvelope: new Float32Array(0),
+			bestSmoothedEnvelopeBuffer: new FileChunkBuffer(0, 1),
+			upsampledSource: null,
 			bestB: 0,
 			bestLimitDb: sourcePeakDb,
 			bestPeakGainDb: 0,
 			attempts: [],
+			peakAttempts: 0,
+			boostAttempts: 0,
 			converged: false,
 		};
 	}
@@ -405,11 +531,44 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 	const upsampledRate = sampleRate * OVERSAMPLE_FACTOR;
 	const halfWidth = windowSamplesFromMs(smoothingMs, upsampledRate);
 	const iir = new BidirectionalIir({ smoothingMs, sampleRate: upsampledRate });
-	// Allocated ONCE outside the attempt loop and overwritten each
-	// attempt. Holds the per-attempt forward-IIR output during walk A
-	// at 4× rate; after walk B's in-place backward pass `forwardScratch`
-	// IS the 4×-rate smoothed gain envelope.
-	const forwardScratch = new Float32Array(frames * OVERSAMPLE_FACTOR);
+
+	// Build the per-source caches ONCE at iteration entry. Both are
+	// pure functions of the source (post-upsample) and do not depend on
+	// any per-attempt parameter. Walk A reads `caches.detectionEnvelope`;
+	// Walk B (via `measureAttemptOutput`) and `_unbuffer` read
+	// `caches.upsampledSource` (Phase 2.3 / 2.4 of `plan-loudness-target-
+	// stream-caching`). The detection-envelope cache has no consumer
+	// outside this function, so it is closed in the `finally` below.
+	// The upsampled-source cache outlives this function — it is
+	// returned via `IterateResult.upsampledSource` and the stream
+	// class is responsible for closing it after `_unbuffer` drains.
+	const caches = await buildSourceUpsampledAndDetectionCaches({
+		buffer,
+		sampleRate,
+		channelCount,
+		frames,
+		halfWidth,
+	});
+
+	// Three single-channel disk-backed envelope buffers per Phase 3 of
+	// `plan-loudness-target-stream-caching`:
+	//   - `forwardEnvelopeBuffer`: Walk A appends forward-IIR output;
+	//     truncate(0) at the start of each attempt.
+	//   - `activeRef` / `winningRef` (initially `activeBufferA` /
+	//     `activeBufferB`): the active dest for this attempt's
+	//     backward pass, and the held winner from the best attempt so
+	//     far. On a best-attempt update we swap the refs (pointer-
+	//     level swap, no copy — the whole point of the ping-pong is
+	//     to avoid frames×4×4-byte copies on every winner update).
+	const forwardEnvelopeBuffer = new FileChunkBuffer(frames * OVERSAMPLE_FACTOR, 1);
+	const activeBufferA = new FileChunkBuffer(frames * OVERSAMPLE_FACTOR, 1);
+	const activeBufferB = new FileChunkBuffer(frames * OVERSAMPLE_FACTOR, 1);
+
+	let activeRef: FileChunkBuffer = activeBufferA;
+	let winningRef: FileChunkBuffer = activeBufferB;
+	let winningPopulated = false;
+
+	try {
 	// Skip the peak axis when the caller did not request peak control
 	// (`targetTp` undefined). In that mode `peakGainDb` stays at the
 	// closed-form `0`, `peakOvershoot` is forced out of the
@@ -419,13 +578,24 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 	let currentBoost = clampBoost(targetLufs - sourceLufs);
 
 	const attempts: Array<IterationAttempt> = [];
-	let bestSmoothedEnvelope: Float32Array = new Float32Array(0);
 	let bestBoost = currentBoost;
 	let bestPeakGainDb = currentPeakGainDb;
 	let bestScore = Infinity;
-	let previousStepMagnitude = Infinity;
 
-	for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex++) {
+	// =====================================================================
+	// Phase A — peakGainDb-only sub-iteration. `currentBoost` held constant
+	// at the RMS-shift initialiser. Proportional feedback on TP overshoot
+	// drives `currentPeakGainDb` downward until `peakOvershoot ≤
+	// peakTolerance` or the Phase A budget is exhausted (or `skipPeak`).
+	// Exit is purely peak-based — `lufsErr` is NOT a Phase A exit
+	// condition. Running Phase B (B-secant) before `peakGainDb` settles
+	// is the contamination bug this architecture exists to prevent
+	// (per plan-loudness-target-sequential-iteration §"Problem").
+	// =====================================================================
+	let peakAttempts = 0;
+	const peakMaxAttempts = Math.min(maxAttempts, PEAK_MAX_ATTEMPTS_DEFAULT);
+
+	for (let phaseAIdx = 0; phaseAIdx < peakMaxAttempts; phaseAIdx++) {
 		const anchors: Anchors = {
 			floorDb: anchorBase.floorDb,
 			pivotDb: anchorBase.pivotDb,
@@ -434,47 +604,51 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 			peakGainDb: currentPeakGainDb,
 		};
 
-		// Walk A — fused streaming 4×-upsampled detect + max-pool + curve
-		// + forward IIR. Writes into `forwardScratch` (size `frames *
-		// OVERSAMPLE_FACTOR`); on exit `forwardScratch` holds the
-		// forward-IIR output at 4× rate, ready for the in-place backward
-		// pass.
-		await streamDetectionMaxPoolAndCurveAndForwardIir({
-			buffer,
-			channelCount,
-			frames,
-			sampleRate,
-			halfWidth,
+		// Reset per-attempt buffers so this attempt's writes replace
+		// the previous attempt's contents rather than extending them.
+		await forwardEnvelopeBuffer.truncate(0);
+		await activeRef.truncate(0);
+
+		// Walk A — curve + forward IIR over the pre-built 4×-rate
+		// detection envelope cache. Writes into `forwardEnvelopeBuffer`
+		// chunk-by-chunk; on exit `forwardEnvelopeBuffer` holds the
+		// forward-IIR output at 4× rate, ready for the backward pass.
+		await streamCurveAndForwardIir({
+			detectionEnvelope: caches.detectionEnvelope,
 			anchors,
 			iir,
-			forwardScratch,
+			forwardEnvelopeBuffer,
 		});
 
-		// Walk B sub-pass B1 — backward IIR in place over forwardScratch
-		// at 4× rate. After this call `forwardScratch` IS the 4×-rate
-		// smoothed gain envelope.
-		iir.applyBackwardPassInPlace(forwardScratch);
+		// Walk B sub-pass B1 — backward IIR over the forward-envelope
+		// ChunkBuffer into the active smoothed-envelope buffer.
+		// `activeRef` is the per-attempt destination; after this call
+		// it holds the 4×-rate smoothed gain envelope for THIS attempt.
+		await applyBackwardPassOverChunkBuffer({
+			sourceBuffer: forwardEnvelopeBuffer,
+			destBuffer: activeRef,
+			iir,
+			chunkSize: CHUNK_FRAMES * OVERSAMPLE_FACTOR,
+		});
 
 		// Walk B sub-pass B2 — source-streaming apply + LUFS / LRA / TP
-		// measurement at 4× rate. Allocates a FRESH per-channel
-		// `Oversampler` array for the apply pass.
+		// measurement at 4× rate. Envelope is read chunk-by-chunk from
+		// `activeRef`.
 		const measured = await measureAttemptOutput({
-			buffer,
+			upsampledSource: caches.upsampledSource,
 			sampleRate,
 			channelCount,
-			gSmoothed: forwardScratch,
+			gSmoothed: activeRef,
 		});
 
 		const lufsErr = measured.outputLufs - targetLufs;
-		// Peak is a one-sided constraint (ceiling, not target) — undershoot
-		// is fine, only overshoot drives backoff.
 		const peakErr = measured.outputTruePeakDb - effectiveTargetTp;
 		// In skip-peak mode `peakOvershoot` is forced to 0 so it does
-		// not contribute to `bestScore`, does not gate `peakConverged`,
-		// and does not trigger the proportional-feedback adjustment.
+		// not contribute to `bestScore` and does not gate Phase A exit.
 		const peakOvershoot = skipPeak ? 0 : Math.max(0, peakErr);
 
 		attempts.push({
+			phase: "A",
 			boost: currentBoost,
 			limitDb: currentLimit,
 			lufsErr,
@@ -483,170 +657,281 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 			peakErr,
 			peakOvershoot,
 		});
+		peakAttempts++;
 
-		// `bestScore` penalises peak overshoot symmetrically with LUFS
-		// error; undershoot contributes 0 since `peakOvershoot` is
-		// clamped at 0. On infeasible targets this picks the attempt
-		// closest to satisfying both constraints.
+		// Best-attempt fallback accumulates across both phases — a Phase
+		// A attempt that happens to satisfy both axes simultaneously
+		// (rare, but possible on near-passthrough sources) still wins
+		// against any later Phase B attempt that drifts.
 		const score = Math.sqrt(lufsErr * lufsErr + peakOvershoot * peakOvershoot);
 
 		if (score < bestScore) {
 			bestScore = score;
 			bestBoost = currentBoost;
 			bestPeakGainDb = currentPeakGainDb;
-			// Defensive copy: `forwardScratch` is reused across attempts,
-			// so the winner needs its own buffer to survive the next
-			// attempt's walk-A overwrite. Losing attempts skip this copy.
-			bestSmoothedEnvelope = new Float32Array(forwardScratch);
+			// Ping-pong swap: the just-written `activeRef` becomes the
+			// new winner; the old `winningRef` becomes the next
+			// attempt's `activeRef`. No data copy — just a reference
+			// assignment. The next-attempt `truncate(0)` at the top of
+			// the loop body clears the new active's stale contents.
+			const previousActive = activeRef;
+
+			activeRef = winningRef;
+			winningRef = previousActive;
+			winningPopulated = true;
 		}
 
+		// Phase A exits as soon as peak fits tolerance (or `skipPeak`).
+		// Note: NO `lufsErr` check here — see banner above.
+		if (skipPeak || peakOvershoot <= peakTolerance) break;
+		if (phaseAIdx === peakMaxAttempts - 1) break;
+
+		// Proportional feedback: drop `currentPeakGainDb` by
+		// `peakOvershoot * PEAK_DAMPING`. Bounded by
+		// `PEAK_GAIN_DB_FLOOR`. Self-stabilising on a single axis since
+		// `currentBoost` is not moving here.
+		currentPeakGainDb = Math.max(
+			PEAK_GAIN_DB_FLOOR,
+			currentPeakGainDb - peakOvershoot * PEAK_DAMPING,
+		);
+	}
+
+	// Freeze peakGainDb at its Phase A terminal value. Phase B uses this
+	// constant for every render — the precondition that lets the
+	// B-secant fit slope on a stationary function.
+	const frozenPeakGainDb = currentPeakGainDb;
+
+	// =====================================================================
+	// Phase B — 1D secant on `B` against LUFS error, `peakGainDb` frozen
+	// at `frozenPeakGainDb`. The first Phase B probe applies the
+	// RMS-shift correction `B - lufsErr` to Phase A's last measurement
+	// (subsumes the old attempt-0→1 RMS-shift) so that after one Phase
+	// B render the secant has 2 history points at the same
+	// `peakGainDb`. Subsequent steps call `computeBoostStep` with the
+	// **Phase-B-only filtered history** — mixing Phase A points
+	// reintroduces the non-stationary-`peakGainDb` contamination.
+	// =====================================================================
+	const boostMaxAttempts = maxAttempts - peakAttempts;
+	const lastPhaseA = attempts[attempts.length - 1];
+
+	if (lastPhaseA !== undefined && boostMaxAttempts > 0) {
+		currentBoost = clampBoost(lastPhaseA.boost - lastPhaseA.lufsErr);
+	}
+
+	let previousStepMagnitude = Infinity;
+	let boostAttempts = 0;
+
+	for (let phaseBIdx = 0; phaseBIdx < boostMaxAttempts; phaseBIdx++) {
+		const anchors: Anchors = {
+			floorDb: anchorBase.floorDb,
+			pivotDb: anchorBase.pivotDb,
+			limitDb: currentLimit,
+			B: currentBoost,
+			peakGainDb: frozenPeakGainDb,
+		};
+
+		await forwardEnvelopeBuffer.truncate(0);
+		await activeRef.truncate(0);
+
+		await streamCurveAndForwardIir({
+			detectionEnvelope: caches.detectionEnvelope,
+			anchors,
+			iir,
+			forwardEnvelopeBuffer,
+		});
+
+		await applyBackwardPassOverChunkBuffer({
+			sourceBuffer: forwardEnvelopeBuffer,
+			destBuffer: activeRef,
+			iir,
+			chunkSize: CHUNK_FRAMES * OVERSAMPLE_FACTOR,
+		});
+
+		const measured = await measureAttemptOutput({
+			upsampledSource: caches.upsampledSource,
+			sampleRate,
+			channelCount,
+			gSmoothed: activeRef,
+		});
+
+		const lufsErr = measured.outputLufs - targetLufs;
+		const peakErr = measured.outputTruePeakDb - effectiveTargetTp;
+		const peakOvershoot = skipPeak ? 0 : Math.max(0, peakErr);
+
+		attempts.push({
+			phase: "B",
+			boost: currentBoost,
+			limitDb: currentLimit,
+			lufsErr,
+			outputLra: measured.outputLra,
+			peakGainDb: frozenPeakGainDb,
+			peakErr,
+			peakOvershoot,
+		});
+		boostAttempts++;
+
+		const score = Math.sqrt(lufsErr * lufsErr + peakOvershoot * peakOvershoot);
+
+		if (score < bestScore) {
+			bestScore = score;
+			bestBoost = currentBoost;
+			bestPeakGainDb = frozenPeakGainDb;
+			// Same ping-pong swap as Phase A.
+			const previousActive = activeRef;
+
+			activeRef = winningRef;
+			winningRef = previousActive;
+			winningPopulated = true;
+		}
+
+		// Gate 1 — two-decimal-precision early exit. Always active.
+		// Fires when both axes round to zero error at two decimal places
+		// (the precision the iteration-end log reports `outputLufs` and
+		// `outputTruePeakDb` at). Independent of `tolerance` /
+		// `peakTolerance` so callers who omit those still get a perfect
+		// exit when the iteration hits one. See the function-level JSDoc
+		// "Phase B convergence — two gates" for the rationale.
+		const matchesToTwoDp =
+			Math.round(Math.abs(lufsErr) * 100) === 0
+			&& (skipPeak || Math.round(peakOvershoot * 100) === 0);
+
+		if (matchesToTwoDp) {
+			return {
+				bestSmoothedEnvelopeBuffer: winningRef,
+				bestB: bestBoost,
+				bestLimitDb: currentLimit,
+				bestPeakGainDb,
+				attempts,
+				peakAttempts,
+				boostAttempts,
+				upsampledSource: caches.upsampledSource,
+				converged: true,
+			};
+		}
+
+		// Gate 2 — tolerance-based exit. Unchanged from pre-Phase-4.
+		// Silently skipped when `tolerance` / `peakTolerance` are
+		// undefined (the BAG omits them → "run to budget").
 		const lufsConverged = Math.abs(lufsErr) < tolerance;
 		const peakConverged = skipPeak || peakOvershoot <= peakTolerance;
 
 		if (lufsConverged && peakConverged) {
 			return {
-				bestSmoothedEnvelope,
+				bestSmoothedEnvelopeBuffer: winningRef,
+				upsampledSource: caches.upsampledSource,
 				bestB: bestBoost,
 				bestLimitDb: currentLimit,
 				bestPeakGainDb,
 				attempts,
+				peakAttempts,
+				boostAttempts,
 				converged: true,
 			};
 		}
 
-		if (attemptIndex === maxAttempts - 1) break;
+		if (phaseBIdx === boostMaxAttempts - 1) break;
 
-		// Proportional feedback on `currentPeakGainDb` — adjusts the
-		// upper-segment right-endpoint anchor BEFORE the next attempt's
-		// curve evaluation. Only fires on overshoot exceeding the
-		// one-sided tolerance; undershoot leaves the value untouched.
-		// `Math.max(PEAK_GAIN_DB_FLOOR, ...)` caps cumulative
-		// attenuation. The `B`-secant does NOT see this update through
-		// its history — proportional feedback only.
-		if (peakOvershoot > peakTolerance) {
-			currentPeakGainDb = Math.max(
-				PEAK_GAIN_DB_FLOOR,
-				currentPeakGainDb - peakOvershoot * PEAK_DAMPING,
-			);
-		}
-
-		const next = computeBoostStep(attempts, previousStepMagnitude);
+		// Phase-B-only filtered history: `computeBoostStep` fits its
+		// secant on the most recent two history points, so Phase A
+		// points (with a different `peakGainDb`) must NOT be in scope.
+		const phaseBHistory = attempts.filter((attempt) => attempt.phase === "B");
+		const next = computeBoostStep(phaseBHistory, previousStepMagnitude);
 
 		currentBoost = clampBoost(next.boost);
 		previousStepMagnitude = next.stepMagnitude;
 	}
 
-	return {
-		bestSmoothedEnvelope,
-		bestB: bestBoost,
-		bestLimitDb: currentLimit,
-		bestPeakGainDb,
-		attempts,
-		converged: false,
-	};
+		return {
+			bestSmoothedEnvelopeBuffer: winningRef,
+			upsampledSource: caches.upsampledSource,
+			bestB: bestBoost,
+			bestLimitDb: currentLimit,
+			bestPeakGainDb,
+			attempts,
+			peakAttempts,
+			boostAttempts,
+			converged: false,
+		};
+	} finally {
+		// `detectionEnvelope` has no downstream consumer — close it
+		// here on every return path (normal returns above + exception
+		// propagation). The `upsampledSource` cache is intentionally
+		// NOT closed here: it is returned via `IterateResult` and
+		// outlives this function (`_unbuffer` reads from it per chunk).
+		await caches.detectionEnvelope.close();
+		// `forwardEnvelopeBuffer` is transient — closed unconditionally.
+		// The losing one of `activeBufferA` / `activeBufferB` (the one
+		// NOT held by `winningRef`) is also closed here. The winning
+		// buffer is returned via `IterateResult.bestSmoothedEnvelopeBuffer`
+		// and outlives this function.
+		await forwardEnvelopeBuffer.close();
+		// If no best-attempt update ever fired (impossible for non-zero
+		// frames since the first attempt always beats `Infinity`),
+		// `winningRef` still equals `activeBufferB` and `activeBufferA`
+		// holds the last attempt's output. Close both as a safety net
+		// in that pathological branch.
+		if (!winningPopulated) {
+			await activeBufferA.close();
+			await activeBufferB.close();
+		} else if (winningRef === activeBufferA) {
+			await activeBufferB.close();
+		} else {
+			await activeBufferA.close();
+		}
+	}
 }
 
-interface StreamDetectionMaxPoolAndCurveAndForwardIirArgs {
-	buffer: ChunkBuffer;
-	channelCount: number;
-	frames: number;
-	sampleRate: number;
-	halfWidth: number;
+interface StreamCurveAndForwardIirArgs {
+	detectionEnvelope: ChunkBuffer;
 	anchors: Anchors;
 	iir: BidirectionalIir;
-	forwardScratch: Float32Array;
+	forwardEnvelopeBuffer: FileChunkBuffer;
 }
 
 /**
- * Walk A of the per-attempt body, post-Phase-4 (4×-upsampled). Streams
- * the source via `buffer.iterate(CHUNK_FRAMES)`; per chunk: upsample,
- * 4×-rate linked detection, sliding max-pool, gain curve, forward IIR.
- * Output is written into `forwardScratch` at the correct absolute
- * upsampled offset.
+ * Walk A of the per-attempt body, post-Phase-3-envelope-chunkbuffer:
+ * read the pre-built detection-envelope cache and write the forward-
+ * IIR output to a disk-backed `FileChunkBuffer` chunk-by-chunk. Per
+ * `plan-loudness-target-stream-caching` Phase 3.2.
  *
- * Output is deferred by `halfWidth` (in upsampled samples) on the
- * leading edge; tracks `consumedUpsampledFrames` and `outputOffset`
- * (both in upsampled samples) and signals `isFinal === true` on the
- * chunk that closes out the source so the trailing-edge outputs flush.
+ * Streams the detection-envelope ChunkBuffer via
+ * `detectionEnvelope.iterate(CHUNK_FRAMES * OVERSAMPLE_FACTOR)`. The
+ * cache is single-channel at 4× rate (the leading-edge defer of
+ * `halfWidth` samples was absorbed by the cache builder), so
+ * `chunk.samples[0]` carries the already-pooled detection envelope.
  *
- * `forwardScratch` must be sized `frames * OVERSAMPLE_FACTOR`; the
- * function fills exactly those slots once Walk A completes.
+ * `forwardEnvelopeBuffer` is appended chunk-by-chunk. The caller must
+ * `truncate(0)` it before each attempt's walk-A call so this attempt's
+ * output replaces (rather than extends) the previous attempt's.
  */
-async function streamDetectionMaxPoolAndCurveAndForwardIir(
-	args: StreamDetectionMaxPoolAndCurveAndForwardIirArgs,
+async function streamCurveAndForwardIir(
+	args: StreamCurveAndForwardIirArgs,
 ): Promise<void> {
-	const { buffer, channelCount, frames, sampleRate, halfWidth, anchors, iir, forwardScratch } = args;
+	const { detectionEnvelope, anchors, iir, forwardEnvelopeBuffer } = args;
 
-	if (frames === 0 || channelCount === 0) return;
+	if (detectionEnvelope.frames === 0) return;
 
-	// Fresh per-channel oversamplers for THIS walk only. Biquad state
-	// continues across chunks of THIS walk; the array is dropped at
-	// walk end. MUST NOT be shared with walk B's apply oversamplers or
-	// the stream class's persistent apply set — those have absorbed
-	// different signal histories.
-	const detectionOversamplers: Array<Oversampler> = [];
-
-	for (let channelIdx = 0; channelIdx < channelCount; channelIdx++) {
-		detectionOversamplers.push(new Oversampler(OVERSAMPLE_FACTOR, sampleRate));
-	}
-
-	const upsampledTotal = frames * OVERSAMPLE_FACTOR;
-	const slidingWindow = new SlidingWindowMaxStream(halfWidth);
 	const forwardState = { value: 0 };
 	let forwardSeeded = false;
-	let consumedUpsampledFrames = 0;
-	let outputOffset = 0;
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
-		const channels = chunk.samples;
-		const chunkFrames = channels[0]?.length ?? 0;
+	// Persistent per-chunk scratch for the curve-eval output. Same
+	// pattern as Phase 1.1 (`gWindowScratch`): sized at the maximum
+	// upsampled chunk length, reused via `.subarray(0, length)`. The
+	// cache emits exactly `CHUNK_FRAMES * OVERSAMPLE_FACTOR` samples
+	// per chunk (except the last) — no `+ halfWidth` slack is needed
+	// here because the sliding-window flush already happened in the
+	// cache build.
+	const gWindowScratch = new Float32Array(CHUNK_FRAMES * OVERSAMPLE_FACTOR);
 
-		if (chunkFrames === 0) continue;
+	for await (const chunk of detectionEnvelope.iterate(CHUNK_FRAMES * OVERSAMPLE_FACTOR)) {
+		const windowChunk = chunk.samples[0];
 
-		// Upsample each channel to 4×.
-		const upChannels: Array<Float32Array> = [];
-
-		for (let channelIdx = 0; channelIdx < channels.length; channelIdx++) {
-			const channel = channels[channelIdx];
-			const oversampler = detectionOversamplers[channelIdx];
-
-			if (channel === undefined || oversampler === undefined) {
-				upChannels.push(new Float32Array(chunkFrames * OVERSAMPLE_FACTOR));
-				continue;
-			}
-
-			upChannels.push(oversampler.upsample(channel));
-		}
-
-		const upChunkLength = chunkFrames * OVERSAMPLE_FACTOR;
-		// 4×-rate detection per chunk: `max_c |upChannels[c][upIdx]|`
-		// per upsampled sample.
-		const detectChunk = new Float32Array(upChunkLength);
-
-		for (let upIdx = 0; upIdx < upChunkLength; upIdx++) {
-			let max = 0;
-
-			for (let channelIdx = 0; channelIdx < upChannels.length; channelIdx++) {
-				const upSample = upChannels[channelIdx]?.[upIdx] ?? 0;
-				const absolute = Math.abs(upSample);
-
-				if (absolute > max) max = absolute;
-			}
-
-			detectChunk[upIdx] = max;
-		}
-
-		consumedUpsampledFrames += upChunkLength;
-
-		// Max-pool per chunk via the streaming form.
-		const isFinal = consumedUpsampledFrames >= upsampledTotal;
-		const windowChunk = slidingWindow.push(detectChunk, isFinal);
-
-		if (windowChunk.length === 0) continue;
+		if (windowChunk === undefined || windowChunk.length === 0) continue;
 
 		// Curve per output sample at 4× rate: `g[k] = 10^(gainDbAt(
-		// linearToDb(window[k])) / 20)`.
-		const gWindowChunk = new Float32Array(windowChunk.length);
+		// linearToDb(window[k])) / 20)`. View into the persistent
+		// `gWindowScratch` — fully overwritten by the fill loop below.
+		const gWindowChunk = gWindowScratch.subarray(0, windowChunk.length);
 
 		for (let outputIdx = 0; outputIdx < windowChunk.length; outputIdx++) {
 			const levelDb = linearToDb(windowChunk[outputIdx] ?? 0);
@@ -665,16 +950,30 @@ async function streamDetectionMaxPoolAndCurveAndForwardIir(
 
 		const forwardChunk = iir.applyForwardPass(gWindowChunk, forwardState);
 
-		forwardScratch.set(forwardChunk, outputOffset);
-		outputOffset += forwardChunk.length;
+		await forwardEnvelopeBuffer.append([forwardChunk]);
 	}
 }
 
 interface MeasureAttemptArgs {
-	buffer: ChunkBuffer;
+	/**
+	 * 4×-upsampled per-channel source cache built ONCE at iteration
+	 * entry. The per-attempt walk B reads this in chunks at upsampled
+	 * rate, multiplies each channel by the chunk-aligned envelope slice,
+	 * and downsamples — skipping the per-attempt upsample step.
+	 */
+	upsampledSource: ChunkBuffer;
 	sampleRate: number;
 	channelCount: number;
-	gSmoothed: Float32Array;
+	/**
+	 * 4×-rate smoothed gain envelope from this attempt's walks, held as
+	 * a single-channel `ChunkBuffer` (per Phase 3 of
+	 * `plan-loudness-target-stream-caching`: the envelope is disk-
+	 * backed via `FileChunkBuffer`, not a flat `Float32Array`). Frames
+	 * count matches `upsampledSource.frames` exactly. Read in chunks
+	 * in lockstep with `upsampledSource.iterate(CHUNK_FRAMES *
+	 * OVERSAMPLE_FACTOR)`.
+	 */
+	gSmoothed: ChunkBuffer;
 }
 
 interface MeasureAttemptResult {
@@ -690,40 +989,100 @@ interface MeasureAttemptResult {
 }
 
 /**
- * Per-attempt body (walk B sub-pass B2): stream the source through
- * `applyOversampledChunk` (4×-rate apply via fresh per-channel
- * `Oversampler` array) and parallel `LoudnessAccumulator` /
- * `TruePeakAccumulator`. Returns integrated LUFS, LRA, and 4× true
- * peak of the transformed signal.
+ * Per-attempt body (walk B sub-pass B2), post-Phase-2-stream-caching:
+ * iterate the upsampled-source CACHE (built once at iteration entry)
+ * chunk-by-chunk, multiply by the chunk-aligned 4×-rate envelope
+ * slice, and downsample via a fresh per-channel `Oversampler` set.
+ * Parallel `LoudnessAccumulator` / `TruePeakAccumulator` consume the
+ * downsampled chunks. Returns integrated LUFS, LRA, and 4× true peak
+ * of the transformed signal.
+ *
+ * The per-attempt upsample step from the pre-cache pipeline is gone —
+ * the cache absorbed it. Only the downsample side of the
+ * `Oversampler` is exercised here. Downsamplers MUST be fresh per
+ * attempt: their post-multiply input differs per attempt, so reusing
+ * across attempts would corrupt the AA filter state.
  */
 async function measureAttemptOutput(args: MeasureAttemptArgs): Promise<MeasureAttemptResult> {
-	const { buffer, sampleRate, channelCount, gSmoothed } = args;
+	const { upsampledSource, sampleRate, channelCount, gSmoothed } = args;
 	const accumulator = new LoudnessAccumulator(sampleRate, channelCount);
 	const truePeakAccumulator = new TruePeakAccumulator(sampleRate, channelCount);
 
-	// Fresh per-channel apply oversamplers — distinct from walk A's
-	// detection set AND from the stream class's persistent apply set.
-	const applyOversamplers: Array<Oversampler> = [];
+	// Fresh per-channel downsamplers. Distinct from walk A's
+	// (now-deleted) detection set, from the cache-build set inside
+	// `buildSourceUpsampledAndDetectionCaches`, and from the stream
+	// class's persistent apply set. Each `Oversampler` here is used
+	// for its `downsample` side only — the upsample side ran during
+	// cache build.
+	const downsamplers: Array<Oversampler> = [];
 
 	for (let channelIdx = 0; channelIdx < channelCount; channelIdx++) {
-		applyOversamplers.push(new Oversampler(OVERSAMPLE_FACTOR, sampleRate));
+		downsamplers.push(new Oversampler(OVERSAMPLE_FACTOR, sampleRate));
 	}
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
-		const chunkFrames = chunk.samples[0]?.length ?? 0;
+	// Persistent per-attempt output scratch: one `Float32Array` per
+	// channel sized to the steady-state source-rate chunk length.
+	// Reused across chunks via `subarray(0, chunkFrames)` for the
+	// variable last-chunk length. Kept inside `measureAttemptOutput`
+	// (not hoisted to `iterateForTargets`) per the Phase 1.3 plan —
+	// the scratch is cheap (sized by chunk, not by source) and the
+	// per-attempt-fresh pattern preserves clear ownership boundaries
+	// with the `downsamplers` set.
+	const applyOutputScratch: Array<Float32Array> = [];
 
-		if (chunkFrames === 0) continue;
+	for (let channelIdx = 0; channelIdx < channelCount; channelIdx++) {
+		applyOutputScratch.push(new Float32Array(CHUNK_FRAMES));
+	}
 
-		const transformed = applyOversampledChunk({
-			chunkSamples: chunk.samples,
-			smoothedGain: gSmoothed,
-			offset: chunk.offset,
-			oversamplers: applyOversamplers,
+	const upsampledChunkSize = CHUNK_FRAMES * OVERSAMPLE_FACTOR;
+	let consumedUpsampledFrames = 0;
+
+	for await (const upChunk of upsampledSource.iterate(upsampledChunkSize)) {
+		const upChunkFrames = upChunk.samples[0]?.length ?? 0;
+
+		if (upChunkFrames === 0) continue;
+
+		// Source-rate chunk frames = upsampled chunk frames / factor.
+		// Both the upsampled cache (post-build) and the source itself
+		// have lengths that are exact multiples of `OVERSAMPLE_FACTOR`,
+		// so this integer divide is exact for every chunk.
+		const chunkFrames = upChunkFrames / OVERSAMPLE_FACTOR;
+		// Chunk-aligned envelope slice — read from the envelope
+		// ChunkBuffer at the running `consumedUpsampledFrames` offset.
+		// The envelope is disk-backed (`FileChunkBuffer`); each read
+		// returns a freshly-allocated `Float32Array` of the requested
+		// length. Lockstep invariant with `upsampledSource.iterate(...)`:
+		// the envelope is written in source order and is one channel
+		// wide, so the running offset matches.
+		const envelopeChunk = await gSmoothed.read(consumedUpsampledFrames, upChunkFrames);
+		const envelopeSlice = envelopeChunk.samples[0];
+
+		if (envelopeSlice?.length !== upChunkFrames) {
+			throw new Error(
+				`measureAttemptOutput: envelope ChunkBuffer returned ${envelopeSlice?.length ?? 0} samples; expected ${upChunkFrames}`,
+			);
+		}
+
+		// Build per-chunk views into the persistent scratch so the
+		// trailing short chunk gets correctly-sized slots (the
+		// cache-fed apply helper validates `output[ch].length ===
+		// upsampledChunkSamples[ch].length / factor`).
+		const applyOutputView: Array<Float32Array> = applyOutputScratch.map(
+			(slot) => slot.subarray(0, chunkFrames),
+		);
+
+		const transformed = applyOversampledChunkFromCache({
+			upsampledChunkSamples: upChunk.samples,
+			smoothedGain: envelopeSlice,
+			downsamplers,
 			factor: OVERSAMPLE_FACTOR,
+			output: applyOutputView,
 		});
 
 		accumulator.push(transformed, chunkFrames);
 		truePeakAccumulator.push(transformed, chunkFrames);
+
+		consumedUpsampledFrames += upChunkFrames;
 	}
 
 	const result = accumulator.finalize();
@@ -742,8 +1101,32 @@ interface BoostStep {
  * 1D secant on `B` for LUFS error. Branches by history length:
  *   - exactly 1 point: full RMS-shift correction `B_next = B - lufsErr`.
  *   - ≥ 2 points: classical secant on the most recent two attempts,
- *     with `MIN_SECANT_SLOPE` floor on the slope magnitude and
- *     half-previous-step damping.
+ *     with `MIN_SECANT_SLOPE` floor on slope magnitude and asymmetric
+ *     damping based on error sign-flip.
+ *
+ * **Damping policy (asymmetric)**:
+ *
+ * - **Same-sign consecutive errors** (still descending one-sided
+ *   toward target): NO cap. Trust the secant's predicted step. In
+ *   this regime the secant's slope estimate is being validated each
+ *   attempt (error keeps reducing in the same direction), so
+ *   extrapolation is justified. Without trusting the secant here,
+ *   the iterator can be bounded short of target by an arbitrarily
+ *   chosen geometric series (this was the saddle-stall bug in
+ *   `plan-loudness-target-sequential-iteration`'s initial QA — Phase
+ *   B stalled at +1.5 dB residual because the 0.5× cap geometrically
+ *   bounded total reach).
+ *
+ * - **Sign-flipped consecutive errors** (overshot target — we now
+ *   sit on the opposite side): cap at `1 × previous step magnitude`.
+ *   The previous-step point on the other side of target had error of
+ *   opposite sign; reverting more than the full previous step would
+ *   land beyond that known-bad point. 1× cap is the principled
+ *   no-revert-past-known-bad rule; smaller (e.g. 0.5×) is over-
+ *   conservative and geometrically truncates oscillation
+ *   convergence. The secant's `step = -lufsErr / slope` already
+ *   shrinks naturally as `|lufsErr| → 0`, so the cap only fires when
+ *   the slope estimate is degenerate.
  */
 function computeBoostStep(attempts: ReadonlyArray<IterationAttempt>, previousStepMagnitude: number): BoostStep {
 	const last = attempts[attempts.length - 1];
@@ -771,7 +1154,14 @@ function computeBoostStep(attempts: ReadonlyArray<IterationAttempt>, previousSte
 	}
 
 	const stepBoostRaw = -last.lufsErr / slope;
-	const magnitudeCap = Number.isFinite(previousStepMagnitude) ? previousStepMagnitude * 0.5 : Infinity;
+	// Asymmetric cap: same-sign descent → no cap, trust the secant;
+	// sign-flip overshoot → cap at 1× previous step magnitude (don't
+	// revert past the known-bad point on the other side of target).
+	const signFlipped = last.lufsErr !== 0 && previous.lufsErr !== 0
+		&& Math.sign(last.lufsErr) !== Math.sign(previous.lufsErr);
+	const magnitudeCap = signFlipped && Number.isFinite(previousStepMagnitude)
+		? previousStepMagnitude
+		: Infinity;
 	const absStep = Math.abs(stepBoostRaw);
 	const scale = absStep > magnitudeCap && absStep > 0 ? magnitudeCap / absStep : 1;
 	const stepBoost = stepBoostRaw * scale;

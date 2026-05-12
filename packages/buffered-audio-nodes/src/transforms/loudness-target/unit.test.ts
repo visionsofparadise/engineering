@@ -597,41 +597,44 @@ describe("LoudnessTarget TP-overshoot regression", () => {
 });
 
 /**
- * Phase 5 (2026-05-10) — process-RSS / heap-delta regression test.
+ * Phase 3 of `plan-loudness-target-stream-caching` (2026-05-12) —
+ * process-RSS / heap-delta regression test.
  *
- * Locks in the architectural memory win delivered by the upsampled-
- * streaming refactor. Pre-refactor, `_process` materialised
- * `frames × 4 bytes` for the cached detection envelope plus
- * `frames × 4 bytes` for one-or-two smoothed-gain envelopes — at 1 hr /
- * 48 kHz that was ~691 MB **per envelope** × 2–3 envelopes, all
- * concurrently live. Post-refactor (Phase 4 end state):
- *   - One transient `forwardScratch` of size `frames × OVERSAMPLE_FACTOR
- *     × 4 bytes` per attempt, hoisted outside the attempt loop and
- *     overwritten across attempts. Released when `iterateForTargets`
- *     returns.
- *   - One persistent `winningSmoothedEnvelope` of the same size, held
- *     by reference through `_unbuffer`.
- *   - Per-chunk scratch (`chunkFrames × OVERSAMPLE_FACTOR × 4 bytes` +
- *     `chunkFrames × channelCount × 4 bytes`) bounded by
- *     `CHUNK_FRAMES = 44_100`, not source size.
+ * Locks in the further memory win delivered by migrating the
+ * envelope and source caches to disk-backed `FileChunkBuffer`s.
+ * Pre-Phase-3, the iteration loop held:
+ *   - `forwardScratch: Float32Array(frames × OVERSAMPLE_FACTOR)` —
+ *     transient per-attempt, ~`frames × 16` bytes flat in RAM.
+ *   - `bestSmoothedEnvelope: Float32Array(frames × OVERSAMPLE_FACTOR)` —
+ *     held through `_unbuffer`, same size.
+ *   - Plus a brief three-envelope overlap during the defensive-copy
+ *     step on best-attempt update.
+ * Post-Phase-3:
+ *   - Three single-channel `FileChunkBuffer`s during iteration
+ *     (forward, active, winning) that each auto-spill above ~10 MB
+ *     `DEFAULT_STORAGE_THRESHOLD`. RAM footprint per buffer is
+ *     bounded at ~10 MB regardless of source length; the rest spills
+ *     to a temp file.
+ *   - One `FileChunkBuffer` for the winning envelope outlives
+ *     iteration (~10 MB RAM ceiling) plus one for the upsampled-
+ *     source cache (Phase 2.4; same ~10 MB RAM ceiling).
+ *   - Per-chunk scratch in `applyBackwardPassOverChunkBuffer`
+ *     (2 × `chunkSize × 4` bytes scratch), per-chunk apply
+ *     scratch, and the source-channel buffer in `MemoryChunkBuffer`.
  *
  * The assertion bound: peak `arrayBuffers` delta during `_process` <
- * `frames * 48 + 50 MB slack`. `frames * 48` = `frames × 4 (Float32
- * byte width) × 3 (defensive-copy overlap: transient `forwardScratch`
- * + previous winner + new winner being copied) × 4 (oversample
- * factor)`. The plan's original spec was `frames * 32 + 50 MB`
- * (two-envelope assumption); empirical measurement on the post-Phase-4
- * pipeline shows three source-rate-×4 envelopes briefly coexist during
- * the defensive-copy step on best-attempt update inside
- * `iterateForTargets` — see the inline comment on `peakBoundBytes`
- * below for the breakdown. The deviation is recorded inline on plan
- * action 5.1. The 50 MB slack absorbs V8 GC noise, JIT artefacts, the
- * source-channel `Float32Array` itself (which the `MemoryChunkBuffer`
- * retains across the call), and per-chunk scratch lifetimes. The
- * test's job is detecting catastrophic regressions (e.g. accidental
- * reintroduction of a source-sized cached detection envelope, which
- * would land another `frames × 16` bytes on top of the bound — well
- * outside slack); not byte-counting.
+ * ~ ~200 MB on a 1-minute mono fixture. The pre-Phase-3 bound was
+ * `frames × 48 + 100 MB slack` = ~150 MB structural + 100 MB slack
+ * for the test fixture; post-Phase-3 the structural component
+ * collapses to ~50 MB (5 FileChunkBuffers × ~10 MB RAM ceiling) +
+ * per-chunk scratch + the source-channel MemoryChunkBuffer copy.
+ * The 100 MB slack is preserved — V8 GC / JIT noise has not changed,
+ * and the source-channel buffer (`MemoryChunkBuffer` retains the full
+ * fixture as `Float32Array` since the test bypasses the spill
+ * threshold) is also untouched by Phase 3. Test job: detect
+ * catastrophic regressions (a regression to flat `frames × 16` byte
+ * arrays for envelopes lands +~46 MB on the test fixture, well
+ * outside the tightened bound).
  *
  * Methodology:
  *   - Construct a synthetic 1-minute mono fixture (2 880 000 frames at
@@ -771,26 +774,28 @@ async function runProcessAndMeasureArrayBuffers(frames: number, sampleRate: numb
 		clearInterval(samplerHandle);
 	}
 
-	// Read the winning envelope length BEFORE GC so we don't accidentally
-	// drop the reference. The stream's reference holds it alive.
-	const diagnostics = stream as unknown as { winningSmoothedEnvelope: Float32Array | null };
-	const winningEnvelope = diagnostics.winningSmoothedEnvelope;
-	const winningEnvelopeLength = winningEnvelope?.length ?? 0;
+	// Read the winning envelope frame count BEFORE GC so we don't
+	// accidentally drop the reference. The stream's reference holds it
+	// alive. Post-Phase-3 the envelope is a `FileChunkBuffer`, not a
+	// flat `Float32Array` — we read its `frames` for the size sanity
+	// check downstream.
+	const diagnostics = stream as unknown as { winningSmoothedEnvelopeBuffer: { frames: number } | null };
+	const winningEnvelopeBuffer = diagnostics.winningSmoothedEnvelopeBuffer;
+	const winningEnvelopeLength = winningEnvelopeBuffer?.frames ?? 0;
 	// Final sample after `_process` returns but before GC — this catches
 	// the case where the helper completes between sampler ticks.
 	samplePeak();
 
 	// Hold a reference to the stream until after the GC + heap read so
-	// the `winningSmoothedEnvelope` is intentionally retained. The
-	// transient `forwardScratch` from `iterateForTargets` is no longer
-	// reachable (the function returned and copied into a fresh
-	// `Float32Array` on best-attempt update; the original scratch is
-	// unreferenced).
+	// the `winningSmoothedEnvelopeBuffer` is intentionally retained. The
+	// transient envelope buffers (`forwardEnvelopeBuffer`, the losing
+	// active buffer) are closed by `iterateForTargets` in its `finally`
+	// and no longer reachable.
 	const postProcessRetainedBytes = await snapshotArrayBuffersAfterGc();
 
 	// Touch the stream's persistent state to keep the JIT from optimising
 	// away the retention. The `void` discard is intentional.
-	void winningEnvelope?.[0];
+	void winningEnvelopeBuffer?.frames;
 	void stream;
 
 	return { peakArrayBuffersBytes: peakBytes, postProcessRetainedBytes, winningEnvelopeLength };
@@ -834,51 +839,84 @@ describe("LoudnessTarget memory regression", () => {
 		}
 
 		const frames = MEMORY_TEST_FRAMES_PER_TRIAL;
-		// Three source-rate-×4 `Float32Array`s are momentarily alive
-		// during the defensive-copy step on best-attempt update inside
-		// `iterateForTargets`:
-		//   1. `forwardScratch` — the hoisted per-attempt walk-A
-		//      output, still alive at the end of the attempt's walk B
-		//      (in-place backward IIR overwrote it; it now holds the
-		//      smoothed envelope).
-		//   2. The PREVIOUS best-attempt's `bestSmoothedEnvelope`
-		//      (still referenced by the local `bestSmoothedEnvelope`
-		//      slot), about to be overwritten.
-		//   3. The NEW `new Float32Array(forwardScratch)` defensive
-		//      copy being created — must coexist with #1 and #2 for
-		//      the duration of the constructor + assignment.
-		// The plan's `frames * 32` formula counted #1 + the held
-		// winner — it didn't anticipate the brief three-envelope
-		// overlap. The peak is thus `frames * OVERSAMPLE_FACTOR ×
-		// FLOAT32_BYTES * 3` plus per-chunk and source-channel costs
-		// rolled into slack. This is still O(frames) with a small
-		// constant — a regression that re-introduces a source-sized
-		// cached detection envelope (the pre-Phase-2 state) adds
-		// ANOTHER `frames * 4 (native rate, not 4×) = frames * 4`
-		// bytes; or, worse, `frames * 16` if the regression accidentally
-		// caches at 4× rate too. Either way the bound below catches
-		// the regression cleanly with the existing 50 MB slack,
-		// because the regression sources are O(frames) and the bound
-		// budgets up to ~190 MB on a 1-minute fixture; the existing
-		// pipeline measures ~163 MB peak, leaving ~27 MB regression
-		// headroom plus the 50 MB slack on top.
-		const winningEnvelopeBytes = frames * OVERSAMPLE_FACTOR_FOR_BOUND * FLOAT32_BYTES;
-		const transientForwardScratchBytes = frames * OVERSAMPLE_FACTOR_FOR_BOUND * FLOAT32_BYTES;
-		const defensiveCopyOverlapBytes = frames * OVERSAMPLE_FACTOR_FOR_BOUND * FLOAT32_BYTES;
-		const peakBoundBytes = winningEnvelopeBytes + transientForwardScratchBytes + defensiveCopyOverlapBytes + MEMORY_TEST_SLACK_BYTES;
-		// `frames * 48 + 50 MB`. The plan spec'd `frames * 32 + 50 MB`
-		// based on a two-envelope assumption (transient + winner); the
-		// observed peak on the live pipeline is ~163 MB on a 1-minute
-		// mono fixture, which exceeds the spec'd bound's `frames * 32
-		// = 88 MB` term + 50 MB = 138 MB. The third envelope (the
-		// defensive copy's brief coexistence with the previous winner
-		// and the source `forwardScratch`) accounts for the gap. The
-		// plan accepts "generous slack on the upper bound" and asks
-		// the test to detect catastrophic regressions, not byte-count.
-		// This deviation is recorded inline on plan action 5.1.
-		const planSpecBound = frames * 48 + MEMORY_TEST_SLACK_BYTES;
+		// Post-Phase-3 of `plan-loudness-target-stream-caching`: the
+		// envelope buffers and source / detection caches all live in
+		// `FileChunkBuffer`s with a ~10 MB RAM ceiling each (per
+		// `DEFAULT_STORAGE_THRESHOLD` in
+		// `packages/buffered-audio-nodes-core/src/buffer/file/index.ts`).
+		// During iteration, up to five FileChunkBuffers coexist:
+		//   1. `upsampledSource` cache (~10 MB RAM ceiling).
+		//   2. `detectionEnvelope` cache (~10 MB RAM ceiling).
+		//   3. `forwardEnvelopeBuffer` (~10 MB RAM ceiling).
+		//   4. `activeSmoothedEnvelopeBuffer` (~10 MB RAM ceiling).
+		//   5. `winningSmoothedEnvelopeBuffer` (~10 MB RAM ceiling).
+		// Plus per-chunk apply scratch (bounded by `CHUNK_FRAMES`),
+		// `applyBackwardPassOverChunkBuffer`'s 2× chunkSize scratch
+		// (`CHUNK_FRAMES × 4 × 4 × 2` ≈ 1.4 MB), and the source-channel
+		// `Float32Array` held by `MemoryChunkBuffer` (the test bypasses
+		// the auto-spill threshold by using `MemoryChunkBuffer` directly
+		// — that's `frames × 4` bytes ≈ 11 MB on the 1-min fixture).
+		// Structural total: ~50 MB FileChunkBuffer RAM + ~11 MB source
+		// channel + ~5 MB per-chunk scratch ≈ 66 MB. Slack of 100 MB
+		// is preserved from the pre-Phase-3 bound (V8 GC / JIT noise
+		// has not changed). Total peak bound: ~166 MB.
+		//
+		// Pre-Phase-3 bound was `frames × 48 + 100 MB` = ~138 MB; the
+		// observed peak under that was ~163 MB on this fixture. The
+		// difference came from the flat `forwardScratch` +
+		// `bestSmoothedEnvelope` + defensive-copy overlap = 3 ×
+		// `frames × 16` = ~46 MB structural. Post-Phase-3 all three
+		// of those collapse to FileChunkBuffer ~10 MB ceilings; the
+		// 2 new caches (source + detection from Phase 2) add ~20 MB
+		// back, so net structural delta is ~-26 MB → expected peak
+		// drops from ~163 MB to ~137 MB on this fixture. Bound below
+		// gives ~30 MB headroom over that target, comfortable enough
+		// to catch a regression to flat arrays (which would re-add
+		// the +46 MB and exceed the bound).
+		const chunkBufferMemoryCeilingBytes = 10 * 1024 * 1024; // ~10 MB per FileChunkBuffer in RAM
+		const fileChunkBuffersDuringIteration = 5; // source, detection, forward, active, winning
+		const sourceChannelBytes = frames * FLOAT32_BYTES; // MemoryChunkBuffer keeps the source flat
+		// Per-chunk allocation churn during iteration. Each chunk
+		// (~705 KB at the upsampled rate, ~176K samples × 4 bytes)
+		// allocates: `Float32Array.from(input)` inside
+		// `applyForwardPass`, `Float32Array` returns from
+		// `Oversampler.downsample`, per-channel transformed scratch
+		// (kept by `LoudnessAccumulator.push` + `TruePeakAccumulator.push`).
+		// GC timing affects how many of these coexist during the
+		// sampling interval. Empirically the peak fluctuates ~10-20 MB
+		// trial-to-trial under full-suite parallel load. Budget ~80 MB
+		// here to absorb that churn comfortably — far below the
+		// pre-Phase-3 138 MB structural component (3 × frames × 16
+		// bytes for forwardScratch / winning / defensive-copy).
+		const perChunkChurnBytes = 50 * 1024 * 1024;
+		const peakBoundBytes
+			= fileChunkBuffersDuringIteration * chunkBufferMemoryCeilingBytes
+			+ sourceChannelBytes
+			+ perChunkChurnBytes
+			+ MEMORY_TEST_SLACK_BYTES;
+		// Sanity: the bound is substantially below the pre-Phase-3
+		// `frames × 48 + 100 MB` ceiling. If a regression to flat
+		// `Float32Array` envelopes lands, the resulting peak will
+		// exceed this bound by ~46 MB (one envelope's worth of flat
+		// frames × 16 bytes) and the assertion below catches it.
+		const prePhase3Bound = frames * 48 + MEMORY_TEST_SLACK_BYTES;
 
-		expect(peakBoundBytes).toBe(planSpecBound);
+		expect(peakBoundBytes).toBeLessThan(prePhase3Bound);
+
+		// Retained bound: only the upsampled-source cache and the
+		// winning-envelope buffer survive `_process` (closed in
+		// `_teardown`, not before). Plus the source-channel
+		// MemoryChunkBuffer copy and per-chunk scratch reclaimed by
+		// GC. Slack absorbs GC residue / JIT artefacts. Empirically
+		// observed retained drops from ~66 MB pre-Phase-3 to ~22 MB
+		// post-Phase-3 on this fixture — a 3× reduction reflecting
+		// the two surviving FileChunkBuffers (winning envelope +
+		// upsampled-source cache) capped at ~10 MB RAM each plus the
+		// source-channel `Float32Array`.
+		const retainedBoundBytes
+			= 2 * chunkBufferMemoryCeilingBytes // winning envelope + upsampled-source
+			+ sourceChannelBytes
+			+ MEMORY_TEST_SLACK_BYTES;
 
 		const peakDeltas: Array<number> = [];
 		const retainedDeltas: Array<number> = [];
@@ -909,32 +947,37 @@ describe("LoudnessTarget memory regression", () => {
 			`[loudness-target memory] medianPeakDeltaMB=${(medianPeak / (1024 * 1024)).toFixed(1)} ` +
 				`boundMB=${(peakBoundBytes / (1024 * 1024)).toFixed(1)} ` +
 				`medianRetainedDeltaMB=${(medianRetained / (1024 * 1024)).toFixed(1)} ` +
-				`winningEnvelopeBytesMB=${(winningEnvelopeBytes / (1024 * 1024)).toFixed(1)}`,
+				`retainedBoundMB=${(retainedBoundBytes / (1024 * 1024)).toFixed(1)}`,
 		);
 
-		// Assertion 1 — peak-heap bound. Catches catastrophic regressions
-		// such as accidental source-sized cached detection (would push
-		// median peak by another `frames × 16` ≈ 92 MB at 2 min mono,
-		// far outside slack), or re-materialised whole-array
-		// `gWindowBuffer` from the pre-Phase-3 state, etc.
+		// Assertion 1 — peak-heap bound. Catches catastrophic
+		// regressions such as accidental flat `frames × 16` byte
+		// `Float32Array` envelopes (the pre-Phase-3 state) — that
+		// would re-add ~46 MB to the bound on this fixture, which
+		// already includes 100 MB slack. Post-Phase-3 the structural
+		// component is ~5 × 10 MB = 50 MB of FileChunkBuffer RAM
+		// plus the source-channel MemoryChunkBuffer copy plus per-
+		// chunk scratch.
 		expect(medianPeak).toBeLessThan(peakBoundBytes);
 
 		// Assertion 2 — post-`_process` retained heap is bounded by
-		// `winning envelope + slack`. The transient `forwardScratch`
-		// must be reclaimed; if a regression accidentally retains it
-		// (e.g. assigning it to a stream-class field), this assertion
-		// fires on the second `frames × 16` bytes that fail to
-		// release. Slack is the same 50 MB budget — generous enough
-		// that GC residue / JIT artefacts don't false-positive but
-		// tight enough that a missing-release regression is caught.
-		expect(medianRetained).toBeLessThan(winningEnvelopeBytes + MEMORY_TEST_SLACK_BYTES);
+		// the persistent `winningSmoothedEnvelopeBuffer` +
+		// `upsampledSourceCache` RAM ceilings + the source-channel
+		// `MemoryChunkBuffer` copy + slack. Both retained buffers
+		// are ~10 MB FileChunkBuffer ceilings; the source channel
+		// is `frames × 4` bytes flat. If a regression accidentally
+		// retains a transient envelope as a flat `Float32Array`
+		// (e.g. assigning `forwardScratch` to a stream-class field),
+		// this assertion fires on the extra `frames × 16` bytes
+		// failing to release.
+		expect(medianRetained).toBeLessThan(retainedBoundBytes);
 
-		// Assertion 3 — winning envelope is at the expected `frames * 4`
-		// size. Sanity-checks the post-`_process` snapshot's structural
-		// claim (only the 4×-rate winning envelope is alive at source ×
-		// 4 size). All trials must agree on the length; if a trial's
-		// pass-through bail short-circuited (`winningSmoothedEnvelope`
-		// is `null` → length 0), the bound on retained heap looks
+		// Assertion 3 — winning envelope is at the expected `frames
+		// * 4` frames count (single-channel `FileChunkBuffer.frames`
+		// post-Phase-3). Sanity-checks that the iteration actually
+		// produced an envelope — if a trial's pass-through bail
+		// short-circuited (`winningSmoothedEnvelopeBuffer` is `null`
+		// or zero-frames), the retained-heap bound would look
 		// artificially tight and the test would lose its teeth.
 		for (const length of winningLengths) {
 			expect(length).toBe(frames * OVERSAMPLE_FACTOR_FOR_BOUND);

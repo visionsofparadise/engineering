@@ -119,8 +119,11 @@ describe("iterateForTargets", () => {
 
 		expect(result.converged).toBe(true);
 		expect(result.attempts.length).toBeLessThanOrEqual(10);
-		// 4×-upsampled smoothed gain envelope.
-		expect(result.bestSmoothedEnvelope.length).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+		// 4×-upsampled smoothed gain envelope, disk-backed
+		// (`FileChunkBuffer` per Phase 3 of
+		// `plan-loudness-target-stream-caching`). `.frames` replaces
+		// `.length` from the pre-Phase-3 `Float32Array` shape.
+		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
 
 		const lastAttempt = result.attempts[result.attempts.length - 1];
 
@@ -198,8 +201,8 @@ describe("iterateForTargets", () => {
 			expect(attempt.limitDb).toBeCloseTo(limitAutoDb, 6);
 		}
 
-		// `bestSmoothedEnvelope` populated.
-		expect(result.bestSmoothedEnvelope.length).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+		// `bestSmoothedEnvelopeBuffer` populated.
+		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
 	}, TEST_TIMEOUT_MS);
 
 	it("limitAutoDb = +Infinity falls back to sourcePeakDb (no limit)", async () => {
@@ -243,15 +246,27 @@ describe("iterateForTargets", () => {
 	}, TEST_TIMEOUT_MS);
 
 	it("infeasible joint targets exhaust maxAttempts and return closest-attempt fallback", async () => {
-		// Force non-convergence with `tolerance = 1e-9` and
-		// `maxAttempts = 4`. The closest-attempt fallback must return
-		// `bestB` from one of the attempts and the minimum joint score
-		// across them.
+		// Force non-convergence with `tolerance = 1e-9`,
+		// `peakTolerance = 1e-9`, and `maxAttempts = 4`. The
+		// closest-attempt fallback must return `bestB` from one of the
+		// attempts and the minimum joint score across them.
 		//
 		// Post percentile-limit rewrite: `bestScore` is
 		// `sqrt(lufsErr^2 + peakOvershoot^2)` (no LRA term). The
 		// `bestB / bestLimitDb` matching collapses — `limitDb` is
 		// constant across attempts, so `bestB` alone is the disambiguator.
+		//
+		// Post Phase 4 of `plan-loudness-target-stream-caching` the
+		// always-on two-decimal-precision exit gate could otherwise fire
+		// in this scenario by coincidence (an attempt landing both axes
+		// within 0.005 of their targets). To force the gate closed we
+		// push the targets into a regime where no plausible attempt
+		// rounds to 0 at 2 dp on BOTH axes simultaneously: `targetLufs`
+		// at the maximum (0), peak ceiling 25 dB below source peak.
+		// `sourceLufs = -30` and `sourcePeakDb = -10` keep the "huge
+		// body lift, no peak headroom" intent — no choice of `B` /
+		// `peakGainDb` within 4 attempts produces a 2-dp-perfect result
+		// on both axes.
 		const source = makeSyntheticSource(0xC0FFEE, 0.1, 0.4);
 		const metrics = measureSourceMetrics(source);
 		const buffer = await makeBufferFromChannels(source);
@@ -261,12 +276,12 @@ describe("iterateForTargets", () => {
 			sampleRate: SAMPLE_RATE,
 			anchorBase: { floorDb: -50, pivotDb: -10 },
 			smoothingMs: 1,
-			targetLufs: -10,
-			targetTp: -1,
+			targetLufs: 0,
+			targetTp: -35,
 			limitAutoDb: Number.POSITIVE_INFINITY,
 			// Artificial sourceLufs / sourcePeakDb to force the iteration
-			// into the "huge body lift, no peak headroom" regime — sourcePeakDb
-			// = -10 → peakGainDb = +9.
+			// into a deeply infeasible regime — `targetLufs - sourceLufs
+			// = +30` LUFS lift, ceiling 25 dB BELOW source peak.
 			sourceLufs: -30,
 			sourcePeakDb: -10,
 			maxAttempts: 4,
@@ -285,7 +300,7 @@ describe("iterateForTargets", () => {
 		const matchedAttempt = result.attempts.find((attempt) => attempt.boost === result.bestB);
 
 		expect(matchedAttempt).toBeDefined();
-		expect(result.bestSmoothedEnvelope.length).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
 
 		// Best score must be the minimum across all attempts. Score
 		// formula post percentile-limit rewrite:
@@ -357,16 +372,44 @@ describe("iterateForTargets", () => {
 			// sourcePeakDb`, so the closed form is `targetTp - sourcePeakDb`.
 			expect(initialPeakGainDb).toBeCloseTo(targetTp - metrics.truePeakDb, 6);
 
-			// At least one attempt overshoots `peakTolerance` so the
-			// proportional-feedback branch fires.
-			const anyOvershoot = result.attempts.some((attempt) => attempt.peakOvershoot > 0.1);
+			// Phase A (peakGainDb-only) must run more than one attempt to
+			// observe the feedback firing — at least one Phase A attempt
+			// overshoots `peakTolerance` so the proportional-feedback branch
+			// engages and the NEXT Phase A attempt sees a strictly lower
+			// `peakGainDb`. Post `plan-loudness-target-sequential-iteration`
+			// the feedback fires only inside Phase A; Phase B runs with
+			// `peakGainDb` frozen at Phase A's terminal value.
+			const phaseAAttempts = result.attempts.filter((attempt) => attempt.phase === "A");
 
-			expect(anyOvershoot).toBe(true);
+			expect(phaseAAttempts.length).toBeGreaterThan(1);
 
-			// Backoff: some attempt k > 0 has peakGainDb strictly below
-			// attempt 0's value. The adjustment is monotonic-downward,
-			// so any non-zero adjustment leaves a strict-less-than gap.
-			const backoffOccurred = result.attempts.some(
+			// Phase A's first attempt overshoots — that's the precondition
+			// that lets the proportional-feedback branch fire on attempt 0
+			// → attempt 1's `peakGainDb`. Without overshoot on the first
+			// Phase A attempt, the loop would exit immediately.
+			const firstPhaseAOvershoot = phaseAAttempts[0]?.peakOvershoot ?? 0;
+
+			expect(firstPhaseAOvershoot).toBeGreaterThan(0.1);
+
+			// Phase A holds `B` constant at the RMS-shift initialiser — every
+			// Phase A attempt records the same `boost`. This is the
+			// load-bearing structural assertion for "B held constant during
+			// peakGainDb sub-iteration". A regression that re-engaged the
+			// B-secant inside Phase A would produce per-attempt variation
+			// in `boost`.
+			const firstPhaseABoost = phaseAAttempts[0]?.boost;
+
+			expect(firstPhaseABoost).toBeDefined();
+			for (const attempt of phaseAAttempts) {
+				expect(attempt.boost).toBe(firstPhaseABoost);
+			}
+
+			// Backoff: some Phase A attempt k > 0 has `peakGainDb` strictly
+			// below Phase A's first attempt. With `B` constant across Phase
+			// A this is the proportional-feedback law in isolation — no
+			// contamination from B-secant co-motion (the bug that motivated
+			// the sequential rewrite).
+			const backoffOccurred = phaseAAttempts.some(
 				(attempt, index) => index > 0 && initialPeakGainDb !== undefined && attempt.peakGainDb < initialPeakGainDb,
 			);
 
@@ -411,12 +454,144 @@ describe("iterateForTargets", () => {
 			}
 
 			// peakGainDb unchanged across every attempt — strict numeric
-			// equality. The adjustment formula is purely additive (no
-			// floating-point accumulation possible when the branch never
-			// fires), so any non-zero drift is a regression.
+			// equality. Post `plan-loudness-target-sequential-iteration`:
+			// Phase A exits on the first attempt (overshoot ≤ tolerance)
+			// so `frozenPeakGainDb` is identical to the initial closed-form
+			// value; Phase B then runs with that frozen value for every
+			// subsequent attempt. The adjustment formula is purely
+			// additive (no floating-point accumulation possible when the
+			// branch never fires), so any non-zero drift is a regression.
 			for (const attempt of result.attempts) {
 				expect(attempt.peakGainDb).toBe(initialPeakGainDb);
 			}
+
+			// Structural assertion for the sequential architecture: with no
+			// overshoot, Phase A exits in exactly one attempt; every other
+			// attempt is Phase B (B-secant with `peakGainDb` frozen at the
+			// Phase A value, which here equals the closed-form initial).
+			expect(result.peakAttempts).toBe(1);
+			expect(result.attempts[0]?.phase).toBe("A");
+			for (let attemptIdx = 1; attemptIdx < result.attempts.length; attemptIdx++) {
+				expect(result.attempts[attemptIdx]?.phase).toBe("B");
+			}
+		}, TEST_TIMEOUT_MS_INNER);
+
+		it("Phase A converges peakGainDb first, then Phase B converges B (boost constant in A, peakGainDb constant in B)", async () => {
+			// Sequential-architecture structural test
+			// (plan-loudness-target-sequential-iteration §2.1): fixture
+			// chosen so Phase A's first attempt overshoots `peakTolerance`
+			// (so the proportional-feedback branch fires more than once
+			// before Phase A exits). After Phase A converges or exhausts
+			// its budget, `peakGainDb` is frozen and Phase B runs to
+			// converge `B` on LUFS error. The load-bearing assertions:
+			//   (a) every Phase A attempt has the same `boost` (B is held
+			//       constant during peakGainDb sub-iteration).
+			//   (b) every Phase B attempt has the same `peakGainDb`
+			//       (frozen at Phase A's terminal value).
+			//   (c) at least one Phase A attempt and at least one Phase B
+			//       attempt exist (so both assertions are non-vacuous on
+			//       this fixture).
+			const source = makeSyntheticSource(0xBEEF_CAFE, 0.1, 0.4);
+			const metrics = measureSourceMetrics(source);
+			const buffer = await makeBufferFromChannels(source);
+
+			const targetLufs = Math.round((metrics.integratedLufs + 12) * 10) / 10;
+			const targetTp = metrics.truePeakDb - 3;
+			const result = await iterateForTargets({
+				buffer,
+				sampleRate: SAMPLE_RATE,
+				anchorBase: { floorDb: -50, pivotDb: -30 },
+				smoothingMs: 5,
+				targetLufs,
+				targetTp,
+				limitAutoDb: Number.POSITIVE_INFINITY,
+				sourceLufs: metrics.integratedLufs,
+				sourcePeakDb: metrics.truePeakDb,
+				maxAttempts: 10,
+				tolerance: 0.5,
+				peakTolerance: 0.1,
+			});
+
+			expect(result.peakAttempts).toBeGreaterThanOrEqual(1);
+			expect(result.boostAttempts).toBeGreaterThanOrEqual(1);
+
+			const phaseAAttempts = result.attempts.filter((attempt) => attempt.phase === "A");
+			const phaseBAttempts = result.attempts.filter((attempt) => attempt.phase === "B");
+
+			expect(phaseAAttempts.length).toBe(result.peakAttempts);
+			expect(phaseBAttempts.length).toBe(result.boostAttempts);
+			expect(phaseAAttempts.length).toBeGreaterThanOrEqual(1);
+			expect(phaseBAttempts.length).toBeGreaterThanOrEqual(1);
+
+			// (a) Phase A holds `B` constant — every Phase A attempt
+			// shares the same `boost`.
+			const phaseABoost = phaseAAttempts[0]?.boost;
+
+			expect(phaseABoost).toBeDefined();
+			for (const attempt of phaseAAttempts) {
+				expect(attempt.boost).toBe(phaseABoost);
+			}
+
+			// (b) Phase B holds `peakGainDb` constant at Phase A's
+			// terminal (frozen) value — every Phase B attempt shares the
+			// same `peakGainDb`.
+			const lastPhaseA = phaseAAttempts[phaseAAttempts.length - 1];
+			const frozenPeakGainDb = lastPhaseA?.peakGainDb;
+
+			expect(frozenPeakGainDb).toBeDefined();
+			for (const attempt of phaseBAttempts) {
+				expect(attempt.peakGainDb).toBe(frozenPeakGainDb);
+			}
+
+			// Phase ordering: Phase A attempts come first in `attempts`,
+			// then Phase B. No interleaving.
+			let sawPhaseB = false;
+
+			for (const attempt of result.attempts) {
+				if (attempt.phase === "B") sawPhaseB = true;
+				else expect(sawPhaseB).toBe(false);
+			}
+		}, TEST_TIMEOUT_MS_INNER);
+
+		it("skipPeak runs exactly one Phase A attempt then enters Phase B", async () => {
+			// Sequential-architecture structural test
+			// (plan-loudness-target-sequential-iteration §2.1): when
+			// `targetTp === undefined` the iterator activates `skipPeak`.
+			// In skip-peak mode Phase A's exit condition is satisfied
+			// unconditionally on the first attempt (the `skipPeak || …`
+			// branch) — `peakAttempts` must be exactly 1, and every
+			// subsequent attempt is Phase B.
+			const source = makeSyntheticSource(0xDEAD_BEEF, 0.1, 0.4);
+			const metrics = measureSourceMetrics(source);
+			const buffer = await makeBufferFromChannels(source);
+
+			const targetLufs = Math.round((metrics.integratedLufs + 3) * 10) / 10;
+			const result = await iterateForTargets({
+				buffer,
+				sampleRate: SAMPLE_RATE,
+				anchorBase: { floorDb: -50, pivotDb: -10 },
+				smoothingMs: 1,
+				targetLufs,
+				targetTp: undefined,
+				limitAutoDb: Number.POSITIVE_INFINITY,
+				sourceLufs: metrics.integratedLufs,
+				sourcePeakDb: metrics.truePeakDb,
+				maxAttempts: 10,
+				tolerance: 0.5,
+				peakTolerance: 0.1,
+			});
+
+			expect(result.peakAttempts).toBe(1);
+			expect(result.attempts[0]?.phase).toBe("A");
+
+			for (let attemptIdx = 1; attemptIdx < result.attempts.length; attemptIdx++) {
+				expect(result.attempts[attemptIdx]?.phase).toBe("B");
+			}
+
+			// Sanity: `boostAttempts` is `result.attempts.length - 1`
+			// (the single Phase A attempt + all subsequent Phase B
+			// attempts cover the whole history).
+			expect(result.boostAttempts).toBe(result.attempts.length - 1);
 		}, TEST_TIMEOUT_MS_INNER);
 
 		it("converges within maxAttempts on a moderate-contrast fixture with peakTolerance = 0.1", async () => {
@@ -479,14 +654,14 @@ describe("iterateForTargets", () => {
 			for (const attempt of result.attempts) {
 				expect(attempt.peakGainDb).toBeGreaterThanOrEqual(-60);
 			}
-			expect(result.bestSmoothedEnvelope.length).toBeGreaterThan(0);
+			expect(result.bestSmoothedEnvelopeBuffer.frames).toBeGreaterThan(0);
 		}, TEST_TIMEOUT_MS_INNER);
 	});
 
 	describe("Phase 4 envelope shape", () => {
 		const TEST_TIMEOUT_MS_INNER = 120_000;
 
-		it("bestSmoothedEnvelope is exactly frames * OVERSAMPLE_FACTOR samples (single attempt, multi-chunk fixture)", async () => {
+		it("bestSmoothedEnvelopeBuffer is exactly frames * OVERSAMPLE_FACTOR samples (single attempt, multi-chunk fixture)", async () => {
 			const source = makeSyntheticSource(0xCAFE_F00D, 0.1, 0.4);
 			const metrics = measureSourceMetrics(source);
 			const buffer = await makeBufferFromChannels(source);
@@ -508,20 +683,28 @@ describe("iterateForTargets", () => {
 			});
 
 			expect(result.attempts.length).toBe(1);
-			expect(result.bestSmoothedEnvelope.length).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+			expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
 
 			// Sanity-check: every sample is finite and positive. Catches a
 			// regression where the walk-A streaming loop fails to fill the
-			// trailing portion of `forwardScratch` (e.g. a missed `isFinal`
-			// flush). Use a manual scan with summary asserts (rather than
-			// per-sample `expect()`) so the test runs in seconds, not minutes.
+			// trailing portion of the envelope buffer (e.g. a missed
+			// `isFinal` flush). Use a manual scan with summary asserts
+			// (rather than per-sample `expect()`) so the test runs in
+			// seconds, not minutes. Read the entire envelope into a flat
+			// array once at the top — the disk-backed `FileChunkBuffer`
+			// supports `read(0, frames)` which returns one allocation.
+			const envelopeChunk = await result.bestSmoothedEnvelopeBuffer.read(0, result.bestSmoothedEnvelopeBuffer.frames);
+			const envelope = envelopeChunk.samples[0] ?? new Float32Array(0);
+
+			expect(envelope.length).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+
 			let allFinite = true;
 			let allPositive = true;
 			let minValue = Infinity;
 			let maxValue = -Infinity;
 
-			for (let upIdx = 0; upIdx < result.bestSmoothedEnvelope.length; upIdx++) {
-				const value = result.bestSmoothedEnvelope[upIdx]!;
+			for (let upIdx = 0; upIdx < envelope.length; upIdx++) {
+				const value = envelope[upIdx]!;
 
 				if (!Number.isFinite(value)) allFinite = false;
 				if (!(value > 0)) allPositive = false;
@@ -536,6 +719,63 @@ describe("iterateForTargets", () => {
 			// indicate a fill-gap regression.
 			expect(minValue).toBeGreaterThan(0);
 			expect(maxValue).toBeLessThan(50);
+		}, TEST_TIMEOUT_MS_INNER);
+	});
+
+	describe("two-decimal-precision early exit (Phase 4 of plan-loudness-target-stream-caching)", () => {
+		const TEST_TIMEOUT_MS_INNER = 120_000;
+
+		it("converges via the precision gate even when tolerance / peakTolerance are unreachable", async () => {
+			// The precision gate fires when `round(|lufsErr| × 100) === 0`
+			// AND `skipPeak || round(peakOvershoot × 100) === 0`. To prove
+			// THIS gate is what converges the iteration (not the tolerance
+			// gate), we pass impossibly-tight tolerances `1e-9` so the
+			// tolerance gate cannot possibly fire — pre-Phase-4 the same
+			// inputs returned `converged: false` after exhausting
+			// `maxAttempts`. Post-Phase-4 the precision gate fires the
+			// moment both axes round to zero error at two decimal places.
+			//
+			// Fixture: canonical convergent geometry (mirror of the first
+			// `iterateForTargets` test in this file). `targetTp: undefined`
+			// activates `skipPeak`, so the precision gate's peak clause
+			// is auto-satisfied — convergence depends solely on `lufsErr`
+			// rounding to 0 at 2 dp.
+			const source = makeSyntheticSource(0xDEAD_BEEF, 0.1, 0.4);
+			const metrics = measureSourceMetrics(source);
+			const buffer = await makeBufferFromChannels(source);
+
+			const targetLufs = Math.round((metrics.integratedLufs + 3) * 10) / 10;
+			const result = await iterateForTargets({
+				buffer,
+				sampleRate: SAMPLE_RATE,
+				anchorBase: { floorDb: -50, pivotDb: -10 },
+				smoothingMs: 1,
+				targetLufs,
+				targetTp: undefined,
+				limitAutoDb: Number.POSITIVE_INFINITY,
+				sourceLufs: metrics.integratedLufs,
+				sourcePeakDb: metrics.truePeakDb,
+				maxAttempts: 10,
+				// Sub-precision tolerance — cannot be satisfied by any
+				// realistic 2-dp-perfect attempt. If convergence happens,
+				// it is because the precision gate fired.
+				tolerance: 1e-9,
+				peakTolerance: 1e-9,
+			});
+
+			expect(result.converged).toBe(true);
+			expect(result.attempts.length).toBeLessThanOrEqual(10);
+
+			// The winning attempt must round to zero at 2 dp on the LUFS
+			// axis (peak axis is auto-satisfied under `skipPeak`).
+			const winningAttempt = result.attempts[result.attempts.length - 1];
+
+			expect(winningAttempt).toBeDefined();
+			expect(Math.round(Math.abs(winningAttempt?.lufsErr ?? Infinity) * 100)).toBe(0);
+			// Tolerance gate was unreachable — this assertion guards
+			// against a regression that silently reverts the gate order or
+			// collapses both gates into one.
+			expect(Math.abs(winningAttempt?.lufsErr ?? Infinity)).toBeGreaterThan(1e-9);
 		}, TEST_TIMEOUT_MS_INNER);
 	});
 });

@@ -1,6 +1,6 @@
 import { Oversampler } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
-import { applyOversampledChunk } from "./apply";
+import { applyOversampledChunk, applyOversampledChunkFromCache } from "./apply";
 
 const SAMPLE_RATE = 48_000;
 const FACTOR = 4;
@@ -244,5 +244,258 @@ describe("applyOversampledChunk", () => {
 		});
 
 		expect(output?.length).toBe(frames);
+	});
+
+	it("caller-provided `output` produces byte-equal results to the default-allocate path", () => {
+		// Phase 1.2: the optional `output` parameter lets the caller
+		// pre-allocate output slots (a `Float32Array` per channel) and
+		// have the helper write into them in-place instead of allocating
+		// fresh per call. Used by `measureAttemptOutput` in `iterate.ts`
+		// to hoist the per-chunk apply output to a persistent caller-side
+		// scratch. The two paths MUST produce byte-equal results for
+		// every channel — the only difference is where the bytes are
+		// stored.
+		const frames = 2048;
+		const sourceL = makeSineWithNoise(0xC0DE_BABE, frames, 0.25, 1000);
+		const sourceR = makeSineWithNoise(0xFACE_FEED, frames, 0.20, 1500);
+		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
+
+		// Default path — fresh allocation per channel.
+		const defaultOversamplers = [
+			new Oversampler(FACTOR, SAMPLE_RATE),
+			new Oversampler(FACTOR, SAMPLE_RATE),
+		];
+		const defaultOutput = applyOversampledChunk({
+			chunkSamples: [sourceL, sourceR],
+			smoothedGain: gainEnvelopeUp,
+			offset: 0,
+			oversamplers: defaultOversamplers,
+			factor: FACTOR,
+		});
+
+		// Override path — fresh oversamplers (state must match: same
+		// signal, same call order) and a pre-allocated output array.
+		const overrideOversamplers = [
+			new Oversampler(FACTOR, SAMPLE_RATE),
+			new Oversampler(FACTOR, SAMPLE_RATE),
+		];
+		const overrideOutput: Array<Float32Array> = [
+			new Float32Array(frames),
+			new Float32Array(frames),
+		];
+		const overrideReturn = applyOversampledChunk({
+			chunkSamples: [sourceL, sourceR],
+			smoothedGain: gainEnvelopeUp,
+			offset: 0,
+			oversamplers: overrideOversamplers,
+			factor: FACTOR,
+			output: overrideOutput,
+		});
+
+		// The helper returns the caller's array (not a fresh one).
+		expect(overrideReturn).toBe(overrideOutput);
+		expect(defaultOutput.length).toBe(2);
+		expect(overrideOutput.length).toBe(2);
+
+		for (let channelIdx = 0; channelIdx < 2; channelIdx++) {
+			const defaultChannel = defaultOutput[channelIdx]!;
+			const overrideChannel = overrideOutput[channelIdx]!;
+
+			expect(overrideChannel.length).toBe(defaultChannel.length);
+
+			for (let frameIdx = 0; frameIdx < defaultChannel.length; frameIdx++) {
+				expect(overrideChannel[frameIdx]).toBe(defaultChannel[frameIdx]);
+			}
+		}
+	});
+
+	it("caller-provided `output` with mismatched channel count throws", () => {
+		const frames = 1024;
+		const source = makeSineWithNoise(0x1111_2222, frames, 0.25, 440);
+		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
+
+		const oversamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+
+		expect(() => {
+			applyOversampledChunk({
+				chunkSamples: [source],
+				smoothedGain: gainEnvelopeUp,
+				offset: 0,
+				oversamplers,
+				factor: FACTOR,
+				// Wrong: 2 output slots for 1-channel input.
+				output: [new Float32Array(frames), new Float32Array(frames)],
+			});
+		}).toThrow(/output array length/);
+	});
+
+	it("caller-provided `output` with wrong per-channel length throws", () => {
+		const frames = 1024;
+		const source = makeSineWithNoise(0x3333_4444, frames, 0.25, 440);
+		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
+
+		const oversamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+
+		expect(() => {
+			applyOversampledChunk({
+				chunkSamples: [source],
+				smoothedGain: gainEnvelopeUp,
+				offset: 0,
+				oversamplers,
+				factor: FACTOR,
+				// Wrong: slot sized smaller than the chunk.
+				output: [new Float32Array(frames - 1)],
+			});
+		}).toThrow(/length/);
+	});
+});
+
+describe("applyOversampledChunkFromCache", () => {
+	it("byte-equal to applyOversampledChunk on the same logical input (cache fed pre-upsampled samples)", () => {
+		// Equivalence anchor: when the cache feeds already-upsampled
+		// samples (produced by a separate Oversampler pass over the
+		// same source), the cache-fed apply path must produce byte-
+		// equal output to the pre-cache path within float-rounding
+		// tolerance. The only structural difference is WHERE the
+		// upsample ran — inside the helper (default path) vs. outside
+		// (cache path).
+		const frames = 2048;
+		const sourceL = makeSineWithNoise(0xC0DE_BABE, frames, 0.25, 1000);
+		const sourceR = makeSineWithNoise(0xFACE_FEED, frames, 0.20, 1500);
+		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
+
+		// Reference path — pre-cache `applyOversampledChunk`.
+		const refOversamplers = [
+			new Oversampler(FACTOR, SAMPLE_RATE),
+			new Oversampler(FACTOR, SAMPLE_RATE),
+		];
+		const refOutput = applyOversampledChunk({
+			chunkSamples: [sourceL, sourceR],
+			smoothedGain: gainEnvelopeUp,
+			offset: 0,
+			oversamplers: refOversamplers,
+			factor: FACTOR,
+		});
+
+		// Cache path — upsample manually with a fresh oversampler set
+		// (matching the cache-build set), then call the cache-fed
+		// helper with a fresh downsampler set (matching the per-
+		// attempt set).
+		const upsampleSet = [
+			new Oversampler(FACTOR, SAMPLE_RATE),
+			new Oversampler(FACTOR, SAMPLE_RATE),
+		];
+		const upsampledL = upsampleSet[0]!.upsample(sourceL);
+		const upsampledR = upsampleSet[1]!.upsample(sourceR);
+		const downsamplers = [
+			new Oversampler(FACTOR, SAMPLE_RATE),
+			new Oversampler(FACTOR, SAMPLE_RATE),
+		];
+		const cacheOutput = applyOversampledChunkFromCache({
+			upsampledChunkSamples: [upsampledL, upsampledR],
+			smoothedGain: gainEnvelopeUp,
+			downsamplers,
+			factor: FACTOR,
+		});
+
+		expect(cacheOutput.length).toBe(2);
+
+		for (let ch = 0; ch < 2; ch++) {
+			const ref = refOutput[ch]!;
+			const got = cacheOutput[ch]!;
+
+			expect(got.length).toBe(ref.length);
+
+			let maxDiff = 0;
+
+			for (let i = 0; i < ref.length; i++) {
+				const diff = Math.abs(ref[i]! - got[i]!);
+
+				if (diff > maxDiff) maxDiff = diff;
+			}
+
+			// The two paths share the same multiplications and use
+			// independently-initialised Oversampler instances with
+			// matching internal state on a fresh call — bytes match
+			// exactly modulo IEEE-754 multiply order.
+			expect(maxDiff).toBeLessThan(1e-9);
+		}
+	});
+
+	it("caller-provided `output` produces byte-equal results to the default-allocate path", () => {
+		const frames = 1024;
+		const source = makeSineWithNoise(0xBEEF_CAFE, frames, 0.25, 880);
+		const upsampleSet = [new Oversampler(FACTOR, SAMPLE_RATE)];
+		const upsampled = upsampleSet[0]!.upsample(source);
+		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.4, 1.1);
+
+		const defaultDownsamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+		const defaultOutput = applyOversampledChunkFromCache({
+			upsampledChunkSamples: [upsampled],
+			smoothedGain: gainEnvelopeUp,
+			downsamplers: defaultDownsamplers,
+			factor: FACTOR,
+		});
+
+		// Re-run with a fresh oversampler / downsampler so the
+		// stateful sides match — and with a pre-allocated output.
+		const upsampleSet2 = [new Oversampler(FACTOR, SAMPLE_RATE)];
+		const upsampled2 = upsampleSet2[0]!.upsample(source);
+		const overrideDownsamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+		const overrideOutput: Array<Float32Array> = [new Float32Array(frames)];
+		const overrideReturn = applyOversampledChunkFromCache({
+			upsampledChunkSamples: [upsampled2],
+			smoothedGain: gainEnvelopeUp,
+			downsamplers: overrideDownsamplers,
+			factor: FACTOR,
+			output: overrideOutput,
+		});
+
+		expect(overrideReturn).toBe(overrideOutput);
+		expect(defaultOutput[0]!.length).toBe(overrideOutput[0]!.length);
+
+		for (let i = 0; i < defaultOutput[0]!.length; i++) {
+			expect(overrideOutput[0]![i]).toBe(defaultOutput[0]![i]);
+		}
+	});
+
+	it("output with mismatched channel count throws", () => {
+		const frames = 512;
+		const source = makeSineWithNoise(0x4321_1234, frames, 0.2, 440);
+		const upsampler = new Oversampler(FACTOR, SAMPLE_RATE);
+		const upsampled = upsampler.upsample(source);
+		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
+		const downsamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+
+		expect(() => {
+			applyOversampledChunkFromCache({
+				upsampledChunkSamples: [upsampled],
+				smoothedGain: gainEnvelopeUp,
+				downsamplers,
+				factor: FACTOR,
+				output: [new Float32Array(frames), new Float32Array(frames)],
+			});
+		}).toThrow(/output array length/);
+	});
+
+	it("output with wrong per-channel length throws", () => {
+		const frames = 512;
+		const source = makeSineWithNoise(0x9876_5432, frames, 0.2, 440);
+		const upsampler = new Oversampler(FACTOR, SAMPLE_RATE);
+		const upsampled = upsampler.upsample(source);
+		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
+		const downsamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+
+		expect(() => {
+			applyOversampledChunkFromCache({
+				upsampledChunkSamples: [upsampled],
+				smoothedGain: gainEnvelopeUp,
+				downsamplers,
+				factor: FACTOR,
+				// Wrong: downsampled-output slot should be `frames`, not
+				// `frames - 1`.
+				output: [new Float32Array(frames - 1)],
+			});
+		}).toThrow(/length/);
 	});
 });
