@@ -400,12 +400,10 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			if (attempt === undefined) continue;
 			console.log(
 				`[loudness-target] attempt ${(attemptIdx + 1).toString().padStart(2)}: ` +
-					`phase=${attempt.phase} ` +
 					`B=${attempt.boost.toFixed(4).padStart(9)} ` +
 					`peakGainDb=${attempt.peakGainDb.toFixed(4).padStart(9)} ` +
 					`lufsErr=${attempt.lufsErr.toFixed(4).padStart(8)} ` +
 					`peakErr=${attempt.peakErr.toFixed(4).padStart(8)} ` +
-					`peakOvershoot=${attempt.peakOvershoot.toFixed(4).padStart(7)} ` +
 					`outputLra=${attempt.outputLra.toFixed(4).padStart(7)}`,
 			);
 		}
@@ -419,7 +417,6 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 
 		console.log(
 			`[loudness-target] iteration: attempts=${result.attempts.length} ` +
-				`peakAttempts=${result.peakAttempts} boostAttempts=${result.boostAttempts} ` +
 				`converged=${String(result.converged)} ` +
 				`bestB=${result.bestB.toFixed(4)} bestLimitDb=${bestLimitDbRepr} bestPeakGainDb=${bestPeakGainDbRepr} ` +
 				`outputLufs=${outputLufsRepr} (Δ${lufsDeltaRepr}) outputLra=${outputLraRepr} ` +

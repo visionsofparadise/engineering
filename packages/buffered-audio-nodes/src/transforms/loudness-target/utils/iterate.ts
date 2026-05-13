@@ -1,18 +1,18 @@
 /**
- * Sequential two-stage iteration for the loudnessTarget node — Phase A
- * converges `peakGainDb` (TP control) with `B` held constant; Phase B
- * converges `B` via 1D secant with `peakGainDb` frozen at Phase A's
- * terminal value.
+ * Joint two-axis iteration for the loudnessTarget node — every attempt
+ * updates BOTH `B` (body gain) and `peakGainDb` (upper-segment anchor)
+ * based on the previous attempt's (lufsErr, peakErr). Replaces the
+ * earlier sequential Phase A → Phase B structure (see the 2026-05-13
+ * decision in `design-loudness-target.md`).
  *
- * Per design-loudness-target §"Iteration" (post
- * `plan-loudness-target-sequential-iteration` rewrite). Per
- * design-transforms §"Memory discipline": the source itself is
+ * Per design-transforms §"Memory discipline": the source itself is
  * streamed via `buffer.read(CHUNK_FRAMES)` loop until short chunk; never
  * materialised as a full-source-sized Float32Array at this level.
  *
- * Single perceptual target — `targetLufs` — converges on a single curve
- * parameter, body gain `B` (dB). The limit anchor `limitDb` is set
- * ONCE at iteration entry from the auto-derivation table:
+ * Two perceptual targets — `targetLufs` and `targetTp` — converge
+ * jointly on two curve parameters, `(B, peakGainDb)`. The limit
+ * anchor `limitDb` is set ONCE at iteration entry from the
+ * auto-derivation table:
  *   - `limitDbOverride` set         → use it (clamped)
  *   - else `limitAutoDb` finite     → use it (clamped) — this is the
  *     percentile-derived threshold from `measureSource`'s top-down walk
@@ -27,162 +27,130 @@
  * — there is no LRA target axis (see `plan-loudness-target-percentile-
  * limit` §"Decisions").
  *
- * ## Sequential architecture (Phase A → Phase B)
+ * ## Joint per-attempt update
  *
- * The third axis, `peakGainDb` (upper-segment right-endpoint anchor),
- * starts at the closed-form `effectiveTargetTp − limitDb`. It is
- * converged in **Phase A** via proportional feedback on observed
- * `outputTruePeakDb` overshoot — preserved from
- * `plan-loudness-target-tp-iteration`. Throughout Phase A `currentBoost`
- * is held constant at the RMS-shift initialiser; only `peakGainDb`
- * moves. Phase A exits when `peakOvershoot ≤ peakTolerance` (or budget
- * exhaustion, or `skipPeak`). Its terminal `peakGainDb` is **frozen**.
+ * Both axes move every attempt. The two per-axis update rules:
  *
- * **Phase B** then runs a 1D secant on `B` against LUFS error with
- * `peakGainDb` held at the frozen Phase A value. Phase B's first probe
- * applies the RMS-shift correction `B - lufsErr` to Phase A's last
- * measurement so that after one Phase B render the secant has 2 history
- * points at the same `peakGainDb` — a stationary fit. Subsequent
- * attempts feed `computeBoostStep` the **Phase-B-only filtered history**
- * so the slope estimate is not contaminated by Phase A points (whose
- * `peakGainDb` was different — non-stationary geometry, the bug this
- * architecture exists to prevent).
+ * - **`B` via 1D secant on LUFS error**. On attempt 1 with one history
+ *   point, the first probe applies the RMS-shift correction `B - lufsErr`
+ *   to seed the secant. On attempt ≥ 2, classical 1D secant on the most
+ *   recent two attempts (slope `dLUFS/dB`, minimum magnitude
+ *   `MIN_SECANT_SLOPE` to avoid degenerate steps). Step-magnitude
+ *   damping is **asymmetric** (preserved from the sequential design's
+ *   2026-05-11 decision): same-sign consecutive errors → no cap, trust
+ *   the secant; sign-flipped consecutive errors → cap at 1× previous
+ *   step magnitude (no-revert-past-known-bad rule). `B` clamped to
+ *   `[-30, 30]` dB.
  *
- * The two phases share a single `bestScore` accumulator and the same
- * `forwardScratch` so the best-attempt fallback spans both phases.
- * Total attempt budget is `maxAttempts`. Phase A consumes up to
- * `PEAK_MAX_ATTEMPTS_DEFAULT` of it; Phase B gets the remainder.
+ * - **`peakGainDb` via proportional feedback on signed peakErr**
+ *   (`peakErr = outputTruePeakDb - effectiveTargetTp`). On any attempt
+ *   where `|peakErr| > peakTolerance`, the next attempt's
+ *   `currentPeakGainDb` is shifted by `-peakErr * PEAK_DAMPING`:
+ *     - `peakErr > 0` (output above target) → decrease `peakGainDb`
+ *       (pull peaks down).
+ *     - `peakErr < 0` (output below target) → increase `peakGainDb`
+ *       (push peaks up). Symmetric: undershoot is corrected the same
+ *       way overshoot is. Replaces the earlier one-sided `peakOvershoot
+ *       = max(0, peakErr)` formulation, which left TP undershoots
+ *       uncorrected (the iterator reported convergence even when output
+ *       sat well below the ceiling).
+ *   Bounded below by `PEAK_GAIN_DB_FLOOR`; no upper bound because
+ *   `peakGainDb` can validly exceed `B` (expansive upper segment) when
+ *   the source's peak headroom permits.
  *
- * When `peakGainDb > B` the upper segment of the curve is expansive
- * (positive slope between pivot and limit). This is geometrically valid
- * — the brick-wall above `limitDb` caps output at `targetTp` regardless
- * of slope sign. The `index.ts._process` log line surfaces this case
- * with an expansion warning so listeners notice intentional / accidental
- * tail-region amplification (per `plan-loudness-target-percentile-
- * limit` §"Open question O4").
+ * ## Why joint (vs the prior sequential design)
  *
- * Pipeline per attempt (post-Phase-4 4×-upsampled fused-streaming form),
- * identical for Phase A and Phase B:
- *   1. Build anchors `{ floorDb, pivotDb, limitDb, B, peakGainDb }`.
- *   2. **Walk A — fused streaming 4×-upsampled detect + max-pool +
- *      curve + forward IIR**: stream the source once via
- *      `buffer.read(CHUNK_FRAMES)` loop until short chunk, computing per
- *      chunk:
- *        - upsample each channel to 4× via a fresh per-channel
- *          `Oversampler` array (`detectionOversamplers`) allocated at
- *          walk start. Biquad state continues across chunks of THIS
- *          walk; the array is dropped at walk end.
- *        - 4×-rate linked detection `max_c |upChannels[c][upIdx]|` per
- *          upsampled sample,
- *        - peak-respecting max-pool via `SlidingWindowMaxStream` with
- *          `halfWidth = windowSamplesFromMs(smoothingMs, sampleRate *
- *          OVERSAMPLE_FACTOR)`,
- *        - curve evaluation `g[k] = 10^(gainDbAt(linearToDb(window[k])) /
- *          20)` per emitted upsampled output sample,
- *        - chunked forward HALF of the bidirectional IIR — constructed
- *          at `sampleRate * OVERSAMPLE_FACTOR`. State threads via
- *          `iir.applyForwardPass(gWindowChunk, forwardState)` across
- *          chunks.
- *      The forward-IIR result is written into a single transient
- *      `forwardScratch: Float32Array(frames * OVERSAMPLE_FACTOR)`
- *      allocated once outside the attempt loop and overwritten per
- *      attempt.
- *   3. **Walk B (sub-pass B1) — in-place backward IIR at 4× rate**:
- *      `iir.applyBackwardPassInPlace(forwardScratch)`. After this call
- *      `forwardScratch` IS the 4×-rate smoothed gain envelope.
- *   4. **Walk B (sub-pass B2) — apply + measure at 4× rate**: stream
- *      the source again with a fresh per-channel `Oversampler` array
- *      (`applyOversamplers`) allocated at walk-B start. Per chunk:
- *      `applyOversampledChunk` with the 4×-rate `forwardScratch` and
- *      the chunk's source-rate `offset`. Push transformed chunks into
- *      a fresh `LoudnessAccumulator` and `TruePeakAccumulator`.
- *      Finalize → `outputLufs`, `outputLra`, `outputTruePeakDb`.
- *      B1 must run BEFORE B2.
- *   5. Record `(B, lufsErr, peakErr, peakOvershoot, outputLra)`. On
- *      best-attempt update, defensively copy `forwardScratch` (size
- *      `frames * 4`) into a fresh `Float32Array`. Either converge or
- *      step.
+ * The sequential Phase A → Phase B design assumed stationary curve
+ * geometry within each phase: A moved `peakGainDb` with `B` held; B
+ * moved `B` with `peakGainDb` frozen at A's terminal value. Empirical
+ * findings from a full-render QA (Pretrained ep 060 Pierce chain)
+ * showed Phase B's large body-gain moves coupling to TP through the
+ * smoothed envelope below `limitDb` — final output landed +2.25 dBTP
+ * over target despite Phase A having converged inside `peakTolerance`.
+ * Sequential assumed the coupling was weak; for EXPANSIVE_UPPER_SEGMENT
+ * curves (`peakGainDb > B`) it isn't.
  *
- * Phase A stepping (`peakGainDb` only, `B` held constant):
- *   - Proportional feedback: after each attempt, if `peakOvershoot >
- *     peakTolerance`, the next attempt's `currentPeakGainDb` is shifted
- *     down by `peakOvershoot * PEAK_DAMPING`. Bounded below by
- *     `PEAK_GAIN_DB_FLOOR`. Undershoot leaves the value untouched.
- *   - Exit: `peakOvershoot ≤ peakTolerance`, OR `skipPeak`, OR Phase A
- *     budget (`PEAK_MAX_ATTEMPTS_DEFAULT`) exhausted.
- *   - `lufsErr` is NOT a Phase A exit condition. Phase A only chases
- *     peak overshoot; LUFS convergence is Phase B's job.
+ * Joint iteration breaks the stationarity assumption deliberately: each
+ * attempt's measurement reflects the joint effect of both axes, and the
+ * next attempt's per-axis updates use that joint signal. This is
+ * coordinate descent in 2D — converges when the coupling is mild and
+ * lets both axes correct in lockstep when it isn't.
  *
- * Phase B stepping (1D on `B`, `peakGainDb` frozen at Phase A's
- * terminal value):
- *   - First probe (seeded from Phase A's last measurement): full
- *     RMS-shift correction `B_next = B - lufsErr`.
- *   - Attempt ≥ 2 (one Phase B history point): classical 1D secant on
- *     the most recent two **Phase B** history points; minimum slope
- *     `MIN_SECANT_SLOPE` (0.05) to avoid degenerate steps. The history
- *     is filtered to `phase === "B"` so the secant fits slope on
- *     stationary `peakGainDb` only.
- *   - Step-magnitude damping is **asymmetric** (see `computeBoostStep`
- *     JSDoc for full rationale): same-sign consecutive errors
- *     (monotonic descent) → no cap; sign-flipped consecutive errors
- *     (overshoot crossed target) → cap at 1× previous step magnitude.
- *     Replaces a symmetric 0.5× cap that geometrically bounded total
- *     reach to `2 × previous_step` regardless of iteration budget.
- *   - `B` clamped to `[-30, 30]` dB (sanity bound — avoids runaway on
- *     numerically degenerate sources).
+ * **Slope-contamination hazard** (the bug sequential existed to fix):
+ * the B-secant's slope estimate spans attempts where `peakGainDb` is
+ * also moving, so the slope reflects motion on a non-stationary
+ * function. Mitigation: the asymmetric damping (sign-flip → 1× cap)
+ * prevents the contaminated slope from runaway overshoot — same-sign
+ * descent self-validates the secant's local prediction, and sign-flips
+ * engage the cap. Empirically this holds on EXPANSIVE_UPPER_SEGMENT
+ * curves where coupling is strongest; documented as the trade-off for
+ * single-loop convergence on coupled axes.
  *
- * Phase B convergence — two gates (checked in order each attempt):
+ * ## Symmetric peak error (formerly one-sided overshoot)
+ *
+ * `peakErr = outputTruePeakDb - effectiveTargetTp` is **signed**. The
+ * convergence gate is `|peakErr| < peakTolerance` (two-sided). The
+ * best-attempt score is `sqrt(lufsErr² + peakErr²)` (both axes
+ * two-sided). The earlier code computed `peakOvershoot = max(0, peakErr)`
+ * which left undershoots invisible to the convergence gate and to the
+ * score — an attempt with output sitting 0.5 dBTP below target reported
+ * `converged = true` and scored 0 on the peak axis even though peaks
+ * landed well outside Matt's editorial tolerance. The signed
+ * formulation makes both directions equally penalising.
+ *
+ * ## Convergence gates (checked in order each attempt)
+ *
  *   1. **Two-decimal-precision gate (always active)**: fires when
  *      `round(|lufsErr| × 100) === 0` AND
- *      `skipPeak || round(peakOvershoot × 100) === 0`. This is the
+ *      `skipPeak || round(|peakErr| × 100) === 0`. This is the
  *      "perfect to the user-visible precision" exit — the
  *      iteration-end log line reports `outputLufs` / `outputTruePeakDb`
  *      to two decimal places, so once both axes round to their
  *      targets at that precision additional attempts cannot improve
  *      the reported result. Unconditional — does NOT consult
- *      `tolerance` / `peakTolerance`.
+ *      `tolerance` / `peakTolerance`. Now uses `|peakErr|` instead of
+ *      one-sided `peakOvershoot`.
  *   2. **Tolerance-based gate**: fires when `|lufsErr| < tolerance`
- *      AND `skipPeak || peakOvershoot ≤ peakTolerance`. Skipped
- *      silently when `tolerance` / `peakTolerance` are undefined
- *      (per the "undefined ⇒ run to budget" contract on the BAG
- *      schema). When both fields are defined, this gate may fire on
- *      attempts that do not round perfectly to two decimal places —
- *      callers who want strictly-perfect exits can omit both
- *      tolerances and rely solely on the precision gate.
+ *      AND `skipPeak || |peakErr| < peakTolerance`. Skipped silently
+ *      when `tolerance` / `peakTolerance` are undefined (per the
+ *      "undefined ⇒ run to budget" contract on the BAG schema).
  *
- * Memory at peak (this module, post-Phase-4 4×-upsampled form):
- *   - One source-rate-×4 `forwardScratch` (`frames × OVERSAMPLE_FACTOR
- *     × 4 bytes`), allocated once outside the attempt loop and
- *     overwritten per attempt.
- *   - One source-rate-×4 winning smoothed envelope (`frames ×
- *     OVERSAMPLE_FACTOR × 4 bytes`, held by reference for the apply
- *     pass via `_unbuffer`).
- *   - Per-chunk per-channel upsampled scratch inside walk A; bounded.
- *   - Per-chunk 4×-rate detection scratch inside walk A; bounded.
- *   - Per-chunk 4×-rate curve-output scratch inside walk A; bounded.
- *   - Per-chunk transformed scratch inside walk B's measurement;
- *     bounded.
+ * ## Pipeline per attempt
  *
- * Three distinct sets of `Oversampler` instances exist at runtime:
- *   1. `LoudnessTargetStream.oversamplers` — persistent, allocated at
- *      `_process` end, used by `_unbuffer` for the FINAL apply pass.
- *   2. `detectionOversamplers` — fresh per attempt inside walk A.
- *   3. `applyOversamplers` — fresh per attempt inside walk B sub-pass
- *      B2.
- * These cannot share state. Cross-pollination silently corrupts results
- * because the AA filter biquads have absorbed history.
+ *   1. Build anchors `{ floorDb, pivotDb, limitDb, B, peakGainDb }`.
+ *   2. **Walk A** — curve + forward IIR over the pre-built 4×-rate
+ *      detection envelope cache. Writes into `forwardEnvelopeBuffer`.
+ *   3. **Walk B sub-pass B1** — backward IIR over `forwardEnvelopeBuffer`
+ *      into `activeRef` (the per-attempt smoothed envelope destination).
+ *   4. **Walk B sub-pass B2** — apply (multiply by `activeRef`) +
+ *      measure (LUFS / LRA / true peak) over the upsampled source cache.
+ *   5. Record `(B, peakGainDb, lufsErr, peakErr, outputLra)`. On
+ *      best-attempt update, swap `activeRef` / `winningRef` (pointer-
+ *      level, no envelope copy). Otherwise clear `activeRef` for the
+ *      next attempt.
  *
- * Best-attempt fallback: track the attempt with the smallest
- * `sqrt(lufsErr² + peakOvershoot²)` (peak overshoot is one-sided —
- * undershoot contributes 0). On `maxAttempts` exhaustion or joint
- * infeasibility, return that attempt's `gSmoothed` plus its `(B,
- * peakGainDb)` and `converged = false`. Same closest-attempt pattern as
- * the shaper / expander.
+ * ## Best-attempt fallback
+ *
+ * Track the attempt with the smallest `sqrt(lufsErr² + peakErr²)` (both
+ * signed; equal weighting between axes). On `maxAttempts` exhaustion or
+ * joint infeasibility, return that attempt's smoothed envelope plus its
+ * `(B, peakGainDb)` and `converged = false`. The buffer-swap mechanic
+ * guarantees the held `winningRef` envelope matches the reported
+ * `(bestB, bestPeakGainDb)` — both are updated together inside the same
+ * `score < bestScore` branch. This fixes the discrepancy in the prior
+ * sequential design where the `bestB` could be set from a different
+ * attempt than the one whose envelope was held.
+ *
+ * No axis weighting in the score: equal cost on `lufsErr` and `peakErr`
+ * is the point of joint iteration — single-measurement priority is what
+ * sequential Phase A → Phase B was, and it produced the failure mode
+ * that motivated the rewrite. On infeasible joint targets the fallback
+ * returns the locally-balanced attempt; the convergence gates remain
+ * `|lufsErr| < tolerance AND |peakErr| < peakTolerance` (both required).
  *
  * `bestLimitDb` on `IterateResult` is a constant value (same across
  * all attempts) — kept for diagnostic continuity with the iteration-end
- * log line (per `plan-loudness-target-percentile-limit` §"Open
- * question O3").
+ * log line.
  */
 
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
@@ -227,14 +195,16 @@ const LIMIT_EPSILON_DB = 0.01;
 
 /**
  * Proportional-feedback damping factor for the per-attempt `peakGainDb`
- * adjustment. Each attempt, after measuring `outputTruePeakDb`, if the
- * observed overshoot exceeds `peakTolerance`, the next attempt's
- * `currentPeakGainDb` is shifted down by `peakOvershoot * PEAK_DAMPING`.
- * Damping `< 1` avoids oscillation against the `B`-secant — both axes
- * push the upper-segment slope, so a full-correction step on
+ * adjustment (symmetric joint iteration). Each attempt, after measuring
+ * `outputTruePeakDb`, if `|peakErr| > peakTolerance`, the next
+ * attempt's `currentPeakGainDb` is shifted by `-peakErr * PEAK_DAMPING`
+ * (negative-signed correction: overshoot pulls down, undershoot pulls
+ * up). Damping `< 1` avoids oscillation against the `B`-secant — both
+ * axes push the upper-segment slope, so a full-correction step on
  * `peakGainDb` would overshoot in the opposite direction once `B`
  * recompensates. `0.8` is the chosen starting value per Open Question
- * O1 in `plan-loudness-target-tp-iteration`.
+ * O1 in `plan-loudness-target-tp-iteration` (preserved through both
+ * the prior sequential design and the 2026-05-13 joint rewrite).
  */
 const PEAK_DAMPING = 0.8;
 
@@ -265,29 +235,8 @@ export const DEFAULT_MAX_ATTEMPTS = 10;
 /** Default LUFS tolerance per design decision. */
 export const DEFAULT_TOLERANCE = 0.5;
 
-/**
- * Default cap on Phase A (peakGainDb-only) attempts within the total
- * `maxAttempts` budget. Proportional feedback on TP overshoot
- * typically converges in 2–4 attempts; 5 leaves headroom for slow
- * sources without starving Phase B (B-secant). When `maxAttempts` is
- * smaller than this value, Phase A is capped at `maxAttempts` and
- * Phase B receives 0 attempts. Per
- * `plan-loudness-target-sequential-iteration` §"Approach".
- */
-const PEAK_MAX_ATTEMPTS_DEFAULT = 5;
-
 /** Single attempt's recorded state. */
 export interface IterationAttempt {
-	/**
-	 * Which sub-iteration this attempt belongs to. `"A"` — Phase A
-	 * (peakGainDb-only proportional feedback, `B` held constant).
-	 * `"B"` — Phase B (1D secant on `B`, `peakGainDb` frozen at Phase
-	 * A's terminal value). Diagnostic / dump-formatting field; also
-	 * used internally to filter Phase B history when feeding
-	 * `computeBoostStep` (so the secant only fits slope on
-	 * stationary-`peakGainDb` points).
-	 */
-	phase: "A" | "B";
 	boost: number;
 	/**
 	 * Constant across attempts within a single `iterateForTargets` call
@@ -308,27 +257,22 @@ export interface IterationAttempt {
 	/**
 	 * `currentPeakGainDb` value used for THIS attempt's curve (the
 	 * upper-segment right-endpoint anchor gain). Adjusted per attempt
-	 * via proportional feedback on observed `outputTruePeakDb`
-	 * overshoot. Since `limitDb` is constant across attempts the
-	 * closed-form baseline `effectiveTargetTp − limitDb` never changes;
-	 * only the feedback adjustment moves.
+	 * via proportional feedback on observed signed `peakErr`. Since
+	 * `limitDb` is constant across attempts, the closed-form baseline
+	 * `effectiveTargetTp − limitDb` never changes; only the feedback
+	 * adjustment moves.
 	 */
 	peakGainDb: number;
 	/**
 	 * Signed peak error in dB measured AFTER this attempt's smoothing
 	 * pass: `outputTruePeakDb - effectiveTargetTp`. Negative means
-	 * output sat below the ceiling (undershoot, fine); positive means
-	 * overshoot.
+	 * output sat below the ceiling (undershoot — now corrected
+	 * symmetrically by pulling `peakGainDb` UP); positive means
+	 * overshoot (corrected by pulling `peakGainDb` DOWN). Both axes
+	 * of the joint update + convergence gate operate on this signed
+	 * value.
 	 */
 	peakErr: number;
-	/**
-	 * One-sided peak overshoot in dB measured AFTER this attempt's
-	 * smoothing pass: `max(0, peakErr)`. `0` when output sat at or
-	 * below the ceiling. Drives both the next-attempt proportional-
-	 * feedback adjustment of `currentPeakGainDb` and the peak component
-	 * of the best-attempt score.
-	 */
-	peakOvershoot: number;
 }
 
 /**
@@ -387,19 +331,6 @@ export interface IterateResult {
 	 */
 	bestPeakGainDb: number;
 	attempts: ReadonlyArray<IterationAttempt>;
-	/**
-	 * Count of Phase A attempts in `attempts` (peakGainDb-only
-	 * sub-iteration). Equal to `attempts.filter(a => a.phase === "A").
-	 * length` but exposed directly so consumers (the `index.ts._process`
-	 * iteration-end log line) don't have to recompute. Per
-	 * `plan-loudness-target-sequential-iteration` §1.3.
-	 */
-	peakAttempts: number;
-	/**
-	 * Count of Phase B attempts in `attempts` (B-secant sub-iteration).
-	 * Equal to `attempts.filter(a => a.phase === "B").length`.
-	 */
-	boostAttempts: number;
 	converged: boolean;
 }
 
@@ -448,15 +379,15 @@ export interface IterateForTargetsArgs {
 }
 
 /**
- * Run the sequential two-phase iteration. Phase A converges
- * `peakGainDb` via proportional feedback on TP overshoot with `B`
- * held constant; Phase B converges `B` via 1D secant on LUFS error
- * with `peakGainDb` frozen at Phase A's terminal value. Total
- * attempt budget is `maxAttempts`, split as up to
- * `PEAK_MAX_ATTEMPTS_DEFAULT` for Phase A and the remainder for
- * Phase B. Returns the best attempt's smoothed envelope (held by
- * reference for the apply pass), its `(B, limitDb, peakGainDb)`,
- * the attempt history, and per-phase attempt counts.
+ * Run the joint two-axis iteration. Every attempt updates BOTH `B`
+ * (via 1D secant on signed `lufsErr`) and `peakGainDb` (via
+ * proportional feedback on signed `peakErr`). Total attempt budget is
+ * `maxAttempts`. Convergence requires `|lufsErr| < tolerance` AND
+ * (`skipPeak` OR `|peakErr| < peakTolerance`) — both axes two-sided.
+ * On budget exhaustion returns the best attempt by
+ * `sqrt(lufsErr² + peakErr²)`; the buffer-swap mechanic guarantees
+ * the held smoothed envelope matches the reported
+ * `(bestB, bestPeakGainDb)`.
  */
 export async function iterateForTargets(args: IterateForTargetsArgs): Promise<IterateResult> {
 	const {
@@ -490,8 +421,6 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 			bestLimitDb: sourcePeakDb,
 			bestPeakGainDb: 0,
 			attempts: [],
-			peakAttempts: 0,
-			boostAttempts: 0,
 			converged: false,
 		};
 	}
@@ -570,303 +499,213 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 	let winningPopulated = false;
 
 	try {
-	// Skip the peak axis when the caller did not request peak control
-	// (`targetTp` undefined). In that mode `peakGainDb` stays at the
-	// closed-form `0`, `peakOvershoot` is forced out of the
-	// best-attempt score, and `peakConverged` is forced true.
-	const skipPeak = targetTp === undefined;
+		// Skip the peak axis when the caller did not request peak control
+		// (`targetTp` undefined). In that mode `peakGainDb` stays at the
+		// closed-form `0`, the peak component of `bestScore` is forced
+		// to 0, and the peak axis of both convergence gates is force-
+		// satisfied. The `peakGainDb` update branch is also skipped.
+		const skipPeak = targetTp === undefined;
 
-	let currentBoost = clampBoost(targetLufs - sourceLufs);
+		let currentBoost = clampBoost(targetLufs - sourceLufs);
 
-	const attempts: Array<IterationAttempt> = [];
-	let bestBoost = currentBoost;
-	let bestPeakGainDb = currentPeakGainDb;
-	let bestScore = Infinity;
+		const attempts: Array<IterationAttempt> = [];
+		let bestBoost = currentBoost;
+		let bestPeakGainDb = currentPeakGainDb;
+		let bestScore = Infinity;
 
-	// =====================================================================
-	// Phase A — peakGainDb-only sub-iteration. `currentBoost` held constant
-	// at the RMS-shift initialiser. Proportional feedback on TP overshoot
-	// drives `currentPeakGainDb` downward until `peakOvershoot ≤
-	// peakTolerance` or the Phase A budget is exhausted (or `skipPeak`).
-	// Exit is purely peak-based — `lufsErr` is NOT a Phase A exit
-	// condition. Running Phase B (B-secant) before `peakGainDb` settles
-	// is the contamination bug this architecture exists to prevent
-	// (per plan-loudness-target-sequential-iteration §"Problem").
-	// =====================================================================
-	let peakAttempts = 0;
-	const peakMaxAttempts = Math.min(maxAttempts, PEAK_MAX_ATTEMPTS_DEFAULT);
+		// Tracked across attempts for the asymmetric-damping rule in
+		// `computeBoostStep`. Starts at `Infinity` so the very first
+		// per-secant call (attempt ≥ 2) does not cap the predicted step.
+		let previousStepMagnitude = Infinity;
 
-	for (let phaseAIdx = 0; phaseAIdx < peakMaxAttempts; phaseAIdx++) {
-		const anchors: Anchors = {
-			floorDb: anchorBase.floorDb,
-			pivotDb: anchorBase.pivotDb,
-			limitDb: currentLimit,
-			B: currentBoost,
-			peakGainDb: currentPeakGainDb,
-		};
+		// =====================================================================
+		// Joint iteration — both axes update every attempt.
+		//
+		// On each attempt:
+		//   1. Render the curve with `(currentBoost, currentPeakGainDb)`.
+		//   2. Measure (lufsErr, peakErr).
+		//   3. Update running best (buffer + (B, peakGainDb) in lockstep).
+		//   4. Check convergence gates (precision then tolerance).
+		//   5. If not converged and budget remains, update BOTH axes:
+		//      - B: 1D secant on lufsErr history (RMS-shift on attempt 1).
+		//      - peakGainDb: proportional on signed peakErr (when
+		//        |peakErr| > peakTolerance and not skipPeak).
+		//
+		// The B-secant's history spans all attempts (no phase filter); the
+		// slope is fit on a non-stationary function (peakGainDb is also
+		// moving), so the slope estimate is "contaminated" in the sense
+		// the prior sequential design tried to avoid. The asymmetric
+		// damping (sign-flip → 1× cap) bounds the contaminated slope's
+		// step. The trade-off: joint single-loop convergence on coupled
+		// axes vs the sequential design's stationary-slope guarantee.
+		// See the file-level JSDoc for the empirical motivation.
+		// =====================================================================
 
-		// Walk A — curve + forward IIR over the pre-built 4×-rate
-		// detection envelope cache. Writes into `forwardEnvelopeBuffer`
-		// chunk-by-chunk; on exit `forwardEnvelopeBuffer` holds the
-		// forward-IIR output at 4× rate, ready for the backward pass.
-		// `forwardEnvelopeBuffer` was either cleared at end of the prior
-		// iteration (loss / non-winning swap) or freshly-constructed on
-		// the very first attempt; `activeRef` was cleared on the prior
-		// iteration's exit branch (or is the freshly-constructed slot).
-		await streamCurveAndForwardIir({
-			detectionEnvelope: caches.detectionEnvelope,
-			anchors,
-			iir,
-			forwardEnvelopeBuffer,
-		});
-
-		// Walk B sub-pass B1 — backward IIR over the forward-envelope
-		// ChunkBuffer into the active smoothed-envelope buffer.
-		// `activeRef` is the per-attempt destination; after this call
-		// it holds the 4×-rate smoothed gain envelope for THIS attempt.
-		await applyBackwardPassOverChunkBuffer({
-			sourceBuffer: forwardEnvelopeBuffer,
-			destBuffer: activeRef,
-			iir,
-			chunkSize: CHUNK_FRAMES * OVERSAMPLE_FACTOR,
-		});
-
-		// Walk B sub-pass B2 — source-streaming apply + LUFS / LRA / TP
-		// measurement at 4× rate. Envelope is read chunk-by-chunk from
-		// `activeRef`.
-		const measured = await measureAttemptOutput({
-			upsampledSource: caches.upsampledSource,
-			sampleRate,
-			channelCount,
-			gSmoothed: activeRef,
-		});
-
-		const lufsErr = measured.outputLufs - targetLufs;
-		const peakErr = measured.outputTruePeakDb - effectiveTargetTp;
-		// In skip-peak mode `peakOvershoot` is forced to 0 so it does
-		// not contribute to `bestScore` and does not gate Phase A exit.
-		const peakOvershoot = skipPeak ? 0 : Math.max(0, peakErr);
-
-		attempts.push({
-			phase: "A",
-			boost: currentBoost,
-			limitDb: currentLimit,
-			lufsErr,
-			outputLra: measured.outputLra,
-			peakGainDb: currentPeakGainDb,
-			peakErr,
-			peakOvershoot,
-		});
-		peakAttempts++;
-
-		// Best-attempt fallback accumulates across both phases — a Phase
-		// A attempt that happens to satisfy both axes simultaneously
-		// (rare, but possible on near-passthrough sources) still wins
-		// against any later Phase B attempt that drifts.
-		const score = Math.sqrt(lufsErr * lufsErr + peakOvershoot * peakOvershoot);
-
-		if (score < bestScore) {
-			bestScore = score;
-			bestBoost = currentBoost;
-			bestPeakGainDb = currentPeakGainDb;
-			// Swap: the just-written `activeRef` becomes the new winner;
-			// the old `winningRef` (which held the previous winner's
-			// envelope or is freshly-constructed) becomes the next
-			// attempt's `activeRef`. After the swap the new `activeRef`
-			// still holds stale data — clear it now so the next attempt
-			// starts on an empty buffer (writeReverse / write both
-			// accumulate, so an unflushed prior state would corrupt the
-			// next attempt's output).
-			const previousActive = activeRef;
-
-			activeRef = winningRef;
-			winningRef = previousActive;
-			winningPopulated = true;
-			await activeRef.clear();
-		} else {
-			// Loss: the just-written `activeRef` did not beat the held
-			// winner. Clear it immediately rather than waiting for the
-			// next attempt's top-of-loop reset — the new API has no
-			// equivalent of `truncate(0)` at top-of-loop; clearing on
-			// loss leaves both slots in a known state.
-			await activeRef.clear();
-		}
-
-		// Forward-envelope buffer is transient per-attempt. Clear now so
-		// the next attempt's Walk A starts on an empty buffer (Walk A
-		// `write`s through `streamCurveAndForwardIir` accumulate, just
-		// like the active buffer).
-		await forwardEnvelopeBuffer.clear();
-
-		// Phase A exits as soon as peak fits tolerance (or `skipPeak`).
-		// Note: NO `lufsErr` check here — see banner above.
-		if (skipPeak || peakOvershoot <= peakTolerance) break;
-		if (phaseAIdx === peakMaxAttempts - 1) break;
-
-		// Proportional feedback: drop `currentPeakGainDb` by
-		// `peakOvershoot * PEAK_DAMPING`. Bounded by
-		// `PEAK_GAIN_DB_FLOOR`. Self-stabilising on a single axis since
-		// `currentBoost` is not moving here.
-		currentPeakGainDb = Math.max(
-			PEAK_GAIN_DB_FLOOR,
-			currentPeakGainDb - peakOvershoot * PEAK_DAMPING,
-		);
-	}
-
-	// Freeze peakGainDb at its Phase A terminal value. Phase B uses this
-	// constant for every render — the precondition that lets the
-	// B-secant fit slope on a stationary function.
-	const frozenPeakGainDb = currentPeakGainDb;
-
-	// =====================================================================
-	// Phase B — 1D secant on `B` against LUFS error, `peakGainDb` frozen
-	// at `frozenPeakGainDb`. The first Phase B probe applies the
-	// RMS-shift correction `B - lufsErr` to Phase A's last measurement
-	// (subsumes the old attempt-0→1 RMS-shift) so that after one Phase
-	// B render the secant has 2 history points at the same
-	// `peakGainDb`. Subsequent steps call `computeBoostStep` with the
-	// **Phase-B-only filtered history** — mixing Phase A points
-	// reintroduces the non-stationary-`peakGainDb` contamination.
-	// =====================================================================
-	const boostMaxAttempts = maxAttempts - peakAttempts;
-	const lastPhaseA = attempts[attempts.length - 1];
-
-	if (lastPhaseA !== undefined && boostMaxAttempts > 0) {
-		currentBoost = clampBoost(lastPhaseA.boost - lastPhaseA.lufsErr);
-	}
-
-	let previousStepMagnitude = Infinity;
-	let boostAttempts = 0;
-
-	for (let phaseBIdx = 0; phaseBIdx < boostMaxAttempts; phaseBIdx++) {
-		const anchors: Anchors = {
-			floorDb: anchorBase.floorDb,
-			pivotDb: anchorBase.pivotDb,
-			limitDb: currentLimit,
-			B: currentBoost,
-			peakGainDb: frozenPeakGainDb,
-		};
-
-		// Both `forwardEnvelopeBuffer` and `activeRef` were cleared at
-		// end of the prior iteration (or by Phase A's terminal cleanup).
-		await streamCurveAndForwardIir({
-			detectionEnvelope: caches.detectionEnvelope,
-			anchors,
-			iir,
-			forwardEnvelopeBuffer,
-		});
-
-		await applyBackwardPassOverChunkBuffer({
-			sourceBuffer: forwardEnvelopeBuffer,
-			destBuffer: activeRef,
-			iir,
-			chunkSize: CHUNK_FRAMES * OVERSAMPLE_FACTOR,
-		});
-
-		const measured = await measureAttemptOutput({
-			upsampledSource: caches.upsampledSource,
-			sampleRate,
-			channelCount,
-			gSmoothed: activeRef,
-		});
-
-		const lufsErr = measured.outputLufs - targetLufs;
-		const peakErr = measured.outputTruePeakDb - effectiveTargetTp;
-		const peakOvershoot = skipPeak ? 0 : Math.max(0, peakErr);
-
-		attempts.push({
-			phase: "B",
-			boost: currentBoost,
-			limitDb: currentLimit,
-			lufsErr,
-			outputLra: measured.outputLra,
-			peakGainDb: frozenPeakGainDb,
-			peakErr,
-			peakOvershoot,
-		});
-		boostAttempts++;
-
-		const score = Math.sqrt(lufsErr * lufsErr + peakOvershoot * peakOvershoot);
-
-		if (score < bestScore) {
-			bestScore = score;
-			bestBoost = currentBoost;
-			bestPeakGainDb = frozenPeakGainDb;
-			const previousActive = activeRef;
-
-			activeRef = winningRef;
-			winningRef = previousActive;
-			winningPopulated = true;
-			// Same clear-on-win as Phase A — see comment there. The new
-			// `activeRef` (previously the winner) holds stale data; clear
-			// to ready it for the next attempt's write-accumulating
-			// passes.
-			await activeRef.clear();
-		} else {
-			// Loss: clear the just-written active buffer now.
-			await activeRef.clear();
-		}
-
-		// Forward-envelope buffer transient — clear before any potential
-		// early return below.
-		await forwardEnvelopeBuffer.clear();
-
-		// Gate 1 — two-decimal-precision early exit. Always active.
-		// Fires when both axes round to zero error at two decimal places
-		// (the precision the iteration-end log reports `outputLufs` and
-		// `outputTruePeakDb` at). Independent of `tolerance` /
-		// `peakTolerance` so callers who omit those still get a perfect
-		// exit when the iteration hits one. See the function-level JSDoc
-		// "Phase B convergence — two gates" for the rationale.
-		const matchesToTwoDp =
-			Math.round(Math.abs(lufsErr) * 100) === 0
-			&& (skipPeak || Math.round(peakOvershoot * 100) === 0);
-
-		if (matchesToTwoDp) {
-			return {
-				bestSmoothedEnvelopeBuffer: winningRef,
-				bestB: bestBoost,
-				bestLimitDb: currentLimit,
-				bestPeakGainDb,
-				attempts,
-				peakAttempts,
-				boostAttempts,
-				upsampledSource: caches.upsampledSource,
-				converged: true,
+		for (let attemptIdx = 0; attemptIdx < maxAttempts; attemptIdx++) {
+			const anchors: Anchors = {
+				floorDb: anchorBase.floorDb,
+				pivotDb: anchorBase.pivotDb,
+				limitDb: currentLimit,
+				B: currentBoost,
+				peakGainDb: currentPeakGainDb,
 			};
-		}
 
-		// Gate 2 — tolerance-based exit. Unchanged from pre-Phase-4.
-		// Silently skipped when `tolerance` / `peakTolerance` are
-		// undefined (the BAG omits them → "run to budget").
-		const lufsConverged = Math.abs(lufsErr) < tolerance;
-		const peakConverged = skipPeak || peakOvershoot <= peakTolerance;
+			// Walk A — curve + forward IIR over the pre-built 4×-rate
+			// detection envelope cache. Writes into `forwardEnvelopeBuffer`
+			// chunk-by-chunk.
+			await streamCurveAndForwardIir({
+				detectionEnvelope: caches.detectionEnvelope,
+				anchors,
+				iir,
+				forwardEnvelopeBuffer,
+			});
 
-		if (lufsConverged && peakConverged) {
-			return {
-				bestSmoothedEnvelopeBuffer: winningRef,
+			// Walk B sub-pass B1 — backward IIR over the forward-envelope
+			// ChunkBuffer into the active smoothed-envelope buffer.
+			await applyBackwardPassOverChunkBuffer({
+				sourceBuffer: forwardEnvelopeBuffer,
+				destBuffer: activeRef,
+				iir,
+				chunkSize: CHUNK_FRAMES * OVERSAMPLE_FACTOR,
+			});
+
+			// Walk B sub-pass B2 — source-streaming apply + LUFS / LRA / TP
+			// measurement at 4× rate.
+			const measured = await measureAttemptOutput({
 				upsampledSource: caches.upsampledSource,
-				bestB: bestBoost,
-				bestLimitDb: currentLimit,
-				bestPeakGainDb,
-				attempts,
-				peakAttempts,
-				boostAttempts,
-				converged: true,
-			};
+				sampleRate,
+				channelCount,
+				gSmoothed: activeRef,
+			});
+
+			const lufsErr = measured.outputLufs - targetLufs;
+			// Signed peakErr — undershoot (negative) and overshoot
+			// (positive) both contribute to the peak axis of the gate
+			// and the best-attempt score. In skip-peak mode the peak
+			// signal is suppressed by forcing the score's peak component
+			// to 0 below.
+			const peakErr = measured.outputTruePeakDb - effectiveTargetTp;
+
+			attempts.push({
+				boost: currentBoost,
+				limitDb: currentLimit,
+				lufsErr,
+				outputLra: measured.outputLra,
+				peakGainDb: currentPeakGainDb,
+				peakErr,
+			});
+
+			// Best-attempt score, equal-weighted both axes:
+			// `sqrt(lufsErr² + peakErr²)` (both two-sided). In skipPeak
+			// mode the peak component is zeroed so only `|lufsErr|` ranks
+			// attempts.
+			//
+			// No priority weighting — joint iteration's whole point is
+			// that both axes count equally. Per-axis priority is what the
+			// sequential Phase A → Phase B design did, and that's the
+			// design that produced the TP overshoot / undershoot failure
+			// modes this rewrite targets.
+			const peakScoreTerm = skipPeak ? 0 : peakErr * peakErr;
+			const score = Math.sqrt(lufsErr * lufsErr + peakScoreTerm);
+
+			if (score < bestScore) {
+				bestScore = score;
+				bestBoost = currentBoost;
+				bestPeakGainDb = currentPeakGainDb;
+				// Swap: the just-written `activeRef` becomes the new
+				// winner; the held `winningRef` becomes the next
+				// attempt's `activeRef`. Both the reported best params
+				// and the held envelope are updated inside this branch
+				// — they cannot diverge, fixing the prior design's
+				// discrepancy where `bestB` could come from a different
+				// attempt than the held envelope.
+				const previousActive = activeRef;
+
+				activeRef = winningRef;
+				winningRef = previousActive;
+				winningPopulated = true;
+				await activeRef.clear();
+			} else {
+				// Loss: clear the just-written active buffer now so the
+				// next attempt starts on an empty buffer.
+				await activeRef.clear();
+			}
+
+			// Forward-envelope buffer is transient per-attempt.
+			await forwardEnvelopeBuffer.clear();
+
+			// Gate 1 — two-decimal-precision early exit. Always active.
+			// Fires when both axes round to zero error at two decimal
+			// places (the precision the iteration-end log reports at).
+			// Now two-sided on peak: `|peakErr|` replaces the prior
+			// one-sided `peakOvershoot`.
+			const matchesToTwoDp =
+				Math.round(Math.abs(lufsErr) * 100) === 0
+				&& (skipPeak || Math.round(Math.abs(peakErr) * 100) === 0);
+
+			if (matchesToTwoDp) {
+				return {
+					bestSmoothedEnvelopeBuffer: winningRef,
+					bestB: bestBoost,
+					bestLimitDb: currentLimit,
+					bestPeakGainDb,
+					attempts,
+					upsampledSource: caches.upsampledSource,
+					converged: true,
+				};
+			}
+
+			// Gate 2 — tolerance-based exit. Silently skipped when
+			// `tolerance` / `peakTolerance` are undefined (the BAG omits
+			// them → "run to budget"). Two-sided on peak.
+			const lufsConverged = Math.abs(lufsErr) < tolerance;
+			const peakConverged = skipPeak || Math.abs(peakErr) < peakTolerance;
+
+			if (lufsConverged && peakConverged) {
+				return {
+					bestSmoothedEnvelopeBuffer: winningRef,
+					upsampledSource: caches.upsampledSource,
+					bestB: bestBoost,
+					bestLimitDb: currentLimit,
+					bestPeakGainDb,
+					attempts,
+					converged: true,
+				};
+			}
+
+			if (attemptIdx === maxAttempts - 1) break;
+
+			// Joint per-axis updates for the next attempt.
+
+			// B-axis update: 1D secant on lufsErr using the full attempt
+			// history (no phase filter — sequential's stationary-slope
+			// invariant is gone, replaced by asymmetric damping +
+			// joint-update robustness). On attempt 1 (one history point)
+			// `computeBoostStep` returns the RMS-shift `B - lufsErr`.
+			const next = computeBoostStep(attempts, previousStepMagnitude);
+
+			currentBoost = clampBoost(next.boost);
+			previousStepMagnitude = next.stepMagnitude;
+
+			// peakGainDb-axis update: proportional feedback on signed
+			// peakErr. Skipped in skip-peak mode (the closed-form initial
+			// value stays put). Also skipped when the current attempt's
+			// peakErr is within tolerance — no update needed and avoids
+			// unnecessary churn that could perturb a converged peak.
+			if (!skipPeak && Math.abs(peakErr) > peakTolerance) {
+				// Signed correction:
+				//   peakErr > 0 (overshoot)  → currentPeakGainDb decreases
+				//   peakErr < 0 (undershoot) → currentPeakGainDb increases
+				// The earlier one-sided rule `currentPeakGainDb -=
+				// peakOvershoot * PEAK_DAMPING` left undershoot
+				// uncorrected; symmetric proportional feedback closes
+				// that gap.
+				currentPeakGainDb = Math.max(
+					PEAK_GAIN_DB_FLOOR,
+					currentPeakGainDb - peakErr * PEAK_DAMPING,
+				);
+			}
 		}
-
-		if (phaseBIdx === boostMaxAttempts - 1) break;
-
-		// Phase-B-only filtered history: `computeBoostStep` fits its
-		// secant on the most recent two history points, so Phase A
-		// points (with a different `peakGainDb`) must NOT be in scope.
-		const phaseBHistory = attempts.filter((attempt) => attempt.phase === "B");
-		const next = computeBoostStep(phaseBHistory, previousStepMagnitude);
-
-		currentBoost = clampBoost(next.boost);
-		previousStepMagnitude = next.stepMagnitude;
-	}
 
 		return {
 			bestSmoothedEnvelopeBuffer: winningRef,
@@ -875,8 +714,6 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 			bestLimitDb: currentLimit,
 			bestPeakGainDb,
 			attempts,
-			peakAttempts,
-			boostAttempts,
 			converged: false,
 		};
 	} finally {
@@ -1155,6 +992,15 @@ interface BoostStep {
  *     with `MIN_SECANT_SLOPE` floor on slope magnitude and asymmetric
  *     damping based on error sign-flip.
  *
+ * In the joint iteration the slope estimate is fit across attempts
+ * where `peakGainDb` is also moving — non-stationary geometry. The
+ * asymmetric damping (see below) is what bounds the contaminated
+ * slope's step magnitude. Without it the iterator could runaway-
+ * overshoot on coupled axes; the prior sequential design avoided
+ * contamination by holding `peakGainDb` constant during the B-secant
+ * phase. See the file-level JSDoc for the joint-vs-sequential
+ * trade-off discussion.
+ *
  * **Damping policy (asymmetric)**:
  *
  * - **Same-sign consecutive errors** (still descending one-sided
@@ -1163,10 +1009,9 @@ interface BoostStep {
  *   attempt (error keeps reducing in the same direction), so
  *   extrapolation is justified. Without trusting the secant here,
  *   the iterator can be bounded short of target by an arbitrarily
- *   chosen geometric series (this was the saddle-stall bug in
- *   `plan-loudness-target-sequential-iteration`'s initial QA — Phase
- *   B stalled at +1.5 dB residual because the 0.5× cap geometrically
- *   bounded total reach).
+ *   chosen geometric series (the saddle-stall bug from the
+ *   sequential-design QA — secant stalled at +1.5 dB residual because
+ *   a 0.5× cap geometrically bounded total reach).
  *
  * - **Sign-flipped consecutive errors** (overshot target — we now
  *   sit on the opposite side): cap at `1 × previous step magnitude`.
