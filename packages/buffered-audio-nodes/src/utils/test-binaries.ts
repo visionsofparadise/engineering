@@ -24,6 +24,7 @@ export const binaries = {
 
 export const audio = {
 	testVoice: resolve(demoAudioDir, "test-voice.wav"),
+	testVoice48k: resolve(demoAudioDir, "test-voice-48k.wav"),
 	testMusic: resolve(demoAudioDir, "test-music.wav"),
 } as const;
 

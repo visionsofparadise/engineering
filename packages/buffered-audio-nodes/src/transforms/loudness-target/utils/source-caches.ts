@@ -19,10 +19,10 @@
  * Across N attempts this eliminates `(N - 1) × channelCount` upsampling
  * passes per walk.
  *
- * Both returned buffers are `FileChunkBuffer`s — they auto-spill to disk
- * above their `DEFAULT_STORAGE_THRESHOLD` so the in-memory footprint
- * stays bounded regardless of source length. The caller owns the
- * lifecycle of both — `close()` on both when they go out of use.
+ * Both returned buffers are `ChunkBuffer`s — they lazily spill to disk
+ * above the 10 MB scratch threshold so the in-memory footprint stays
+ * bounded regardless of source length. The caller owns the lifecycle of
+ * both — `close()` on both when they go out of use.
  *
  * The `SlidingWindowMaxStream` runs ONCE during cache build with state
  * continuity across chunks. Its leading-edge defer of `halfWidth`
@@ -36,7 +36,7 @@
  * scratch is sized at the maximum chunk length, not the source length.
  */
 
-import { FileChunkBuffer, type ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { Oversampler, SlidingWindowMaxStream } from "@e9g/buffered-audio-nodes-utils";
 import { CHUNK_FRAMES, OVERSAMPLE_FACTOR } from "./iterate";
 
@@ -45,12 +45,12 @@ export interface SourceUpsampledCaches {
 	 * Per-channel 4×-upsampled source. Shape:
 	 * `channelCount × (frames × OVERSAMPLE_FACTOR)`.
 	 */
-	upsampledSource: FileChunkBuffer;
+	upsampledSource: ChunkBuffer;
 	/**
 	 * Single-channel 4×-rate detection envelope after the peak-respecting
 	 * sliding-window max-pool. Shape: `1 × (frames × OVERSAMPLE_FACTOR)`.
 	 */
-	detectionEnvelope: FileChunkBuffer;
+	detectionEnvelope: ChunkBuffer;
 }
 
 export interface BuildSourceUpsampledAndDetectionCachesArgs {
@@ -62,7 +62,7 @@ export interface BuildSourceUpsampledAndDetectionCachesArgs {
 }
 
 /**
- * Walk the source ChunkBuffer once and produce two FileChunkBuffers in
+ * Walk the source ChunkBuffer once and produce two ChunkBuffers in
  * lockstep:
  *   - `upsampledSource`: per-channel upsampled samples appended in
  *     source order.
@@ -82,13 +82,16 @@ export async function buildSourceUpsampledAndDetectionCaches(
 ): Promise<SourceUpsampledCaches> {
 	const { buffer, sampleRate, channelCount, frames, halfWidth } = args;
 
-	const upsampledTotal = frames * OVERSAMPLE_FACTOR;
-	const upsampledSource = new FileChunkBuffer(upsampledTotal, channelCount);
-	const detectionEnvelope = new FileChunkBuffer(upsampledTotal, 1);
+	const upsampledSource = new ChunkBuffer();
+	const detectionEnvelope = new ChunkBuffer();
 
 	if (frames === 0 || channelCount === 0) {
 		return { upsampledSource, detectionEnvelope };
 	}
+
+	const upsampledTotal = frames * OVERSAMPLE_FACTOR;
+	const sourceBitDepth = buffer.bitDepth;
+	const upsampledSampleRate = sampleRate * OVERSAMPLE_FACTOR;
 
 	// Fresh per-channel oversamplers for THIS walk only. Biquad state
 	// continues across chunks of THIS walk; the array is dropped at
@@ -111,11 +114,18 @@ export async function buildSourceUpsampledAndDetectionCaches(
 
 	let consumedUpsampledFrames = 0;
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+	// Rewind read cursor — the framework's `processAndEmit` flow leaves
+	// the cursor at end-of-buffer after `_process` completes, but the
+	// caller here (loudness-target's iteration) reads the source buffer
+	// from frame 0. Cheap and defensive.
+	await buffer.reset();
+
+	for (;;) {
+		const chunk = await buffer.read(CHUNK_FRAMES);
 		const channels = chunk.samples;
 		const chunkFrames = channels[0]?.length ?? 0;
 
-		if (chunkFrames === 0) continue;
+		if (chunkFrames === 0) break;
 
 		const upChunkLength = chunkFrames * OVERSAMPLE_FACTOR;
 		// Upsample each channel to 4×.
@@ -134,7 +144,9 @@ export async function buildSourceUpsampledAndDetectionCaches(
 		}
 
 		// Append the per-channel upsampled samples to the source cache.
-		await upsampledSource.append(upChannels);
+		// Sample rate at the upsampled rate; bit depth threaded from the
+		// source buffer's captured metadata.
+		await upsampledSource.write(upChannels, upsampledSampleRate, sourceBitDepth);
 
 		// 4×-rate linked detection signal: `max_c |upChannels[c][upIdx]|`
 		// per upsampled sample. Same fill-loop shape as walk A's pre-
@@ -161,13 +173,29 @@ export async function buildSourceUpsampledAndDetectionCaches(
 
 		// The leading-edge defer of `halfWidth` samples can produce a
 		// zero-length `pooled` on the first chunk(s) until enough input
-		// has been ingested. Skip the append in that case — `append`
+		// has been ingested. Skip the write in that case — `write`
 		// short-circuits on duration 0 anyway, but the explicit guard
 		// keeps the contract obvious.
 		if (pooled.length > 0) {
-			await detectionEnvelope.append([pooled]);
+			// Defensive copy: `pooled` is a subview of `slidingWindow`'s
+			// internal output buffer and can be overwritten by the next
+			// `push`. The buffer's `write` stores a reference into its
+			// scratch via `.set(...)` which copies, so this is actually
+			// safe — leaving the comment for documentation.
+			await detectionEnvelope.write([pooled], upsampledSampleRate, sourceBitDepth);
 		}
+
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
+
+	// Force any in-flight write batch to disk so downstream readers
+	// (iterate.ts's walk A, walk B, and _unbuffer) see a consistent
+	// state. The buffer's read path spans head-scratch / disk / tail-
+	// scratch transparently, but flushing makes the contract obvious
+	// and avoids surprising the reset-then-read pattern used in
+	// iterate.ts.
+	await upsampledSource.flushWrites();
+	await detectionEnvelope.flushWrites();
 
 	return { upsampledSource, detectionEnvelope };
 }

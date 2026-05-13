@@ -1,4 +1,4 @@
-import { MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { describe, expect, it } from "vitest";
 import { measureSource } from "./measurement";
 
@@ -8,13 +8,14 @@ const SAMPLE_RATE = 48_000;
 const LIMIT_PERCENTILE = 0.995;
 
 /**
- * Wrap per-channel synthetic arrays in a `MemoryChunkBuffer`. Mirrors
+ * Wrap per-channel synthetic arrays in a `ChunkBuffer`. Mirrors
  * the helper from `iterate.unit.test.ts`.
  */
-async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<MemoryChunkBuffer> {
-	const buffer = new MemoryChunkBuffer(Infinity, channels.length);
+async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<ChunkBuffer> {
+	const buffer = new ChunkBuffer();
 
-	await buffer.append(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.flushWrites();
 
 	return buffer;
 }

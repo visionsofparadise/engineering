@@ -176,10 +176,16 @@ export async function measureSource(buffer: ChunkBuffer, sampleRate: number, lim
 	// first chunk). Avoids per-chunk allocation in the inner loop.
 	let levelsScratch: Float32Array | null = null;
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+	// Rewind read cursor — defensive; the framework leaves the cursor
+	// at end-of-buffer after `_process` completes, and measurement is
+	// the first reader.
+	await buffer.reset();
+
+	for (;;) {
+		const chunk = await buffer.read(CHUNK_FRAMES);
 		const chunkFrames = chunk.samples[0]?.length ?? 0;
 
-		if (chunkFrames === 0) continue;
+		if (chunkFrames === 0) break;
 
 		loudness.push(chunk.samples, chunkFrames);
 		truePeak.push(chunk.samples, chunkFrames);
@@ -231,6 +237,8 @@ export async function measureSource(buffer: ChunkBuffer, sampleRate: number, lim
 		// the scratch may be wider on later chunks, but the accumulator
 		// reads exactly `frames` samples from each channel.
 		detectionHistogram.push([levels], upChunkLength);
+
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
 
 	const loudnessResult = loudness.finalize();

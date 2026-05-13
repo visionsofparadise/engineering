@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { BufferedTransformStream, ChunkBuffer, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
+
+const CHUNK_FRAMES = 44100;
 
 export const schema = z.object({
 	before: z.number().min(0).multipleOf(0.001).default(0).describe("Before"),
@@ -13,37 +15,59 @@ export class PadStream extends BufferedTransformStream<PadProperties> {
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const { before, after } = this.properties;
 		const channels = buffer.channels;
-		const sr = this.sampleRate ?? 44100;
 
-		if (before > 0) {
-			const silenceFrames = Math.round(before * sr);
-			const frames = buffer.frames;
-			const allAudio = await buffer.read(0, frames);
+		if (channels === 0) return;
 
-			const padded: Array<Float32Array> = [];
+		const sr = buffer.sampleRate ?? 44100;
+		const bd = buffer.bitDepth;
+		const leading = Math.round(before * sr);
+		const trailing = Math.round(after * sr);
 
-			for (let ch = 0; ch < channels; ch++) {
-				const original = allAudio.samples[ch] ?? new Float32Array(0);
-				const withPad = new Float32Array(silenceFrames + original.length);
+		if (leading === 0 && trailing === 0) return;
 
-				withPad.set(original, silenceFrames);
-				padded.push(withPad);
+		const output = new ChunkBuffer();
+
+		try {
+			await writeSilence(output, leading, channels, CHUNK_FRAMES, sr, bd);
+
+			for (;;) {
+				const chunk = await buffer.read(CHUNK_FRAMES);
+				const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+				if (chunkFrames === 0) break;
+				await output.write(chunk.samples, sr, bd);
+				if (chunkFrames < CHUNK_FRAMES) break;
 			}
 
-			await buffer.truncate(0);
-			await buffer.append(padded);
-		}
+			await writeSilence(output, trailing, channels, CHUNK_FRAMES, sr, bd);
 
-		if (after > 0) {
-			const silenceFrames = Math.round(after * sr);
-			const silence: Array<Float32Array> = [];
+			await buffer.clear();
+			await output.reset();
 
-			for (let ch = 0; ch < channels; ch++) {
-				silence.push(new Float32Array(silenceFrames));
+			for (;;) {
+				const chunk = await output.read(CHUNK_FRAMES);
+				const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+				if (chunkFrames === 0) break;
+				await buffer.write(chunk.samples, sr, bd);
+				if (chunkFrames < CHUNK_FRAMES) break;
 			}
-
-			await buffer.append(silence);
+		} finally {
+			await output.close();
 		}
+	}
+}
+
+async function writeSilence(target: ChunkBuffer, frames: number, channels: number, chunkSize: number, sampleRate: number, bitDepth: number | undefined): Promise<void> {
+	let remaining = frames;
+
+	while (remaining > 0) {
+		const take = Math.min(chunkSize, remaining);
+		const silence: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < channels; ch++) silence.push(new Float32Array(take));
+		await target.write(silence, sampleRate, bitDepth);
+		remaining -= take;
 	}
 }
 

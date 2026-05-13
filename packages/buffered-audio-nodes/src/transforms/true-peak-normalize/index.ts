@@ -31,12 +31,17 @@ export class TruePeakNormalizeStream extends BufferedTransformStream<TruePeakNor
 
 		const accumulator = new TruePeakAccumulator(sampleRate, channelCount);
 
-		for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+		await buffer.reset();
+
+		for (;;) {
+			const chunk = await buffer.read(CHUNK_FRAMES);
 			const chunkFrames = chunk.samples[0]?.length ?? 0;
 
-			if (chunkFrames === 0) continue;
+			if (chunkFrames === 0) break;
 
 			accumulator.push(chunk.samples, chunkFrames);
+
+			if (chunkFrames < CHUNK_FRAMES) break;
 		}
 
 		const sourcePeakLinear = accumulator.finalize();

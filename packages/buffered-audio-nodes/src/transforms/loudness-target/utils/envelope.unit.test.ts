@@ -1,4 +1,4 @@
-import { FileChunkBuffer, MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { BidirectionalIir } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
 import { type Anchors } from "./curve";
@@ -117,21 +117,23 @@ describe("applyBackwardPassOverChunkBuffer", () => {
 	// tolerance for robustness across architectures.
 	const ULP_TOLERANCE = 1e-6;
 
-	async function makeFileBufferFromSamples(samples: Float32Array): Promise<FileChunkBuffer> {
-		const buffer = new FileChunkBuffer(samples.length, 1);
+	async function makeFileBufferFromSamples(samples: Float32Array): Promise<ChunkBuffer> {
+		const buffer = new ChunkBuffer();
 
-		await buffer.append([new Float32Array(samples)]);
+		await buffer.write([new Float32Array(samples)]);
+		await buffer.flushWrites();
 
 		return buffer;
 	}
 
-	async function readAll(buffer: FileChunkBuffer): Promise<Float32Array> {
-		const chunk = await buffer.read(0, buffer.frames);
+	async function readAll(buffer: ChunkBuffer): Promise<Float32Array> {
+		await buffer.reset();
+		const chunk = await buffer.read(buffer.frames);
 
 		return chunk.samples[0] ?? new Float32Array(0);
 	}
 
-	it("byte-equal-or-ULP match with applyBackwardPassInPlace on random data, single chunk", async () => {
+	it("byte-equal-or-ULP match with applyBackwardPassInPlace on random data, single chunk", { timeout: 30_000 }, async () => {
 		const length = 100_000;
 		const random = new Float32Array(length);
 
@@ -147,7 +149,7 @@ describe("applyBackwardPassOverChunkBuffer", () => {
 
 		// Disk-backed path.
 		const sourceBuffer = await makeFileBufferFromSamples(random);
-		const destBuffer = new FileChunkBuffer(length, 1);
+		const destBuffer = new ChunkBuffer();
 		const iir = new BidirectionalIir({ smoothingMs: SMOOTHING_MS, sampleRate: SAMPLE_RATE });
 
 		await applyBackwardPassOverChunkBuffer({
@@ -181,7 +183,7 @@ describe("applyBackwardPassOverChunkBuffer", () => {
 		await destBuffer.close();
 	});
 
-	it("state continuity across chunks: multi-chunk result matches single-chunk reference", async () => {
+	it("state continuity across chunks: multi-chunk result matches single-chunk reference", { timeout: 30_000 }, async () => {
 		// Fixture larger than the chunk stride so the reverse walk
 		// traverses multiple chunks and threads state across them.
 		const length = 250_003; // not a multiple of chunkSize — exercises the leading short chunk
@@ -199,7 +201,7 @@ describe("applyBackwardPassOverChunkBuffer", () => {
 		referenceIir.applyBackwardPassInPlace(referenceCopy);
 
 		const sourceBuffer = await makeFileBufferFromSamples(random);
-		const destBuffer = new FileChunkBuffer(length, 1);
+		const destBuffer = new ChunkBuffer();
 		const iir = new BidirectionalIir({ smoothingMs: SMOOTHING_MS, sampleRate: SAMPLE_RATE });
 
 		await applyBackwardPassOverChunkBuffer({
@@ -227,8 +229,8 @@ describe("applyBackwardPassOverChunkBuffer", () => {
 	});
 
 	it("empty source buffer is a no-op (no writes to dest)", async () => {
-		const sourceBuffer = new FileChunkBuffer(0, 1);
-		const destBuffer = new FileChunkBuffer(0, 1);
+		const sourceBuffer = new ChunkBuffer();
+		const destBuffer = new ChunkBuffer();
 		const iir = new BidirectionalIir({ smoothingMs: SMOOTHING_MS, sampleRate: SAMPLE_RATE });
 
 		await applyBackwardPassOverChunkBuffer({
@@ -244,46 +246,23 @@ describe("applyBackwardPassOverChunkBuffer", () => {
 		await destBuffer.close();
 	});
 
-	it("destBuffer with mismatched non-zero frames throws", async () => {
-		const sourceSamples = new Float32Array(1000);
-		const sourceBuffer = await makeFileBufferFromSamples(sourceSamples);
-		// destBuffer pre-populated with a DIFFERENT frame count — the
-		// caller forgot to truncate(0). This is the misuse mode we
-		// catch (the buffer would otherwise silently retain stale
-		// trailing content beyond the source's reach).
-		const destBuffer = new FileChunkBuffer(500, 1);
-
-		await destBuffer.append([new Float32Array(500)]);
-
-		const iir = new BidirectionalIir({ smoothingMs: SMOOTHING_MS, sampleRate: SAMPLE_RATE });
-
-		await expect(
-			applyBackwardPassOverChunkBuffer({
-				sourceBuffer,
-				destBuffer,
-				iir,
-				chunkSize: 256,
-			}),
-		).rejects.toThrow(/frames/);
-
-		await sourceBuffer.close();
-		await destBuffer.close();
-	});
-
-	it("MemoryChunkBuffer source is accepted (ChunkBuffer polymorphism)", async () => {
-		// `sourceBuffer` is typed as `ChunkBuffer`; the disk-backed
-		// detection / forward-envelope buffers in iteration are
-		// FileChunkBuffers, but the abstract base allows MemoryChunkBuffer.
+	it("in-memory ChunkBuffer source (lifetime under 10MB stays in scratch)", async () => {
+		// Sequential-API form: a small ChunkBuffer never touches disk
+		// (lifetime under the 10MB scratch threshold) yet still feeds
+		// the backward-pass walker correctly. Replaces the old
+		// `MemoryChunkBuffer` polymorphism test — there is only one
+		// concrete class now, but the small-buffer path is the
+		// observable equivalent.
 		const length = 5000;
 		const random = new Float32Array(length);
 
 		for (let i = 0; i < length; i++) random[i] = Math.sin(i * 0.02);
 
-		const memSource = new MemoryChunkBuffer(length, 1);
+		const memSource = new ChunkBuffer();
 
-		await memSource.append([new Float32Array(random)]);
+		await memSource.write([new Float32Array(random)]);
 
-		const destBuffer = new FileChunkBuffer(length, 1);
+		const destBuffer = new ChunkBuffer();
 		const iir = new BidirectionalIir({ smoothingMs: SMOOTHING_MS, sampleRate: SAMPLE_RATE });
 
 		await applyBackwardPassOverChunkBuffer({

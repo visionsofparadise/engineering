@@ -2,8 +2,20 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { deinterleaveBuffer, interleave } from "@e9g/buffered-audio-nodes-utils";
 import { waitForDrain } from "../../../utils/ffmpeg";
+
+/**
+ * JS-side streaming-chunk granularity for the vst-host stdin/stdout pipes.
+ * `~1 second` at 48 kHz stereo (≈384 KB f32le interleaved) — bounds JS-heap
+ * cost of each interleave/deinterleave round trip independent of source
+ * length. The vst-host subprocess still buffers the whole interleaved input
+ * internally (Pedalboard offline mode needs full input before producing
+ * output, due to whole-chain delay compensation), but that's the
+ * subprocess's RAM, not ours.
+ */
+const CHUNK_FRAMES = 48000;
 
 export interface VstHostHandle {
 	readonly proc: ChildProcess;
@@ -147,35 +159,47 @@ export async function writeStagesJson(stages: ReadonlyArray<VstStage>): Promise<
 }
 
 /**
- * Run the entire audio buffer through the vst-host subprocess in offline mode:
- * 1. Interleave channel arrays to f32le bytes.
- * 2. Write to stdin and close stdin (signals "no more input" to the wrapper).
- * 3. Concatenate all stdout bytes until the wrapper closes its stdout.
- * 4. Wait for the subprocess to exit; surface stderr on non-zero exit.
- * 5. Deinterleave back to per-channel arrays.
+ * Stream the audio buffer through the vst-host subprocess in offline mode,
+ * mutating `buffer` in place. No temp ChunkBuffer, no double-disk-usage
+ * during a stream-copy phase.
  *
- * Pedalboard's offline mode (`reset=True`) inside the wrapper handles plugin
- * delay compensation across the whole chain, so the returned channels have
- * the same frame count as the input.
+ * Sequence:
+ * 1. Drain `buffer` to stdin: loop `buffer.read(CHUNK_FRAMES)` → interleave →
+ *    write to subprocess stdin (respecting backpressure via `waitForDrain`).
+ * 2. `end()` stdin — Pedalboard's offline mode reads stdin to EOF before it
+ *    starts producing stdout (whole-chain plugin delay compensation spans
+ *    the entire input).
+ * 3. `buffer.reset()` — rewind read + write stream positions to 0. Subsequent
+ *    writes (Phase 4) place samples at position 0, overwriting the input
+ *    data in place. No explicit data drop needed — Pedalboard offline mode
+ *    returns the same number of output frames as input frames, so every
+ *    input byte is overwritten by output.
+ * 4. Drain stdout incrementally back into `buffer`: each `data` event is
+ *    f32le-aligned (carrying any leftover partial frame across events), then
+ *    deinterleaved and appended via `buffer.write(...)`.
+ *
+ * The JS-side memory bound is `CHUNK_FRAMES * channelCount * 4` bytes for
+ * input streaming plus the buffer's own 10 MB write scratch — independent of
+ * source length. Disk usage stays at 1× source size (vs. the 2× transient
+ * peak that a temp-buffer + stream-copy-back pattern would incur).
+ *
+ * The vst-host subprocess still buffers the whole interleaved input
+ * internally (Pedalboard's offline-mode constraint), but that's its own
+ * RAM, not the Node process's heap.
+ *
+ * Pedalboard's offline mode (`reset=True`) handles plugin delay compensation
+ * across the whole chain, so the wrapper writes exactly
+ * `inputFrames * channelCount * 4` bytes on stdout before closing it.
  */
-export async function processWholeFileThroughVstHost(
+export async function processStreamingThroughVstHost(
 	handle: VstHostHandle,
-	channels: Array<Float32Array>,
-	frames: number,
+	buffer: ChunkBuffer,
 	channelCount: number,
-): Promise<Array<Float32Array>> {
-	const interleaved = interleave(channels, frames, channelCount);
-	const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
-
-	// Drain stdout into a chunks array until the subprocess closes its stdout.
-	// We don't block on a fixed byte count — Pedalboard's offline mode returns
-	// the same frame count as input, so the wrapper writes
-	// `frames * channelCount * 4` bytes and then closes stdout on exit.
-	const stdoutChunks: Array<Buffer> = [];
-
-	handle.stdout.on("data", (chunk: Buffer) => {
-		stdoutChunks.push(chunk);
-	});
+	sampleRate: number,
+	bitDepth: number | undefined,
+): Promise<void> {
+	const inputFrames = buffer.frames;
+	const expectedOutputBytes = inputFrames * channelCount * 4;
 
 	const stdoutEnd = new Promise<void>((resolve) => {
 		handle.stdout.once("end", () => resolve());
@@ -185,16 +209,95 @@ export async function processWholeFileThroughVstHost(
 		handle.proc.once("close", (code, signal) => resolve({ code, signal }));
 	});
 
-	const canWrite = handle.stdin.write(buf);
+	// === Phase 1: drain `buffer` to subprocess stdin. ===
+	// Pedalboard's offline mode buffers stdin internally and only starts
+	// producing stdout after stdin closes, so we cannot interleave reads/
+	// writes productively — but we CAN avoid materialising the whole input
+	// as a single JS-side Float32Array.
+	await buffer.reset();
 
-	if (!canWrite) {
-		await waitForDrain(handle.proc, handle.stdin);
+	for (;;) {
+		const chunk = await buffer.read(CHUNK_FRAMES);
+		const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+		if (chunkFrames === 0) break;
+
+		const channelArrays: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < channelCount; ch++) {
+			channelArrays.push(chunk.samples[ch] ?? new Float32Array(chunkFrames));
+		}
+
+		const interleaved = interleave(channelArrays, chunkFrames, channelCount);
+		const buf = Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength);
+		const canWrite = handle.stdin.write(buf);
+
+		if (!canWrite) {
+			await waitForDrain(handle.proc, handle.stdin);
+		}
+
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
 
 	handle.stdin.end();
 
+	// === Phase 2: rewind the buffer's stream positions. ===
+	// `reset()` rewinds read + write cursors to position 0. The next write
+	// (Phase 3 below) places samples at position 0, overwriting the input
+	// data we just streamed to the subprocess. Pedalboard offline mode
+	// guarantees the same number of output frames as input frames, so the
+	// final buffer contents are exactly the output (no stale tail bytes).
+	await buffer.reset();
+
+	// === Phase 3: drain stdout incrementally into `buffer`. ===
+	// Each `data` event may deliver an unaligned byte count (the OS pipe
+	// boundary is arbitrary), so accumulate a tail of leftover bytes between
+	// successive f32le frames and emit only aligned chunks to the buffer. A
+	// serial promise chain holds each chunk's async write so subsequent
+	// `data` events queue behind it — `ChunkBuffer.write` is not safe under
+	// concurrent callers.
+	let outputBytesReceived = 0;
+	let stdoutTail: Buffer = Buffer.alloc(0);
+	let stdoutError: Error | undefined;
+	const bytesPerFrame = channelCount * 4;
+	let writeChain: Promise<void> = Promise.resolve();
+
+	const onData = (chunk: Buffer): void => {
+		if (stdoutError !== undefined) return;
+
+		outputBytesReceived += chunk.length;
+		const combined = stdoutTail.length === 0 ? chunk : Buffer.concat([stdoutTail, chunk]);
+		const alignedFrames = Math.floor(combined.length / bytesPerFrame);
+		const alignedBytes = alignedFrames * bytesPerFrame;
+
+		if (alignedFrames === 0) {
+			stdoutTail = combined;
+
+			return;
+		}
+
+		const aligned = combined.subarray(0, alignedBytes);
+
+		stdoutTail = combined.length === alignedBytes ? Buffer.alloc(0) : combined.subarray(alignedBytes);
+
+		const channels = deinterleaveBuffer(aligned, channelCount);
+
+		writeChain = writeChain
+			.then(() => buffer.write(channels, sampleRate, bitDepth))
+			.catch((error: unknown) => {
+				stdoutError ??= error instanceof Error ? error : new Error(String(error));
+			});
+	};
+
+	handle.stdout.on("data", onData);
+
 	await stdoutEnd;
+	// All `data` callbacks have run; drain the serial write chain so every
+	// deinterleaved chunk has landed in `buffer` before we validate.
+	await writeChain;
 	const exit = await exited;
+
+	if (stdoutError !== undefined) throw stdoutError;
 
 	if (exit.code !== 0) {
 		const stderrOutput = Buffer.concat(handle.stderrChunks).toString();
@@ -202,12 +305,13 @@ export async function processWholeFileThroughVstHost(
 		throw new Error(`vst-host exited with code ${exit.code ?? "null"}${exit.signal ? ` (signal ${exit.signal})` : ""}: ${stderrOutput}`);
 	}
 
-	const expectedBytes = frames * channelCount * 4;
-	const outputBuf = Buffer.concat(stdoutChunks);
-
-	if (outputBuf.length !== expectedBytes) {
-		throw new Error(`vst-host returned ${outputBuf.length} bytes, expected ${expectedBytes} (${frames} frames × ${channelCount} channels × 4)`);
+	if (outputBytesReceived !== expectedOutputBytes) {
+		throw new Error(`vst-host returned ${outputBytesReceived} bytes, expected ${expectedOutputBytes} (${inputFrames} frames × ${channelCount} channels × 4)`);
 	}
 
-	return deinterleaveBuffer(outputBuf, channelCount);
+	if (stdoutTail.length !== 0) {
+		throw new Error(`vst-host returned an unaligned trailing fragment of ${stdoutTail.length} bytes (not a multiple of ${bytesPerFrame})`);
+	}
+
+	await buffer.flushWrites();
 }

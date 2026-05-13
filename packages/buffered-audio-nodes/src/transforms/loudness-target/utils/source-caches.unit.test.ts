@@ -1,4 +1,4 @@
-import { MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { Oversampler, SlidingWindowMaxStream } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
 import { CHUNK_FRAMES, OVERSAMPLE_FACTOR } from "./iterate";
@@ -29,20 +29,22 @@ function makeSineWithNoise(seed: number, frames: number, amplitude: number, freq
 	return channel;
 }
 
-async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<MemoryChunkBuffer> {
-	const buffer = new MemoryChunkBuffer(Infinity, channels.length);
+async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<ChunkBuffer> {
+	const buffer = new ChunkBuffer();
 
-	await buffer.append(channels.map((c) => new Float32Array(c)), SAMPLE_RATE, 32);
+	await buffer.write(channels.map((c) => new Float32Array(c)), SAMPLE_RATE, 32);
+	await buffer.flushWrites();
 
 	return buffer;
 }
 
 /**
- * Read all frames from a FileChunkBuffer into a flat per-channel
+ * Read all frames from a ChunkBuffer into a flat per-channel
  * `Float32Array[]`. Used to compare cached output byte-equal against
- * reference single-pass output computed in test code.
+ * reference single-pass output computed in test code. Uses sequential
+ * `read` per the new API; rewinds via `reset()` first.
  */
-async function readAll(buffer: { frames: number; channels: number; read: (offset: number, frames: number) => Promise<{ samples: ReadonlyArray<Float32Array> }> }): Promise<Array<Float32Array>> {
+async function readAll(buffer: ChunkBuffer): Promise<Array<Float32Array>> {
 	const channelCount = buffer.channels;
 	const totalFrames = buffer.frames;
 	const out: Array<Float32Array> = [];
@@ -53,12 +55,16 @@ async function readAll(buffer: { frames: number; channels: number; read: (offset
 
 	if (totalFrames === 0) return out;
 
+	await buffer.reset();
 	const chunkSize = CHUNK_FRAMES * OVERSAMPLE_FACTOR;
 	let offset = 0;
 
 	while (offset < totalFrames) {
 		const want = Math.min(chunkSize, totalFrames - offset);
-		const chunk = await buffer.read(offset, want);
+		const chunk = await buffer.read(want);
+		const got = chunk.samples[0]?.length ?? 0;
+
+		if (got === 0) break;
 
 		for (let ch = 0; ch < channelCount; ch++) {
 			const src = chunk.samples[ch];
@@ -67,7 +73,7 @@ async function readAll(buffer: { frames: number; channels: number; read: (offset
 			if (src && dst) dst.set(src, offset);
 		}
 
-		offset += want;
+		offset += got;
 	}
 
 	return out;
@@ -134,10 +140,12 @@ describe("buildSourceUpsampledAndDetectionCaches", () => {
 			];
 			let writeOffset = 0;
 
-			for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+			await buffer.reset();
+			for (;;) {
+				const chunk = await buffer.read(CHUNK_FRAMES);
 				const chunkFrames = chunk.samples[0]?.length ?? 0;
 
-				if (chunkFrames === 0) continue;
+				if (chunkFrames === 0) break;
 
 				for (let ch = 0; ch < 2; ch++) {
 					const channel = chunk.samples[ch]!;
@@ -147,6 +155,7 @@ describe("buildSourceUpsampledAndDetectionCaches", () => {
 				}
 
 				writeOffset += chunkFrames * OVERSAMPLE_FACTOR;
+				if (chunkFrames < CHUNK_FRAMES) break;
 			}
 
 			const got = await readAll(caches.upsampledSource);
@@ -204,10 +213,12 @@ describe("buildSourceUpsampledAndDetectionCaches", () => {
 			let detectionWriteOffset = 0;
 			let consumed = 0;
 
-			for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+			await buffer.reset();
+			for (;;) {
+				const chunk = await buffer.read(CHUNK_FRAMES);
 				const chunkFrames = chunk.samples[0]?.length ?? 0;
 
-				if (chunkFrames === 0) continue;
+				if (chunkFrames === 0) break;
 
 				const upChunkLength = chunkFrames * OVERSAMPLE_FACTOR;
 				const upChannels: Array<Float32Array> = [];
@@ -238,6 +249,8 @@ describe("buildSourceUpsampledAndDetectionCaches", () => {
 					refDetection.set(pooled, detectionWriteOffset);
 					detectionWriteOffset += pooled.length;
 				}
+
+				if (chunkFrames < CHUNK_FRAMES) break;
 			}
 
 			expect(detectionWriteOffset).toBe(upsampledTotal);

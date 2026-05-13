@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
-import { initFftBackend, resampleDirect, type FftBackend } from "@e9g/buffered-audio-nodes-utils";
+import { BufferedTransformStream, ChunkBuffer, TransformNode, WHOLE_FILE, type AudioChunk, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { initFftBackend, ResampleStream, type FftBackend } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { filterOnnxProviders } from "../../utils/onnx-providers";
 import { createOnnxSession, type OnnxSession } from "../../utils/onnx-runtime";
-import { processDtlnFrames } from "./utils/dtln";
+import { BLOCK_LEN, BLOCK_SHIFT, DtlnBlockStream, WARMUP_SHIFTS } from "./utils/dtln";
 
 export const schema = z.object({
 	modelPath1: z
@@ -38,6 +38,15 @@ export const schema = z.object({
 export interface DtlnProperties extends z.infer<typeof schema>, TransformNodeProperties {}
 
 const DTLN_SAMPLE_RATE = 16000;
+const CHUNK_FRAMES = 16000;            // input-side streaming chunk for buffer reads (1 s at 16 kHz)
+const RESAMPLE_DRAIN_CHUNK = 16384;    // ffmpeg stdout drain block per inner-loop pass
+const STEP_BATCH_SIZE = 16000;         // 16 kHz step outputs accumulated before flushing to resampleOut/output (~125 BLOCK_SHIFTs)
+const WARMUP_SAMPLES = WARMUP_SHIFTS * BLOCK_SHIFT; // 384
+
+interface StreamPair {
+	readonly resampleIn: ResampleStream;
+	readonly resampleOut: ResampleStream;
+}
 
 export class DtlnStream extends BufferedTransformStream<DtlnProperties> {
 	private session1!: OnnxSession;
@@ -61,46 +70,545 @@ export class DtlnStream extends BufferedTransformStream<DtlnProperties> {
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		const frames = buffer.frames;
+		const originalFrames = buffer.frames;
 		const channels = buffer.channels;
 
-		for (let ch = 0; ch < channels; ch++) {
-			const chunk = await buffer.read(0, frames);
-			const channel = chunk.samples[ch];
+		if (originalFrames === 0 || channels === 0) return;
 
-			if (!channel) continue;
+		const sourceRate = this.sampleRate ?? DTLN_SAMPLE_RATE;
+		const bitDepth = this.bitDepth;
+		const needsResample = sourceRate !== DTLN_SAMPLE_RATE;
 
-			let input16k: Float32Array = channel;
+		await buffer.reset();
 
-			if ((this.sampleRate ?? 44100) !== DTLN_SAMPLE_RATE) {
-				const resampled = await resampleDirect(this.properties.ffmpegPath, [channel], this.sampleRate ?? 44100, DTLN_SAMPLE_RATE);
+		// === Set up streaming resampler subprocesses (if needed). ===
+		// One multi-channel resampler each way; ffmpeg's aresample handles
+		// per-channel independence natively, so a single subprocess per direction
+		// is enough regardless of channel count. DTLN's LSTM state IS per-channel
+		// — those live as one `DtlnBlockStream` instance per channel below.
+		let pair: StreamPair | undefined;
 
-				input16k = resampled[0] ?? channel;
+		if (needsResample) {
+			pair = {
+				resampleIn: new ResampleStream(this.properties.ffmpegPath, {
+					sourceSampleRate: sourceRate,
+					targetSampleRate: DTLN_SAMPLE_RATE,
+					channels,
+				}),
+				resampleOut: new ResampleStream(this.properties.ffmpegPath, {
+					sourceSampleRate: DTLN_SAMPLE_RATE,
+					targetSampleRate: sourceRate,
+					channels,
+				}),
+			};
+		}
+
+		// Accumulate the inferred output into a temp ChunkBuffer (at sourceRate /
+		// 16 kHz as appropriate). The new ChunkBuffer API is append-only on writes,
+		// so we cannot overwrite the original buffer in-place mid-loop — any write
+		// would land *past* the input region and the framework's emit step (which
+		// reads the whole buffer from frame 0) would then emit both the original
+		// input AND the new output. Using a temp output buffer + `clear()` +
+		// copy-back keeps the algorithm correct. Mirrors the Phase 7 htdemucs and
+		// Phase 8 kim-vocal-2 patterns.
+		const output = new ChunkBuffer();
+
+		try {
+			await this.runMainPass({
+				buffer,
+				output,
+				channels,
+				originalFrames,
+				sourceRate,
+				bitDepth,
+				pair,
+			});
+
+			// Drop original input; stream-copy output → buffer.
+			await buffer.clear();
+			await output.reset();
+
+			for (;;) {
+				const chunk = await output.read(CHUNK_FRAMES);
+				const got = chunk.samples[0]?.length ?? 0;
+
+				if (got === 0) break;
+
+				await buffer.write(chunk.samples, sourceRate, bitDepth);
+
+				if (got < CHUNK_FRAMES) break;
+			}
+		} finally {
+			if (pair) {
+				await Promise.all([pair.resampleIn.close(), pair.resampleOut.close()]);
 			}
 
-			const denoised16k = processDtlnFrames(input16k, this.session1, this.session2, this.fftBackend, this.fftAddonOptions);
-
-			let output: Float32Array = denoised16k;
-
-			if ((this.sampleRate ?? 44100) !== DTLN_SAMPLE_RATE) {
-				const resampled = await resampleDirect(this.properties.ffmpegPath, [denoised16k], DTLN_SAMPLE_RATE, this.sampleRate ?? 44100);
-
-				output = resampled[0] ?? denoised16k;
-			}
-
-			const finalOutput = new Float32Array(frames);
-
-			finalOutput.set(output.subarray(0, Math.min(output.length, frames)));
-
-			const allChannels: Array<Float32Array> = [];
-
-			for (let writeCh = 0; writeCh < channels; writeCh++) {
-				allChannels.push(writeCh === ch ? finalOutput : (chunk.samples[writeCh] ?? new Float32Array(frames)));
-			}
-
-			await buffer.write(0, allChannels);
+			await output.close();
 		}
 	}
+
+	private async runMainPass(args: {
+		readonly buffer: ChunkBuffer;
+		readonly output: ChunkBuffer;
+		readonly channels: number;
+		readonly originalFrames: number;
+		readonly sourceRate: number;
+		readonly bitDepth: number | undefined;
+		readonly pair: StreamPair | undefined;
+	}): Promise<void> {
+		const { buffer, output, channels, originalFrames, sourceRate, bitDepth, pair } = args;
+
+		// Per-channel DTLN streaming state. LSTM states are per-channel; the OLA
+		// scratch and sliding input window are per-channel.
+		const streams: Array<DtlnBlockStream> = [];
+
+		for (let ch = 0; ch < channels; ch++) {
+			streams.push(new DtlnBlockStream({ session1: this.session1, session2: this.session2, fftBackend: this.fftBackend, fftAddonOptions: this.fftAddonOptions }));
+		}
+
+		// Per-channel pre-step accumulator (16 kHz samples not yet enough for a step).
+		const stepAccum: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < channels; ch++) stepAccum.push(new Float32Array(BLOCK_SHIFT));
+		let stepAccumLen = 0;
+
+		// Per-channel batch of step outputs awaiting commit to resampleOut / output.
+		const stepBatch: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < channels; ch++) stepBatch.push(new Float32Array(STEP_BATCH_SIZE));
+		let stepBatchLen = 0;
+
+		// Tracks how many 16 kHz samples we've fed to step() so far. Drives the
+		// "zero-pad to BLOCK_LEN if source ran out short" decision at the tail.
+		let samplesFed = 0;
+
+		// Remaining warm-up samples to drop from step outputs. Once zero, all
+		// subsequent step outputs go into the step batch.
+		let warmupRemaining = WARMUP_SAMPLES;
+
+		// Tracks how many source-rate frames have been written to the temp output
+		// buffer. Used to truncate over-run + zero-pad short-fall at the tail.
+		const writerState = { written: 0 };
+
+		// === Source pump and output drainer (parallel tasks) ===
+		// When resampling, run the source-rate → 16 kHz feeder and the 16 kHz
+		// → source-rate drainer as background tasks. ffmpeg's resampler needs
+		// hundreds of KB of stdin buffered before it produces its first stdout
+		// output (internal SoX-rate FIR delay). A sequential "write-then-read"
+		// in the main loop deadlocks waiting for output that won't materialise
+		// until enough input has accumulated.
+		//
+		// Concurrency contract:
+		// - Source pump drains `buffer` (source rate) into `resampleIn.stdin`;
+		//   call `end()` when done.
+		// - Main loop reads 16 kHz samples from `resampleIn.stdout`, runs DTLN
+		//   step + flush, writes 16 kHz output to `resampleOut.stdin` via
+		//   `commitStepBatch`.
+		// - Output drainer reads source-rate samples from `resampleOut.stdout`
+		//   and appends them to the `output` ChunkBuffer.
+		// - At end-of-stream, main loop closes `resampleOut.stdin`, and the
+		//   drainer's `read()` returns `length === 0` when ffmpeg finishes
+		//   draining its tail.
+		const pumpDone = pair !== undefined ? pumpSourceToResampleIn({ buffer, resampleIn: pair.resampleIn, channels, chunkFrames: CHUNK_FRAMES }) : Promise.resolve();
+		const drainerDone = pair !== undefined ? drainResampleOutToBuffer({ resampleOut: pair.resampleOut, output, channels, sourceRate, bitDepth, originalFrames, writerState }) : Promise.resolve();
+
+		// === Main loop: pull 16 kHz samples (resampled or direct), feed into
+		// per-channel DTLN streams in lockstep, commit BLOCK_SHIFT outputs per
+		// channel back through resampleOut (or directly). ===
+		for (;;) {
+			const got16k = await pullNextChunkAt16k({ buffer, pair, channels, frames: CHUNK_FRAMES });
+
+			if (got16k === undefined) break;
+
+			const firstChannel = got16k[0];
+			const chunkFrames = firstChannel?.length ?? 0;
+
+			if (chunkFrames === 0) break;
+
+			let consumed = 0;
+
+			while (consumed < chunkFrames) {
+				const need = BLOCK_SHIFT - stepAccumLen;
+				const take = Math.min(need, chunkFrames - consumed);
+
+				for (let ch = 0; ch < channels; ch++) {
+					const src = got16k[ch] ?? firstChannel;
+					const dest = stepAccum[ch];
+
+					if (!src || !dest) continue;
+					dest.set(src.subarray(consumed, consumed + take), stepAccumLen);
+				}
+
+				stepAccumLen += take;
+				consumed += take;
+
+				if (stepAccumLen === BLOCK_SHIFT) {
+					const result = stepAllChannels({ channels, streams, inputs: stepAccum, stepBatch, stepBatchLen, batchSize: STEP_BATCH_SIZE, warmupRemaining });
+
+					stepBatchLen = result.stepBatchLen;
+					warmupRemaining = result.warmupRemaining;
+					samplesFed += BLOCK_SHIFT;
+					stepAccumLen = 0;
+
+					if (stepBatchLen >= STEP_BATCH_SIZE) {
+						await commitStepBatch({ stepBatch, length: stepBatchLen, channels, pair, output, sourceRate, bitDepth, originalFrames, writerState });
+						stepBatchLen = 0;
+					}
+				}
+			}
+		}
+
+		// The pump task should already be done by this point (we drained all of
+		// resampleIn's output, which requires the pump to have closed stdin first).
+		// Await defensively to surface any pump-side errors.
+		await pumpDone;
+
+		// Drainer awaited later, after we've finished pushing through resampleOut.
+
+		// Source exhausted. Any partial samples in `stepAccum` (length <
+		// BLOCK_SHIFT) are silently dropped — this matches the original
+		// `processDtlnFrames` behaviour, where trailing samples below the
+		// BLOCK_SHIFT boundary never enter inference.
+		//
+		// HOWEVER: if we haven't fed BLOCK_LEN samples yet (samplesFed < BLOCK_LEN),
+		// the original WOULD have padded with zeros and fired one block. Reproduce
+		// that here by zero-padding step calls until samplesFed === BLOCK_LEN.
+		if (samplesFed > 0 && samplesFed < BLOCK_LEN) {
+			const zeroInputs: Array<Float32Array> = [];
+
+			for (let ch = 0; ch < channels; ch++) zeroInputs.push(new Float32Array(BLOCK_SHIFT));
+
+			while (samplesFed < BLOCK_LEN) {
+				const result = stepAllChannels({ channels, streams, inputs: zeroInputs, stepBatch, stepBatchLen, batchSize: STEP_BATCH_SIZE, warmupRemaining });
+
+				stepBatchLen = result.stepBatchLen;
+				warmupRemaining = result.warmupRemaining;
+				samplesFed += BLOCK_SHIFT;
+
+				if (stepBatchLen >= STEP_BATCH_SIZE) {
+					await commitStepBatch({ stepBatch, length: stepBatchLen, channels, pair, output, sourceRate, bitDepth, originalFrames, writerState });
+					stepBatchLen = 0;
+				}
+			}
+		}
+
+		// Drain each per-channel OLA scratch via flush() — returns the trailing
+		// (BLOCK_LEN - BLOCK_SHIFT) = 384 samples per channel.
+		const flushOutputs: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < channels; ch++) flushOutputs.push(streams[ch]?.flush() ?? new Float32Array(0));
+
+		const flushLen = flushOutputs[0]?.length ?? 0;
+
+		if (flushLen > 0) {
+			const result = appendToStepBatch({ samples: flushOutputs, channels, stepBatch, stepBatchLen, batchSize: STEP_BATCH_SIZE, warmupRemaining });
+
+			stepBatchLen = result.stepBatchLen;
+			warmupRemaining = result.warmupRemaining;
+
+			if (stepBatchLen >= STEP_BATCH_SIZE) {
+				await commitStepBatch({ stepBatch, length: stepBatchLen, channels, pair, output, sourceRate, bitDepth, originalFrames, writerState });
+				stepBatchLen = 0;
+			}
+		}
+
+		// Commit any remaining step-batch contents (partial batch at tail).
+		if (stepBatchLen > 0) {
+			await commitStepBatch({ stepBatch, length: stepBatchLen, channels, pair, output, sourceRate, bitDepth, originalFrames, writerState });
+			stepBatchLen = 0;
+		}
+
+		// Close output resampler stdin; wait for the drainer to finish copying
+		// the tail into output.
+		if (pair) {
+			await pair.resampleOut.end();
+		}
+
+		await drainerDone;
+
+		// Zero-pad if total written < originalFrames (rate conversion rounding,
+		// or trailing-input-dropped scenarios).
+		await padTail(output, channels, originalFrames, writerState.written, sourceRate, bitDepth);
+	}
+}
+
+// === Helpers ===
+
+function stepAllChannels(args: {
+	readonly channels: number;
+	readonly streams: ReadonlyArray<DtlnBlockStream>;
+	readonly inputs: ReadonlyArray<Float32Array>;
+	readonly stepBatch: Array<Float32Array>;
+	readonly stepBatchLen: number;
+	readonly batchSize: number;
+	readonly warmupRemaining: number;
+}): { stepBatchLen: number; warmupRemaining: number } {
+	const { channels, streams, inputs, stepBatch, stepBatchLen, batchSize, warmupRemaining } = args;
+	const stepOutputs: Array<Float32Array> = [];
+
+	for (let ch = 0; ch < channels; ch++) {
+		const stream = streams[ch];
+		const input = inputs[ch];
+
+		if (!stream || !input) {
+			stepOutputs.push(new Float32Array(BLOCK_SHIFT));
+			continue;
+		}
+
+		stepOutputs.push(stream.step(input));
+	}
+
+	return appendToStepBatch({ samples: stepOutputs, channels, stepBatch, stepBatchLen, batchSize, warmupRemaining });
+}
+
+function appendToStepBatch(args: {
+	readonly samples: ReadonlyArray<Float32Array>;
+	readonly channels: number;
+	readonly stepBatch: Array<Float32Array>;
+	readonly stepBatchLen: number;
+	readonly batchSize: number;
+	readonly warmupRemaining: number;
+}): { stepBatchLen: number; warmupRemaining: number } {
+	const { samples, channels, stepBatch, stepBatchLen, batchSize, warmupRemaining } = args;
+	const length = samples[0]?.length ?? 0;
+
+	if (length === 0) return { stepBatchLen, warmupRemaining };
+
+	let offset = 0;
+	let warmupLeft = warmupRemaining;
+
+	// Drop warm-up samples first (they're zeros from the DtlnBlockStream's
+	// pre-first-inference sliding window — the original `processDtlnFrames`
+	// wrapper trims the same prefix at the end of its flow).
+	if (warmupLeft > 0) {
+		const drop = Math.min(warmupLeft, length);
+
+		warmupLeft -= drop;
+		offset += drop;
+	}
+
+	let batchLen = stepBatchLen;
+
+	while (offset < length) {
+		if (batchLen >= batchSize) {
+			// Caller is responsible for flushing the batch before more samples
+			// arrive. In normal flow, batchSize is much larger than any single
+			// append (BLOCK_SHIFT = 128 or BLOCK_LEN - BLOCK_SHIFT = 384), so
+			// the batch never overflows mid-append.
+			throw new Error(`appendToStepBatch: batch overflow (offset=${String(offset)}, length=${String(length)}, batchLen=${String(batchLen)}, batchSize=${String(batchSize)}). Caller must flush before appending more.`);
+		}
+
+		const space = batchSize - batchLen;
+		const copy = Math.min(space, length - offset);
+		const firstSample = samples[0];
+
+		for (let ch = 0; ch < channels; ch++) {
+			const src = samples[ch] ?? firstSample;
+			const dest = stepBatch[ch];
+
+			if (!src || !dest) continue;
+			dest.set(src.subarray(offset, offset + copy), batchLen);
+		}
+
+		batchLen += copy;
+		offset += copy;
+	}
+
+	return { stepBatchLen: batchLen, warmupRemaining: warmupLeft };
+}
+
+async function commitStepBatch(args: {
+	readonly stepBatch: ReadonlyArray<Float32Array>;
+	readonly length: number;
+	readonly channels: number;
+	readonly pair: StreamPair | undefined;
+	readonly output: ChunkBuffer;
+	readonly sourceRate: number;
+	readonly bitDepth: number | undefined;
+	readonly originalFrames: number;
+	readonly writerState: { written: number };
+}): Promise<void> {
+	const { stepBatch, length, channels, pair, output, sourceRate, bitDepth, originalFrames, writerState } = args;
+
+	if (length === 0) return;
+
+	const slices: Array<Float32Array> = [];
+
+	for (let ch = 0; ch < channels; ch++) {
+		const src = stepBatch[ch] ?? new Float32Array(length);
+
+		slices.push(src.subarray(0, length));
+	}
+
+	if (pair) {
+		// Feed 16 kHz samples into resampleOut.stdin. The background drainer
+		// task (see `drainResampleOutToBuffer`) reads stdout in parallel and
+		// commits source-rate frames to `output`.
+		await pair.resampleOut.write(slices);
+	} else {
+		// Direct path — 16 kHz === sourceRate.
+		const remaining = Math.max(0, originalFrames - writerState.written);
+
+		if (remaining > 0) {
+			const take = Math.min(length, remaining);
+			const writeChannels = take === length ? slices : slices.map((channel) => channel.subarray(0, take));
+
+			await output.write(writeChannels, sourceRate, bitDepth);
+			writerState.written += take;
+		}
+	}
+}
+
+/**
+ * Background drainer for the output resampler: continuously reads source-rate
+ * samples from `resampleOut.stdout` and appends them to `output` (clamped to
+ * `originalFrames` total). Terminates when `resampleOut.stdout` signals EOF,
+ * which happens after the main loop calls `resampleOut.end()` and ffmpeg
+ * drains its tail.
+ */
+async function drainResampleOutToBuffer(args: {
+	readonly resampleOut: ResampleStream;
+	readonly output: ChunkBuffer;
+	readonly channels: number;
+	readonly sourceRate: number;
+	readonly bitDepth: number | undefined;
+	readonly originalFrames: number;
+	readonly writerState: { written: number };
+}): Promise<void> {
+	const { resampleOut, output, channels, sourceRate, bitDepth, originalFrames, writerState } = args;
+
+	for (;;) {
+		const chunk = await resampleOut.read(RESAMPLE_DRAIN_CHUNK);
+		const got = chunk[0]?.length ?? 0;
+
+		if (got === 0) return; // EOF
+
+		await commitResampledFrames({ chunk, channels, output, sourceRate, bitDepth, originalFrames, writerState });
+	}
+}
+
+/**
+ * Pull up to `frames` of 16 kHz samples for the DTLN segment loop. When `pair`
+ * is set, reads from `resampleIn.stdout`; the producer side is handled by a
+ * separate `pumpSourceToResampleIn` task running in parallel (see
+ * `runMainPass`). Otherwise reads directly from `buffer` at 16 kHz.
+ *
+ * Returns a per-channel `Float32Array[]` of equal length, or `undefined` on
+ * end-of-stream.
+ */
+async function pullNextChunkAt16k(args: {
+	readonly buffer: ChunkBuffer;
+	readonly pair: StreamPair | undefined;
+	readonly channels: number;
+	readonly frames: number;
+}): Promise<ReadonlyArray<Float32Array> | undefined> {
+	const { buffer, pair, channels, frames } = args;
+
+	if (!pair) {
+		const chunk = await buffer.read(frames);
+		const got = chunk.samples[0]?.length ?? 0;
+
+		if (got === 0) return undefined;
+
+		const out: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < channels; ch++) {
+			out.push(chunk.samples[ch] ?? chunk.samples[0] ?? new Float32Array(got));
+		}
+
+		return out;
+	}
+
+	// Resample path: read directly from resampleIn.stdout. The pump task feeds
+	// stdin in the background; read() blocks until ffmpeg produces output, then
+	// returns up to `frames` of 16 kHz samples. `length === 0` signals
+	// end-of-stream (ffmpeg drained its tail after the pump called `end()`).
+	const out = await pair.resampleIn.read(frames);
+	const got = out[0]?.length ?? 0;
+
+	if (got === 0) return undefined;
+
+	return out;
+}
+
+/**
+ * Drain `buffer` (at sourceRate) into `resampleIn.stdin`, then call `end()`.
+ * Runs as a background task in parallel with the main loop's reads from
+ * `resampleIn.stdout`. ResampleStream handles per-write backpressure via its
+ * internal `pendingDrain` promise, so a slow ffmpeg won't blow up Node's
+ * memory.
+ */
+async function pumpSourceToResampleIn(args: {
+	readonly buffer: ChunkBuffer;
+	readonly resampleIn: ResampleStream;
+	readonly channels: number;
+	readonly chunkFrames: number;
+}): Promise<void> {
+	const { buffer, resampleIn, channels, chunkFrames } = args;
+
+	for (;;) {
+		const sourceChunk = await buffer.read(chunkFrames);
+		const sourceFrames = sourceChunk.samples[0]?.length ?? 0;
+
+		if (sourceFrames === 0) break;
+
+		const sourceChannels: Array<Float32Array> = [];
+
+		for (let ch = 0; ch < channels; ch++) {
+			sourceChannels.push(sourceChunk.samples[ch] ?? sourceChunk.samples[0] ?? new Float32Array(sourceFrames));
+		}
+
+		await resampleIn.write(sourceChannels);
+
+		if (sourceFrames < chunkFrames) break;
+	}
+
+	await resampleIn.end();
+}
+
+async function commitResampledFrames(args: {
+	readonly chunk: ReadonlyArray<Float32Array>;
+	readonly channels: number;
+	readonly output: ChunkBuffer;
+	readonly sourceRate: number;
+	readonly bitDepth: number | undefined;
+	readonly originalFrames: number;
+	readonly writerState: { written: number };
+}): Promise<void> {
+	const { chunk, channels, output, sourceRate, bitDepth, originalFrames, writerState } = args;
+	const firstChannel = chunk[0];
+	const got = firstChannel?.length ?? 0;
+
+	if (got === 0 || !firstChannel) return;
+
+	const remaining = originalFrames - writerState.written;
+
+	if (remaining <= 0) return;
+
+	const take = Math.min(got, remaining);
+	const writeChannels: Array<Float32Array> = [];
+
+	for (let ch = 0; ch < channels; ch++) {
+		const src = chunk[ch] ?? firstChannel;
+
+		writeChannels.push(take === got ? src : src.subarray(0, take));
+	}
+
+	await output.write(writeChannels, sourceRate, bitDepth);
+	writerState.written += take;
+}
+
+async function padTail(output: ChunkBuffer, channels: number, originalFrames: number, written: number, sourceRate: number, bitDepth: number | undefined): Promise<void> {
+	if (written >= originalFrames) return;
+
+	const missing = originalFrames - written;
+	const padChannels: Array<Float32Array> = [];
+
+	for (let channel = 0; channel < Math.max(1, channels); channel++) {
+		padChannels.push(new Float32Array(missing));
+	}
+
+	await output.write(padChannels, sourceRate, bitDepth);
 }
 
 export class DtlnNode extends TransformNode<DtlnProperties> {

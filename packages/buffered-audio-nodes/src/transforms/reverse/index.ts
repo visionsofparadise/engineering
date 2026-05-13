@@ -1,56 +1,36 @@
 import { z } from "zod";
-import { BufferedTransformStream, FileChunkBuffer, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { BufferedTransformStream, type ChunkBuffer, reverseBuffer, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
+
+const CHUNK_FRAMES = 44100;
 
 export const schema = z.object({});
 
 export class ReverseStream extends BufferedTransformStream {
-	private spareBuffer?: FileChunkBuffer;
-	private spareChunkSize = 44100;
-	private spareInitialized = false;
-	private reverseMemoryLimit?: number;
-
-	override async _setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
-		this.reverseMemoryLimit = context.memoryLimit;
-
-		return super._setup(input, context);
-	}
-
-	private ensureSpareBuffer(chunk: AudioChunk): void {
-		if (this.spareInitialized) return;
-		this.spareInitialized = true;
-		this.spareChunkSize = chunk.sampleRate;
-		this.spareBuffer = new FileChunkBuffer(Infinity, chunk.samples.length, this.reverseMemoryLimit);
-	}
-
-	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {
-		this.ensureSpareBuffer(chunk);
-		await super._buffer(chunk, buffer);
-		await this.spareBuffer?.append(chunk.samples);
-	}
-
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		if (!this.spareBuffer) return;
+		const channels = buffer.channels;
 
-		await buffer.truncate(0);
+		if (channels === 0 || buffer.frames === 0) return;
 
-		let remaining = this.spareBuffer.frames;
+		const sr = buffer.sampleRate ?? 44100;
+		const bd = buffer.bitDepth;
+		const output = await reverseBuffer(buffer);
 
-		while (remaining > 0) {
-			const frames = Math.min(this.spareChunkSize, remaining);
-			const offset = remaining - frames;
-			const chunk = await this.spareBuffer.read(offset, frames);
+		try {
+			await buffer.clear();
+			await output.reset();
 
-			for (const channel of chunk.samples) {
-				channel.reverse();
+			for (;;) {
+				const chunk = await output.read(CHUNK_FRAMES);
+				const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+				if (chunkFrames === 0) break;
+				await buffer.write(chunk.samples, sr, bd);
+				if (chunkFrames < CHUNK_FRAMES) break;
 			}
-
-			await buffer.append(chunk.samples);
-			remaining = offset;
+		} finally {
+			await output.close();
 		}
-
-		await this.spareBuffer.close();
-		this.spareBuffer = undefined;
 	}
 }
 

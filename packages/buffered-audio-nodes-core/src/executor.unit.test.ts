@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { ChunkBuffer } from "./buffer";
+import type { ChunkBuffer } from "./chunk-buffer";
 import { pack, validateGraphDefinition } from "./graph-format";
 import type { AudioChunk } from "./node";
 import type { SourceMetadata } from "./source";

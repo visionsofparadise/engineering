@@ -13,7 +13,7 @@ import { IntegratedLufsAccumulator } from "@e9g/buffered-audio-nodes-utils";
  *
  * Walk granularity matches the rest of the loudness-shaper /
  * loudness-normalize sub-system (`44_100` frames per chunk yielded by
- * `ChunkBuffer.iterate`).
+ * sequential `ChunkBuffer.read` calls).
  */
 
 /**
@@ -40,6 +40,9 @@ const CHUNK_FRAMES = 44_100;
  * gating fails). The expander's stream class treats this as a
  * pass-through bail signal — there is no defined linear-shift target
  * when the source has no measurable loudness.
+ *
+ * Rewinds the buffer's read cursor at entry — this is the first reader
+ * after `_process` begins, so cursor position is defensive.
  */
 export async function measureSourceLufs(buffer: ChunkBuffer, sampleRate: number): Promise<number> {
 	const frames = buffer.frames;
@@ -49,12 +52,17 @@ export async function measureSourceLufs(buffer: ChunkBuffer, sampleRate: number)
 
 	const accumulator = new IntegratedLufsAccumulator(sampleRate, channelCount);
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+	await buffer.reset();
+
+	for (;;) {
+		const chunk = await buffer.read(CHUNK_FRAMES);
 		const chunkFrames = chunk.samples[0]?.length ?? 0;
 
-		if (chunkFrames === 0) continue;
+		if (chunkFrames === 0) break;
 
 		accumulator.push(chunk.samples, chunkFrames);
+
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
 
 	return accumulator.finalize();

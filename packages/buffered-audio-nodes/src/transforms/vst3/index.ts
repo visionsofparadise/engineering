@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type StreamContext, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
-import { processWholeFileThroughVstHost, spawnVstHost, writeStagesJson, type VstHostHandle, type VstStage } from "./utils/process";
+import { processStreamingThroughVstHost, spawnVstHost, writeStagesJson, type VstHostHandle, type VstStage } from "./utils/process";
 
 export const stageSchema = z.object({
 	pluginPath: z
@@ -61,10 +61,21 @@ export class Vst3PassthroughStream<P extends Vst3Properties = Vst3Properties> ex
 /**
  * Whole-file VST3 chain stream. The framework drives `_process` exactly once
  * (after the upstream EOF flushes the accumulated buffer at `bufferSize:
- * WHOLE_FILE`). We hand the entire buffer to a `vst-host` subprocess that
+ * WHOLE_FILE`). The buffer is streamed through a `vst-host` subprocess that
  * runs Pedalboard's offline mode (`reset=True`) over the configured chain;
  * Pedalboard handles plugin delay compensation internally so the returned
  * audio is sample-aligned with the input — no leading silence, no tail loss.
+ *
+ * Memory discipline: although `bufferSize: WHOLE_FILE` schedules the
+ * `_process` call after EOF, the JS-side memory cost is bounded.
+ * `processStreamingThroughVstHost` drains the buffer to subprocess stdin in
+ * `CHUNK_FRAMES`-sized chunks, then `clear()`s the buffer (Pedalboard's
+ * offline mode has captured the full input internally by then), then drains
+ * subprocess stdout chunk-by-chunk back into the SAME buffer. No temp
+ * ChunkBuffer, no stream-copy phase. Disk usage stays at 1× source size.
+ * The subprocess holds the full interleaved input in its own RAM
+ * (Pedalboard's offline-mode constraint), but that's not part of the Node
+ * heap.
  */
 export class Vst3Stream<P extends Vst3Properties = Vst3Properties> extends BufferedTransformStream<P> {
 	private streamContext?: StreamContext;
@@ -86,21 +97,11 @@ export class Vst3Stream<P extends Vst3Properties = Vst3Properties> extends Buffe
 		if (!this.streamContext) throw new Error("Vst3Stream._process called before setup()");
 		if (!this.stagesJsonPath) throw new Error("Vst3Stream._process called without a stages JSON file");
 
-		const frames = buffer.frames;
-
-		if (frames === 0) return;
+		if (buffer.frames === 0) return;
 
 		const channels = buffer.channels;
 		const sampleRate = this.sampleRate ?? 44100;
-
-		const chunk = await buffer.read(0, frames);
-		const inputSamples = chunk.samples;
-
-		const channelArrays: Array<Float32Array> = [];
-
-		for (let ch = 0; ch < channels; ch++) {
-			channelArrays.push(inputSamples[ch] ?? new Float32Array(frames));
-		}
+		const bd = buffer.bitDepth;
 
 		const args: Array<string> = [
 			...(this.properties.extraArgs ?? []),
@@ -122,10 +123,14 @@ export class Vst3Stream<P extends Vst3Properties = Vst3Properties> extends Buffe
 			throw error;
 		}
 
-		const output = await processWholeFileThroughVstHost(handle, channelArrays, frames, channels);
-
-		await buffer.truncate(0);
-		await buffer.append(output);
+		// vst-host's Pedalboard-offline protocol needs the full interleaved
+		// input on stdin before any output is produced (whole-chain plugin
+		// delay compensation). `processStreamingThroughVstHost` drains
+		// `buffer` to stdin chunk-by-chunk, closes stdin, clears the buffer
+		// (input is now captured inside the subprocess), then drains stdout
+		// chunk-by-chunk back into the same `buffer`. In-place — no temp
+		// ChunkBuffer.
+		await processStreamingThroughVstHost(handle, buffer, channels, sampleRate, bd);
 	}
 
 	override async _teardown(): Promise<void> {

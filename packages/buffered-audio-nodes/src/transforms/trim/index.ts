@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { BufferedTransformStream, ChunkBuffer, TransformNode, WHOLE_FILE, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { findFirstAbove, findLastAbove } from "./utils/silence";
+
+const CHUNK_FRAMES = 44100;
 
 export const schema = z.object({
 	threshold: z.number().min(0).max(1).multipleOf(0.001).default(0.001).describe("Threshold"),
@@ -15,21 +17,45 @@ export interface TrimProperties extends z.infer<typeof schema>, TransformNodePro
 export class TrimStream extends BufferedTransformStream<TrimProperties> {
 	override async _process(buffer: ChunkBuffer): Promise<void> {
 		const frames = buffer.frames;
-		const allAudio = await buffer.read(0, frames);
-		const channels = allAudio.samples.length;
+		const channels = buffer.channels;
 
 		if (channels === 0 || frames === 0) return;
 
 		const threshold = this.properties.threshold;
-		const marginSeconds = this.properties.margin;
-		const marginFrames = Math.round(marginSeconds * (this.sampleRate ?? 44100));
+		const sr = buffer.sampleRate ?? 44100;
+		const bd = buffer.bitDepth;
+		const marginFrames = Math.round(this.properties.margin * sr);
 		const trimStart = this.properties.start;
 		const trimEnd = this.properties.end;
 
-		const firstAbove = findFirstAbove(allAudio.samples, frames, threshold);
+		// Pass 1 — scan forward, tracking first/last absolute frame indices above threshold.
+		await buffer.reset();
+		let firstAbove = frames;
+		let lastAbove = -1;
+		let scanOffset = 0;
+
+		for (;;) {
+			const chunk = await buffer.read(CHUNK_FRAMES);
+			const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+			if (chunkFrames === 0) break;
+
+			const localFirst = findFirstAbove(chunk.samples, chunkFrames, threshold);
+
+			if (localFirst < chunkFrames) {
+				const abs = scanOffset + localFirst;
+
+				if (abs < firstAbove) firstAbove = abs;
+				lastAbove = Math.max(lastAbove, scanOffset + findLastAbove(chunk.samples, chunkFrames, threshold));
+			}
+
+			scanOffset += chunkFrames;
+			if (chunkFrames < CHUNK_FRAMES) break;
+		}
 
 		if (firstAbove >= frames) {
-			await buffer.truncate(0);
+			// Nothing above threshold — drop everything.
+			await buffer.clear();
 
 			return;
 		}
@@ -42,29 +68,74 @@ export class TrimStream extends BufferedTransformStream<TrimProperties> {
 		}
 
 		if (trimEnd) {
-			endFrame = findLastAbove(allAudio.samples, frames, threshold) + 1;
-			endFrame = Math.min(frames, endFrame + marginFrames);
+			endFrame = Math.min(frames, lastAbove + 1 + marginFrames);
 		}
 
-		if (startFrame >= endFrame) return;
+		if (startFrame >= endFrame) {
+			await buffer.clear();
+
+			return;
+		}
+
 		if (startFrame === 0 && endFrame === frames) return;
 
-		const trimmedLength = endFrame - startFrame;
-		const trimmed: Array<Float32Array> = [];
+		// Pass 2 — copy the keep region into a output buffer, then swap.
+		const output = new ChunkBuffer();
 
-		for (let ch = 0; ch < channels; ch++) {
-			const channel = allAudio.samples[ch];
+		try {
+			await buffer.reset();
+			let copyOffset = 0;
 
-			if (!channel) {
-				trimmed.push(new Float32Array(trimmedLength));
-				continue;
+			for (;;) {
+				const chunk = await buffer.read(CHUNK_FRAMES);
+				const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+				if (chunkFrames === 0) break;
+
+				const chunkStart = copyOffset;
+				const chunkEnd = copyOffset + chunkFrames;
+				const overlapStart = Math.max(chunkStart, startFrame);
+				const overlapEnd = Math.min(chunkEnd, endFrame);
+
+				if (overlapEnd > overlapStart) {
+					const sliceStart = overlapStart - chunkStart;
+					const sliceEnd = overlapEnd - chunkStart;
+
+					if (sliceStart === 0 && sliceEnd === chunkFrames) {
+						await output.write(chunk.samples, sr, bd);
+					} else {
+						const sliced: Array<Float32Array> = [];
+
+						for (let ch = 0; ch < channels; ch++) {
+							const source = chunk.samples[ch];
+
+							if (source) sliced.push(source.subarray(sliceStart, sliceEnd));
+							else sliced.push(new Float32Array(sliceEnd - sliceStart));
+						}
+
+						await output.write(sliced, sr, bd);
+					}
+				}
+
+				copyOffset = chunkEnd;
+				if (copyOffset >= endFrame) break;
+				if (chunkFrames < CHUNK_FRAMES) break;
 			}
 
-			trimmed.push(channel.subarray(startFrame, endFrame));
-		}
+			await buffer.clear();
+			await output.reset();
 
-		await buffer.truncate(0);
-		await buffer.append(trimmed);
+			for (;;) {
+				const chunk = await output.read(CHUNK_FRAMES);
+				const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+				if (chunkFrames === 0) break;
+				await buffer.write(chunk.samples, sr, bd);
+				if (chunkFrames < CHUNK_FRAMES) break;
+			}
+		} finally {
+			await output.close();
+		}
 	}
 }
 

@@ -1,4 +1,4 @@
-import { MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { LoudnessAccumulator, TruePeakAccumulator, linearToDb } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
 import { OVERSAMPLE_FACTOR, iterateForTargets } from "./iterate";
@@ -8,13 +8,14 @@ const DURATION_SECONDS = 8;
 const FRAME_COUNT = SAMPLE_RATE * DURATION_SECONDS;
 
 /**
- * Wrap per-channel synthetic arrays in a `MemoryChunkBuffer`. Mirrors
+ * Wrap per-channel synthetic arrays in a `ChunkBuffer`. Mirrors
  * the helper from `loudness-expander/utils/iterate.unit.test.ts`.
  */
-async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<MemoryChunkBuffer> {
-	const buffer = new MemoryChunkBuffer(Infinity, channels.length);
+async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<ChunkBuffer> {
+	const buffer = new ChunkBuffer();
 
-	await buffer.append(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.flushWrites();
 
 	return buffer;
 }
@@ -120,7 +121,7 @@ describe("iterateForTargets", () => {
 		expect(result.converged).toBe(true);
 		expect(result.attempts.length).toBeLessThanOrEqual(10);
 		// 4×-upsampled smoothed gain envelope, disk-backed
-		// (`FileChunkBuffer` per Phase 3 of
+		// (`ChunkBuffer` per Phase 3 of
 		// `plan-loudness-target-stream-caching`). `.frames` replaces
 		// `.length` from the pre-Phase-3 `Float32Array` shape.
 		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
@@ -691,9 +692,10 @@ describe("iterateForTargets", () => {
 			// `isFinal` flush). Use a manual scan with summary asserts
 			// (rather than per-sample `expect()`) so the test runs in
 			// seconds, not minutes. Read the entire envelope into a flat
-			// array once at the top — the disk-backed `FileChunkBuffer`
-			// supports `read(0, frames)` which returns one allocation.
-			const envelopeChunk = await result.bestSmoothedEnvelopeBuffer.read(0, result.bestSmoothedEnvelopeBuffer.frames);
+			// array once at the top — `reset()` then `read(frames)`
+			// returns one allocation covering the whole buffer.
+			await result.bestSmoothedEnvelopeBuffer.reset();
+			const envelopeChunk = await result.bestSmoothedEnvelopeBuffer.read(result.bestSmoothedEnvelopeBuffer.frames);
 			const envelope = envelopeChunk.samples[0] ?? new Float32Array(0);
 
 			expect(envelope.length).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);

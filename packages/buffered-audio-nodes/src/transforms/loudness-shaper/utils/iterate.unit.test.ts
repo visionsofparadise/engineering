@@ -1,4 +1,4 @@
-import { MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { IntegratedLufsAccumulator } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
 import { type CurveParams } from "./curve";
@@ -9,17 +9,18 @@ const DURATION_SECONDS = 5;
 const FRAME_COUNT = SAMPLE_RATE * DURATION_SECONDS;
 
 /**
- * Wrap per-channel synthetic arrays in a `MemoryChunkBuffer` so the
- * streaming `iterateForTarget` signature can consume them without the
- * callers materialising a whole-buffer copy. Returns a fresh buffer
- * each call — buffers are stateful (the `iterate` cursor walks from 0
- * each call, so multiple iterations are safe, but the buffer should
- * not be shared across tests).
+ * Wrap per-channel synthetic arrays in a `ChunkBuffer` so the streaming
+ * `iterateForTarget` signature can consume them without the callers
+ * materialising a whole-buffer copy. Returns a fresh buffer each call —
+ * buffers are stateful (`iterateForTarget` rewinds the read cursor via
+ * `buffer.reset()` at the start of each attempt, so multiple iterations
+ * are safe, but the buffer should not be shared across tests).
  */
-async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<MemoryChunkBuffer> {
-	const buffer = new MemoryChunkBuffer(Infinity, channels.length);
+async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<ChunkBuffer> {
+	const buffer = new ChunkBuffer();
 
-	await buffer.append(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.flushWrites();
 
 	return buffer;
 }

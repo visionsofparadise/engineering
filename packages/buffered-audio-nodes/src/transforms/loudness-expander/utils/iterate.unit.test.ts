@@ -1,4 +1,4 @@
-import { MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { IntegratedLufsAccumulator } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
 import { computeLinkedDetection } from "./detect";
@@ -10,14 +10,15 @@ const DURATION_SECONDS = 4;
 const FRAME_COUNT = SAMPLE_RATE * DURATION_SECONDS;
 
 /**
- * Wrap per-channel synthetic arrays in a `MemoryChunkBuffer` so the
- * streaming `iterateForTarget` signature can consume them. Returns a
- * fresh buffer each call.
+ * Wrap per-channel synthetic arrays in a `ChunkBuffer` so the streaming
+ * `iterateForTarget` signature can consume them. Returns a fresh buffer
+ * each call.
  */
-async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<MemoryChunkBuffer> {
-	const buffer = new MemoryChunkBuffer(Infinity, channels.length);
+async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<ChunkBuffer> {
+	const buffer = new ChunkBuffer();
 
-	await buffer.append(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.flushWrites();
 
 	return buffer;
 }

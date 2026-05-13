@@ -1,5 +1,4 @@
-import type { ChunkBuffer } from "./buffer";
-import { FileChunkBuffer } from "./buffer/file";
+import { ChunkBuffer } from "./chunk-buffer";
 import { BufferedAudioNode, type AudioChunk, type BufferedAudioNodeProperties, type StreamContext } from "./node";
 import { BufferedStream } from "./stream";
 import { TargetNode } from "./target";
@@ -26,7 +25,6 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 
 	protected streamChunkSize?: number;
 	private sourceTotalFrames?: number;
-	private memoryLimit?: number;
 
 	constructor(properties: P) {
 		super(properties);
@@ -50,7 +48,6 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 
 	setup(input: ReadableStream<AudioChunk>, context: StreamContext): Promise<ReadableStream<AudioChunk>> {
 		this.sourceTotalFrames = context.durationFrames;
-		this.memoryLimit = context.memoryLimit;
 
 		return this._setup(input, context);
 	}
@@ -78,9 +75,7 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 
 		this.inferredChunkSize ??= chunkFrames;
 
-		const channels = chunk.samples.length;
-
-		this.chunkBuffer ??= new FileChunkBuffer(this.bufferSize, channels, this.memoryLimit);
+		this.chunkBuffer ??= new ChunkBuffer();
 
 		const samplesIn = chunkFrames;
 		const start = performance.now();
@@ -182,6 +177,11 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 		const samplesBeforeProcess = this.chunkBuffer.frames;
 		const start = performance.now();
 
+		// Flush so reads inside `_process` see all the data the framework just
+		// wrote via `_buffer`. ChunkBuffer reads pull from the temp file; bytes
+		// sitting in the writer's `highWaterMark` cache aren't visible until
+		// the writer is ended.
+		await this.chunkBuffer.flushWrites();
 		await this._process(this.chunkBuffer);
 		await this.emitBuffer(controller);
 
@@ -192,9 +192,30 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 	private async emitBuffer(controller: TransformStreamDefaultController<AudioChunk>): Promise<void> {
 		if (!this.chunkBuffer) return;
 
-		const emitSize = this.bufferSize === 0 ? this.chunkBuffer.frames : this.outputChunkSize;
+		const buffer = this.chunkBuffer;
+		const totalFrames = buffer.frames;
+		const emitSize = this.bufferSize === 0 ? totalFrames : this.outputChunkSize;
+		const channels = buffer.channels;
+		const wantsOverlap = this.overlap > 0 && this.bufferSize !== WHOLE_FILE;
+		const overlap = this.overlap;
+		const canPreserveOverlap = wantsOverlap && totalFrames > overlap;
 
-		for await (const chunk of this.chunkBuffer.iterate(emitSize)) {
+		// Sequential read API has no positional re-read. To preserve the
+		// trailing `overlap` frames as the next cycle's seed, track them in
+		// per-channel scratch as we walk past them during the emit loop.
+		const overlapScratch: Array<Float32Array> | undefined = canPreserveOverlap
+			? Array.from({ length: channels }, () => new Float32Array(overlap))
+			: undefined;
+		let overlapFilled = 0;
+
+		await buffer.reset();
+
+		for (;;) {
+			const chunk = await buffer.read(emitSize);
+			const chunkFrames = chunk.samples[0]?.length ?? 0;
+
+			if (chunkFrames === 0) break;
+
 			const adjusted: AudioChunk = {
 				samples: chunk.samples,
 				offset: this.bufferOffset + chunk.offset,
@@ -204,32 +225,62 @@ export class BufferedTransformStream<P extends TransformNodeProperties = Transfo
 
 			const result = await this._unbuffer(adjusted);
 
-			if (result) {
-				controller.enqueue(result);
+			if (result) controller.enqueue(result);
+
+			if (overlapScratch) {
+				if (chunkFrames >= overlap) {
+					for (let ch = 0; ch < channels; ch++) {
+						const dest = overlapScratch[ch];
+						const src = chunk.samples[ch];
+
+						if (dest && src) dest.set(src.subarray(chunkFrames - overlap, chunkFrames), 0);
+					}
+
+					overlapFilled = overlap;
+				} else {
+					const shift = Math.max(0, overlapFilled + chunkFrames - overlap);
+
+					for (let ch = 0; ch < channels; ch++) {
+						const dest = overlapScratch[ch];
+
+						if (!dest) continue;
+						if (shift > 0) dest.copyWithin(0, shift, overlapFilled);
+						const src = chunk.samples[ch];
+
+						if (src) dest.set(src.subarray(0, chunkFrames), overlapFilled - shift);
+					}
+
+					overlapFilled = overlapFilled - shift + chunkFrames;
+				}
 			}
+
+			if (chunkFrames < emitSize) break;
 		}
 
-		this.bufferOffset += this.chunkBuffer.frames;
+		this.bufferOffset += totalFrames;
 
-		if (this.overlap > 0 && this.bufferSize !== WHOLE_FILE) {
-			const overlapStart = this.chunkBuffer.frames - this.overlap;
-
-			if (overlapStart > 0) {
-				const overlapChunk = await this.chunkBuffer.read(overlapStart, this.overlap);
-
-				await this.chunkBuffer.reset();
-
-				await this.chunkBuffer.append(overlapChunk.samples, overlapChunk.sampleRate, overlapChunk.bitDepth);
-
-				this.bufferOffset -= this.overlap;
-			}
+		if (canPreserveOverlap && overlapScratch) {
+			await buffer.clear();
+			await buffer.write(overlapScratch, buffer.sampleRate, buffer.bitDepth);
+			this.bufferOffset -= overlap;
 		} else {
-			await this.chunkBuffer.reset();
+			await buffer.clear();
+		}
+	}
+
+	override async teardown(): Promise<void> {
+		try {
+			await super.teardown();
+		} finally {
+			if (this.chunkBuffer) {
+				await this.chunkBuffer.close();
+				this.chunkBuffer = undefined;
+			}
 		}
 	}
 
 	_buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> | void {
-		return buffer.append(chunk.samples, chunk.sampleRate, chunk.bitDepth);
+		return buffer.write(chunk.samples, chunk.sampleRate, chunk.bitDepth);
 	}
 
 	_process(_buffer: ChunkBuffer): Promise<void> | void {

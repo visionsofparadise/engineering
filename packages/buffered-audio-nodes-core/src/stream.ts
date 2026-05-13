@@ -15,6 +15,10 @@ export abstract class BufferedStream<P extends BufferedAudioNodeProperties = Buf
 		this.properties = properties;
 	}
 
+	async teardown(): Promise<void> {
+		await this._teardown();
+	}
+
 	_teardown(): Promise<void> | void {
 		return;
 	}

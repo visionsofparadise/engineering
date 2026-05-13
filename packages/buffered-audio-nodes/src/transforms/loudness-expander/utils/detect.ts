@@ -17,7 +17,7 @@ import type { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
  *
  * Walk granularity matches the rest of the loudness-shaper /
  * loudness-normalize sub-system (`44_100` frames per chunk yielded by
- * `ChunkBuffer.iterate`).
+ * sequential `ChunkBuffer.read` calls).
  */
 
 /**
@@ -36,13 +36,16 @@ export const CHUNK_FRAMES = 44_100;
  *
  * Pre-allocates a single `Float32Array(buffer.frames)` and writes into
  * it via a running offset (each chunk's frames are appended at the
- * absolute source-frame position the `iterate(CHUNK_FRAMES)` walk
+ * absolute source-frame position the `read(CHUNK_FRAMES)` walk
  * produced). Returns immediately for empty buffers.
  *
  * Per-channel max is computed via a plain inner loop (`let max = 0;
  * if (Math.abs(s) > max) max = Math.abs(s)`) rather than
  * `Math.max(...samples)` spread — the spread is stack-bounded for
  * high channel counts and slower at the inner loop's hot path.
+ *
+ * Rewinds the buffer's read cursor at entry so this pass starts at
+ * frame 0 regardless of where prior reads left the cursor.
  */
 export async function computeLinkedDetection(buffer: ChunkBuffer): Promise<Float32Array> {
 	const frames = buffer.frames;
@@ -52,13 +55,16 @@ export async function computeLinkedDetection(buffer: ChunkBuffer): Promise<Float
 
 	if (frames === 0 || channelCount === 0) return result;
 
+	await buffer.reset();
+
 	let writeOffset = 0;
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+	for (;;) {
+		const chunk = await buffer.read(CHUNK_FRAMES);
 		const channels = chunk.samples;
 		const chunkFrames = channels[0]?.length ?? 0;
 
-		if (chunkFrames === 0) continue;
+		if (chunkFrames === 0) break;
 
 		for (let frameIndex = 0; frameIndex < chunkFrames; frameIndex++) {
 			let max = 0;
@@ -74,6 +80,8 @@ export async function computeLinkedDetection(buffer: ChunkBuffer): Promise<Float
 		}
 
 		writeOffset += chunkFrames;
+
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
 
 	return result;

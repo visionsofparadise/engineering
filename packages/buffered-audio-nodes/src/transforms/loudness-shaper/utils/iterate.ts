@@ -4,12 +4,14 @@
  *
  * Per design-loudness-shaper §"Iteration to hit target loudness". Per
  * design-transforms §"Memory discipline — never load the whole source
- * as a Float32Array": the source is streamed via
- * `buffer.iterate(CHUNK_FRAMES)` and never materialised as a full-
+ * as a Float32Array": the source is streamed via a sequential
+ * `buffer.read(CHUNK_FRAMES)` loop and never materialised as a full-
  * source-sized array at this level.
  *
  * Pipeline per attempt:
- *   1. Stream the source via `buffer.iterate(CHUNK_FRAMES)`. Per chunk:
+ *   1. Stream the source via a sequential `buffer.read(CHUNK_FRAMES)`
+ *      loop (rewinding the read cursor with `buffer.reset()` at entry).
+ *      Per chunk:
  *      apply the curve at base rate via `applyCurveBaseRateChunk` (per-
  *      sample direct evaluation of `f(x, boost, posParams, negParams)`),
  *      push the transformed chunk into a fresh
@@ -205,6 +207,10 @@ interface MeasureAttemptArgs {
  * Per-chunk transformed scratch (`chunkFrames × channelCount × 4 bytes`)
  * is the only allocation. Never holds the whole transformed source in
  * memory — chunks are pushed into the LUFS accumulator and discarded.
+ *
+ * Rewinds the buffer's read cursor at entry so each attempt walks the
+ * source from frame 0; the curve has no temporal state across chunks so
+ * the per-chunk apply is self-contained.
  */
 async function measureAttemptLufs(args: MeasureAttemptArgs): Promise<number> {
 	const { buffer, sampleRate, channelCount, frames, boost, posParams, negParams } = args;
@@ -213,10 +219,13 @@ async function measureAttemptLufs(args: MeasureAttemptArgs): Promise<number> {
 
 	const accumulator = new IntegratedLufsAccumulator(sampleRate, channelCount);
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+	await buffer.reset();
+
+	for (;;) {
+		const chunk = await buffer.read(CHUNK_FRAMES);
 		const chunkFrames = chunk.samples[0]?.length ?? 0;
 
-		if (chunkFrames === 0) continue;
+		if (chunkFrames === 0) break;
 
 		const transformed = applyCurveBaseRateChunk({
 			chunkSamples: chunk.samples,
@@ -226,6 +235,8 @@ async function measureAttemptLufs(args: MeasureAttemptArgs): Promise<number> {
 		});
 
 		accumulator.push(transformed, chunkFrames);
+
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
 
 	return accumulator.finalize();

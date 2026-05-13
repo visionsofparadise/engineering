@@ -31,12 +31,20 @@ export async function measureIntegratedLufs(buffer: ChunkBuffer, sampleRate: num
 
 	const accumulator = new IntegratedLufsAccumulator(sampleRate, channelCount);
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+	// Rewind read cursor — defensive; the framework leaves the cursor at end-of-buffer
+	// after `_process` completes, and this measurement is the first reader. Mirrors the
+	// pattern in loudness-target/utils/measurement.ts.
+	await buffer.reset();
+
+	for (;;) {
+		const chunk = await buffer.read(CHUNK_FRAMES);
 		const chunkFrames = chunk.samples[0]?.length ?? 0;
 
-		if (chunkFrames === 0) continue;
+		if (chunkFrames === 0) break;
 
 		accumulator.push(chunk.samples, chunkFrames);
+
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
 
 	return accumulator.finalize();

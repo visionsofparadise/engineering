@@ -101,11 +101,11 @@ Finalize after the last chunk has been written. Flush buffers, close file handle
 
 ### `_buffer(chunk, buffer)`
 
-Accumulate incoming audio into the `ChunkBuffer`. Default implementation calls `buffer.append(chunk.samples, ...)`. Override to pre-process or filter chunks before buffering.
+Accumulate incoming audio into the `ChunkBuffer`. Default implementation calls `buffer.write(chunk.samples, chunk.sampleRate, chunk.bitDepth)`. Override to pre-process or filter chunks before buffering.
 
 ### `_process(buffer)`
 
-Called when the buffer reaches the `bufferSize` threshold (or on flush for `WHOLE_FILE` mode). Perform in-place transformations on the buffer contents. Not called when `bufferSize` is `0`.
+Called when the buffer reaches the `bufferSize` threshold (or on flush for `WHOLE_FILE` mode). Read the buffer sequentially, transform, and write the result back. Not called when `bufferSize` is `0`.
 
 ### `_unbuffer(chunk)`
 
@@ -127,21 +127,54 @@ Cleanup after render completes. Override to close file handles, free native reso
 | `N` | Block mode. Accumulate `N` frames, call `_process`, then emit. |
 | `WHOLE_FILE` | Buffer all audio before processing. `_process` runs once on flush with the complete file. |
 
-Example transform that processes in 4096-frame blocks:
+`ChunkBuffer` exposes only sequential access. Read with `buffer.read(N)` in a loop until the returned chunk is shorter than `N` (end-of-buffer); write with `buffer.write(samples, sampleRate, bitDepth)`. There is no offset-based random access — see the [ChunkBuffer](#chunkbuffer) section below.
+
+Example transform that processes in 4096-frame blocks using the two-buffer pattern (stream the input into a temp buffer applying the transform, then swap the temp back into the framework's buffer):
 
 ```ts
+const CHUNK_FRAMES = 4096;
+
 class MyTransformStream extends BufferedTransformStream {
 	constructor(properties: TransformNodeProperties) {
 		super({ ...properties, bufferSize: 4096 });
 	}
 
 	override async _process(buffer: ChunkBuffer): Promise<void> {
-		const chunk = await buffer.read(0, buffer.frames);
-		const processed = doSomething(chunk.samples);
-		await buffer.write(0, processed);
+		const sr = buffer.sampleRate;
+		const bd = buffer.bitDepth;
+		const output = new ChunkBuffer();
+
+		try {
+			for (;;) {
+				const chunk = await buffer.read(CHUNK_FRAMES);
+				const got = chunk.samples[0]?.length ?? 0;
+
+				if (got === 0) break;
+				const processed = doSomething(chunk.samples);
+
+				await output.write(processed, sr, bd);
+				if (got < CHUNK_FRAMES) break;
+			}
+
+			await buffer.clear();
+			await output.reset();
+
+			for (;;) {
+				const chunk = await output.read(CHUNK_FRAMES);
+				const got = chunk.samples[0]?.length ?? 0;
+
+				if (got === 0) break;
+				await buffer.write(chunk.samples, sr, bd);
+				if (got < CHUNK_FRAMES) break;
+			}
+		} finally {
+			await output.close();
+		}
 	}
 }
 ```
+
+For simple in-place transforms where `bufferSize` is small and bounded (so a single `buffer.read(buffer.frames)` is safe), drop the temp buffer: read everything in one call, process it, `buffer.clear()`, then `buffer.write(...)` the result. The two-buffer pattern is the general case — use it for transforms whose output differs in length, position, or rate from the input (pad/trim/reverse, ML segment streaming), or wherever a single bounded read isn't appropriate.
 
 ## Graph Format (BAG)
 
@@ -208,17 +241,29 @@ const definition = validateGraphDefinition(JSON.parse(raw));
 
 ## ChunkBuffer
 
-`ChunkBuffer` is the abstract base for audio sample storage used internally by `BufferedTransformStream`. Two implementations are provided:
+`ChunkBuffer` is the audio sample storage used internally by `BufferedTransformStream` and constructible by transforms that need their own scratch space. A single concrete class — data lives in an in-memory write batch until it exceeds a 10 MB threshold, at which point a temp file is lazily created and the batch flushes. Buffers whose total lifetime stays under 10 MB never touch disk; large buffers (e.g. `WHOLE_FILE` mode) auto-spill so memory stays bounded. The temp file is unlinked on `close()`.
 
-### MemoryChunkBuffer
+### Sequential-only API
 
-Stores all samples in memory using `Float32Array` per channel. Suitable for small to medium buffers.
+All access is sequential through internal cursors — there is no offset-based random access:
 
-### FileChunkBuffer
+| Method | Behavior |
+|---|---|
+| `read(n): Promise<AudioChunk>` | Pull the next N frames from the forward read cursor. Returns a short chunk (possibly zero-length) at end of buffer. |
+| `readReverse(n): Promise<AudioChunk>` | Same, advancing backward from the tail. |
+| `write(samples, sampleRate?, bitDepth?): Promise<void>` | Append samples at the tail via the internal writer's batch. Capture or validate sample-rate/bit-depth on the first call. |
+| `writeReverse(samples, sampleRate?, bitDepth?): Promise<void>` | Prepend samples at the head. |
+| `flushWrites(): Promise<void>` | Force the in-flight write batch to disk so subsequent reads see it. |
+| `reset(): Promise<void>` | Rewind cursors to their starting positions; preserve data. |
+| `clear(): Promise<void>` | Drop all data and reset cursors. |
+| `setSampleRate(rate)` / `setBitDepth(depth)` | Override the captured format (e.g. for resample / dither transforms). |
+| `close(): Promise<void>` | Release the temp file (if any) and reset state. |
 
-Starts in memory and automatically flushes to a temporary file when the buffer exceeds a size threshold (derived from `memoryLimit`, default ~10 MB). Interleaves channels into a single binary file for sequential I/O. Cleans up temp files on `close()` or `reset()`.
+`read(N)` returns an `AudioChunk` whose `samples[0].length === N` when N frames are available; at end of buffer the returned chunk has fewer (possibly zero) frames. Callers loop until the short chunk and then break.
 
-The transform stream uses `FileChunkBuffer` by default, so large files (e.g. `WHOLE_FILE` mode) do not exhaust memory.
+Concurrent read + write on the same buffer is allowed under the invariant that the read cursor leads the write cursor (callers maintain the invariant; the buffer does not enforce). Reads see disk plus already-flushed writes; in-flight write batches are invisible until `flushWrites()` or `close()`.
+
+The sequential-only contract eliminates the whole-source `Float32Array` antipattern at the API level — random-access reads are structurally impossible, so transforms cannot accidentally materialize an entire source in memory. Transforms that need to compose or rearrange audio allocate a separate temp `ChunkBuffer`, stream output into it, then `buffer.clear()` and stream the temp back (see the `_process` example above).
 
 ## Backpressure
 

@@ -3,11 +3,14 @@ import { readToBuffer } from "./read-to-buffer";
 import { readFile } from "node:fs/promises";
 import { WaveFile } from "wavefile";
 
-vi.mock("node:fs/promises", () => ({
-	readFile: vi.fn(),
-	open: vi.fn(),
-	unlink: vi.fn(),
-}));
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+
+	return {
+		...actual,
+		readFile: vi.fn(),
+	};
+});
 
 describe("readToBuffer", () => {
 	it("loads a mono WAV file into a ChunkBuffer", async () => {
@@ -33,7 +36,7 @@ describe("readToBuffer", () => {
 		expect(result.buffer.frames).toBe(numSamples);
 		expect(result.buffer.channels).toBe(1);
 
-		const chunk = await result.buffer.read(0, numSamples);
+		const chunk = await result.buffer.read(numSamples);
 		expect(chunk.samples).toHaveLength(1);
 		expect(chunk.samples[0]?.length).toBe(numSamples);
 
@@ -65,7 +68,7 @@ describe("readToBuffer", () => {
 		expect(result.buffer.frames).toBe(numSamples);
 		expect(result.buffer.channels).toBe(2);
 
-		const chunk = await result.buffer.read(0, numSamples);
+		const chunk = await result.buffer.read(numSamples);
 		expect(chunk.samples).toHaveLength(2);
 
 		await result.buffer.close();

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FileChunkBuffer, type StreamContext } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer, type StreamContext } from "@e9g/buffered-audio-nodes-core";
 import { schema, vst3, Vst3Node, Vst3PassthroughStream, Vst3Stream } from ".";
 
 const buildContext = (): StreamContext => ({
@@ -11,10 +11,11 @@ const buildContext = (): StreamContext => ({
 
 const dummyInput = (): ReadableStream => new ReadableStream({ start: (controller) => controller.close() });
 
-const populate = async (channels: Array<Float32Array>, sampleRate = 44100): Promise<FileChunkBuffer> => {
-	const buffer = new FileChunkBuffer(0, channels.length, 64 * 1024 * 1024);
+const populate = async (channels: Array<Float32Array>, sampleRate = 44100): Promise<ChunkBuffer> => {
+	const buffer = new ChunkBuffer();
 
-	await buffer.append(channels, sampleRate, 32);
+	await buffer.write(channels, sampleRate, 32);
+	await buffer.flushWrites();
 
 	return buffer;
 };
@@ -141,7 +142,7 @@ describe("Vst3Node bypass short-circuit", () => {
 
 		stream._process(buffer);
 
-		const after = await buffer.read(0, buffer.frames);
+		const after = await buffer.read(buffer.frames);
 
 		for (let ch = 0; ch < samples.length; ch++) {
 			const original = before[ch]!;

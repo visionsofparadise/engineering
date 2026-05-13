@@ -169,6 +169,20 @@ export class WriteStream extends BufferedTargetStream<WriteProperties> {
 		}
 	}
 
+	override async _teardown(): Promise<void> {
+		if (this.ffmpegProcess) {
+			this.ffmpegProcess.kill();
+			this.ffmpegProcess = undefined;
+			this.ffmpegStdin = undefined;
+			this.ffmpegDone = undefined;
+		}
+
+		if (this.fileHandle) {
+			await this.fileHandle.close().catch(() => undefined);
+			this.fileHandle = undefined;
+		}
+	}
+
 	private convertChunk(chunk: AudioChunk): Buffer {
 		const frames = chunk.samples[0]?.length ?? 0;
 		const channels = chunk.samples.length;

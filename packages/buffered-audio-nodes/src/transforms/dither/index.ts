@@ -16,7 +16,7 @@ export class DitherStream extends BufferedTransformStream<DitherProperties> {
 	private lastError: Array<number> = [];
 
 	override async _buffer(chunk: AudioChunk, buffer: ChunkBuffer): Promise<void> {
-		await buffer.append(chunk.samples, chunk.sampleRate, this.properties.bitDepth);
+		await buffer.write(chunk.samples, chunk.sampleRate, this.properties.bitDepth);
 	}
 
 	override _unbuffer(chunk: AudioChunk): AudioChunk {

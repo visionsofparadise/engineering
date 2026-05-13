@@ -96,7 +96,17 @@ export class DeepFilterNet3Stream extends BufferedTransformStream<DeepFilterNet3
 		const session = this.session;
 		const frames = buffer.frames;
 		const channels = buffer.channels;
-		const chunk = await buffer.read(0, frames);
+		const sr = buffer.sampleRate;
+		const bd = buffer.bitDepth;
+
+		if (frames === 0 || channels === 0) return;
+
+		// dfn3's bufferSize is DFN3_BUFFER_SIZE (~1 s blocks), so the buffer is
+		// small enough to pull in one read. The single-call `read(buffer.frames)`
+		// here is safe because of that bounded `bufferSize`, not because of any
+		// streaming property of `processDfnBlock`.
+		await buffer.reset();
+		const chunk = await buffer.read(frames);
 
 		// Lazy per-channel state allocation: framework hands us channel count via
 		// `buffer.channels`, derived from the first chunk in the chunkBuffer.
@@ -120,7 +130,10 @@ export class DeepFilterNet3Stream extends BufferedTransformStream<DeepFilterNet3
 			outputChannels.push(denoised);
 		}
 
-		await buffer.write(0, outputChannels);
+		// `reset()` only rewinds read cursors — to replace the buffer's contents
+		// we drop the existing data and write fresh.
+		await buffer.clear();
+		await buffer.write(outputChannels, sr, bd);
 	}
 
 	override _teardown(): void {

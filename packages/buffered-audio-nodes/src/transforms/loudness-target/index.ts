@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type FileChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
+import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
 import { Oversampler } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
 import { applyOversampledChunkFromCache } from "./utils/apply";
@@ -86,14 +86,14 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 	/**
 	 * 4×-upsampled peak-respecting smoothed gain envelope produced by
 	 * the winning iteration attempt, held as a disk-backed single-
-	 * channel `FileChunkBuffer` of size `frames * OVERSAMPLE_FACTOR`.
+	 * channel `ChunkBuffer` of size `frames * OVERSAMPLE_FACTOR`.
 	 * Per Phase 3 of `plan-loudness-target-stream-caching`, the
 	 * envelope is read chunk-by-chunk in `_unbuffer` rather than held
 	 * as a flat `Float32Array` — keeps RAM at ~10 MB regardless of
 	 * source length. `null` when the stream passes through (silent /
 	 * sub-block-length source).
 	 */
-	private winningSmoothedEnvelopeBuffer: FileChunkBuffer | null = null;
+	private winningSmoothedEnvelopeBuffer: ChunkBuffer | null = null;
 
 	/**
 	 * Body gain `B` chosen by 1D secant iteration on the LUFS error
@@ -135,7 +135,17 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 	 * `null` when the stream passes through (silent / sub-block-length
 	 * source — no iteration ran, no cache exists).
 	 */
-	private upsampledSourceCache: FileChunkBuffer | null = null;
+	private upsampledSourceCache: ChunkBuffer | null = null;
+
+	/**
+	 * Set to `true` by the first `_unbuffer` call so both
+	 * `upsampledSourceCache` and `winningSmoothedEnvelopeBuffer` have
+	 * their read cursors rewound exactly once. Both caches are
+	 * read-only in `_unbuffer` and consumed forward in chunk-cadence
+	 * lockstep with upstream chunks; this lazy-reset pattern keeps the
+	 * cursor management out of `_setup`.
+	 */
+	private unbufferCursorsReady = false;
 
 	/**
 	 * Per-channel downsampler instances allocated in `_process` and
@@ -494,15 +504,30 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			return chunk;
 		}
 
+		// Rewind both caches' read cursors on the first `_unbuffer`
+		// call. After iteration's `measureAttemptOutput` walks they
+		// are positioned at the end of the buffer; `_unbuffer` reads
+		// them forward in chunk-cadence lockstep with upstream chunks.
+		// Done lazily here rather than eagerly in `_setup` so the
+		// reset happens after `_process` (and its iteration) has
+		// finished and a stable cursor state exists.
+		if (!this.unbufferCursorsReady) {
+			await upsampledSourceCache.reset();
+			await envelopeBuffer.reset();
+			this.unbufferCursorsReady = true;
+		}
+
 		// Per Phase 3.5 of `plan-loudness-target-stream-caching`: read
 		// both the upsampled-source chunk AND the envelope chunk from
-		// their respective `FileChunkBuffer`s, then feed both into
+		// their respective `ChunkBuffer`s, then feed both into
 		// `applyOversampledChunkFromCache`. The envelope is single-
-		// channel; `samples[0]` is the chunk-aligned slice.
-		const upsampledOffset = chunk.offset * OVERSAMPLE_FACTOR;
+		// channel; `samples[0]` is the chunk-aligned slice. Sequential
+		// reads — cursors advance in lockstep with upstream chunk
+		// cadence. The framework guarantees forward chunk order;
+		// out-of-order arrivals would desync.
 		const upsampledLength = chunkFrames * OVERSAMPLE_FACTOR;
-		const upsampledChunk = await upsampledSourceCache.read(upsampledOffset, upsampledLength);
-		const envelopeChunk = await envelopeBuffer.read(upsampledOffset, upsampledLength);
+		const upsampledChunk = await upsampledSourceCache.read(upsampledLength);
+		const envelopeChunk = await envelopeBuffer.read(upsampledLength);
 		const envelopeSlice = envelopeChunk.samples[0];
 
 		if (envelopeSlice?.length !== upsampledLength) {

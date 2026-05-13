@@ -6,8 +6,9 @@
  * §"Smoothing — bidirectional IIR on the gain envelope", §"Pipeline
  * shape", and §"Memory at peak". Per design-transforms §"Memory
  * discipline — never load the whole source as a Float32Array": the
- * source itself is streamed via `buffer.iterate(CHUNK_FRAMES)` and never
- * materialised as a full-source-sized Float32Array at this level.
+ * source itself is streamed via a sequential
+ * `buffer.read(CHUNK_FRAMES)` loop and never materialised as a full-
+ * source-sized Float32Array at this level.
  *
  * Pipeline per attempt:
  *   1. Build a source-sized raw-gain envelope `gRawBuffer[i] = 1 +
@@ -21,7 +22,8 @@
  *      `sampleRate` (both constant across attempts), and each call to
  *      `applyBidirectional` is self-contained (stateless across
  *      invocations).
- *   3. Stream the source via `buffer.iterate(CHUNK_FRAMES)`. Per chunk:
+ *   3. Stream the source via a sequential `buffer.read(CHUNK_FRAMES)`
+ *      loop (rewinding with `buffer.reset()` at entry). Per chunk:
  *      apply the smoothed gain via `applySmoothedGainChunk` (slicing the
  *      envelope by `chunk.offset`), push the transformed chunk into a
  *      fresh `IntegratedLufsAccumulator`. Finalize → `outputLUFS` for
@@ -270,6 +272,9 @@ interface MeasureAttemptArgs {
  * is the only allocation at this level. Never holds the whole
  * transformed source in memory — chunks are pushed into the LUFS
  * accumulator and discarded.
+ *
+ * Rewinds the buffer's read cursor at entry so each attempt walks the
+ * source from frame 0 in lockstep with the smoothed-envelope slice math.
  */
 async function measureAttemptLufs(measureArgs: MeasureAttemptArgs): Promise<number> {
 	const { buffer, sampleRate, channelCount, frames, smoothed } = measureArgs;
@@ -278,10 +283,17 @@ async function measureAttemptLufs(measureArgs: MeasureAttemptArgs): Promise<numb
 
 	const accumulator = new IntegratedLufsAccumulator(sampleRate, channelCount);
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+	// Rewind read cursor — each attempt re-reads the source from frame 0.
+	// `chunk.offset` (set by `ChunkBuffer.read`) tracks the absolute
+	// source-frame position and drives the smoothed-envelope slice in
+	// `applySmoothedGainChunk`.
+	await buffer.reset();
+
+	for (;;) {
+		const chunk = await buffer.read(CHUNK_FRAMES);
 		const chunkFrames = chunk.samples[0]?.length ?? 0;
 
-		if (chunkFrames === 0) continue;
+		if (chunkFrames === 0) break;
 
 		const transformed = applySmoothedGainChunk({
 			chunkSamples: chunk.samples,
@@ -290,6 +302,8 @@ async function measureAttemptLufs(measureArgs: MeasureAttemptArgs): Promise<numb
 		});
 
 		accumulator.push(transformed, chunkFrames);
+
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
 
 	return accumulator.finalize();

@@ -42,7 +42,7 @@
  * upgrade lands.
  */
 
-import type { ChunkBuffer, FileChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer, reverseBuffer } from "@e9g/buffered-audio-nodes-core";
 import { BidirectionalIir, linearToDb, slidingWindowMax } from "@e9g/buffered-audio-nodes-utils";
 import { type Anchors, gainDbAt } from "./curve";
 
@@ -100,133 +100,94 @@ export function peakRespectingEnvelope(
 /**
  * Apply the backward HALF of the bidirectional IIR cascade over a
  * source `ChunkBuffer` (the forward-IIR output, in source / forward
- * sample order) into a destination `FileChunkBuffer`, in chunked /
- * disk-backed form.
- *
- * Disk-backed analogue of `BidirectionalIir.applyBackwardPassInPlace`
- * (see `packages/buffered-audio-nodes-utils/src/bidirectional-iir.ts`
- * `applyBackwardPassInPlace` at line 186 — the in-memory whole-array
- * reference this function replaces in the loudness-target iteration
- * path). Per `plan-loudness-target-stream-caching` Phase 3.1.
+ * sample order) into a destination `ChunkBuffer`.
  *
  * Implementation — "reverse twice + forward IIR" trick. The backward
  * IIR is mathematically equivalent to running the forward IIR over
  * the time-reversed signal and then time-reversing the result back.
- * This re-uses `BidirectionalIir.applyForwardPass` directly (no
- * duplicated IIR math). Per chunk in reverse-chunk order:
+ * Three streamed passes over the data:
  *
- *   1. Read the chunk from `sourceBuffer` at its forward offset.
- *   2. Reverse the chunk samples into a persistent scratch.
- *   3. Apply `applyForwardPass` over the reversed chunk, with state
- *      threaded across reverse iterations.
- *   4. Reverse the result back into a second persistent scratch.
- *   5. Write the forward-ordered result to `destBuffer` at the
- *      chunk's forward offset (`FileChunkBuffer.write` supports out-
- *      of-order writes — verified by reviewer reading
- *      `packages/buffered-audio-nodes-core/src/buffer/file/index.ts`
- *      `write` at lines 192-241).
- *
- * State continuity matches `applyBackwardPassInPlace`'s init rule:
- * the first reverse iteration seeds `state.value = reversed[0]`
- * (which is the last sample of the forward-ordered chunk, i.e.
- * the last sample of the entire buffer — matching the in-memory
- * init from `buffer[buffer.length - 1]`).
+ *   1. `reverseBuffer(sourceBuffer)` materialises a temp buffer
+ *      holding the source frames in reverse order.
+ *   2. Forward IIR (`applyForwardPass`) is applied chunk-by-chunk
+ *      over the reversed source into a second temp buffer. State
+ *      is seeded with the first sample of the reversed source — i.e.
+ *      the last sample of the original — matching
+ *      `applyBackwardPassInPlace`'s init rule.
+ *   3. `reverseBuffer` is applied to the IIR output, then streamed
+ *      into `destBuffer` so that destBuffer ends up holding the
+ *      backward-IIR output in natural forward order.
  *
  * Caller's responsibility:
- *   - `destBuffer.frames` must be either 0 (fresh / `truncate(0)`'d)
- *     or equal to `sourceBuffer.frames` (already populated from a
- *     previous run). Throws if neither holds.
- *   - When reusing a destination, `truncate(0)` it before this call
- *     so the previous contents do not bleed through; the writes here
- *     re-extend the file from offset 0 upward.
+ *   - `destBuffer` should be empty or freshly-cleared via `clear()`
+ *     before this call. The function appends to `destBuffer`; if it
+ *     already holds data, the new output lands after.
  *
  * @param sourceBuffer - Holds the forward-IIR output in forward
- *   sample order. Read-only here.
- * @param destBuffer - The smoothed-envelope destination. Written
- *   per-chunk in reverse-chunk order via `write(offset, samples)`.
+ *   sample order.
+ * @param destBuffer - The smoothed-envelope destination.
  * @param iir - The bidirectional IIR instance (uses
  *   `applyForwardPass` only — both halves share the same
  *   `alphaBidirectional`).
- * @param chunkSize - Reverse-iteration stride in samples (single-
+ * @param chunkSize - Iteration stride in samples (single-
  *   channel). Typically `CHUNK_FRAMES * OVERSAMPLE_FACTOR`.
  */
 export async function applyBackwardPassOverChunkBuffer(args: {
 	sourceBuffer: ChunkBuffer;
-	destBuffer: FileChunkBuffer;
+	destBuffer: ChunkBuffer;
 	iir: BidirectionalIir;
 	chunkSize: number;
 }): Promise<void> {
 	const { sourceBuffer, destBuffer, iir, chunkSize } = args;
 	const totalFrames = sourceBuffer.frames;
 
-	if (destBuffer.frames !== 0 && destBuffer.frames !== totalFrames) {
-		throw new Error(
-			`applyBackwardPassOverChunkBuffer: destBuffer.frames (${destBuffer.frames}) must be 0 or match sourceBuffer.frames (${totalFrames})`,
-		);
-	}
-
 	if (totalFrames === 0) return;
 	if (chunkSize <= 0) {
 		throw new Error(`applyBackwardPassOverChunkBuffer: chunkSize must be > 0 (got ${chunkSize})`);
 	}
 
-	// Persistent scratch buffers reused across all reverse iterations
-	// within this single call. Sized at `chunkSize` (the steady-state
-	// reverse stride); the trailing (forward-leading) short chunk uses
-	// `.subarray(0, length)` views into these.
-	const reversedScratch = new Float32Array(chunkSize);
-	const forwardOrderedScratch = new Float32Array(chunkSize);
+	const sr = sourceBuffer.sampleRate;
+	const bd = sourceBuffer.bitDepth;
 
-	const backwardState = { value: 0 };
-	let backwardSeeded = false;
+	// Phase 1: reverse the source into a temp buffer.
+	const reversedSource = await reverseBuffer(sourceBuffer);
 
-	// Walk in reverse-chunk order. The last chunk in forward order
-	// (which holds the buffer's final sample) is the first chunk we
-	// process here. Walk down by `chunkSize` until the leading short
-	// chunk at offset 0 is consumed.
-	const lastChunkStart = Math.floor((totalFrames - 1) / chunkSize) * chunkSize;
+	// Phase 2: forward IIR over reversed source → IIR-output buffer.
+	const filteredReversed = new ChunkBuffer();
 
-	for (let offset = lastChunkStart; offset >= 0; offset -= chunkSize) {
-		const chunkLength = Math.min(chunkSize, totalFrames - offset);
-		const chunk = await sourceBuffer.read(offset, chunkLength);
-		const forwardChunk = chunk.samples[0];
+	try {
+		await reversedSource.reset();
 
-		if (forwardChunk === undefined || forwardChunk.length === 0) continue;
+		// Seed backward state with the first sample of the reversed source —
+		// equivalent to `buffer[buffer.length - 1]` of the original, matching
+		// `applyBackwardPassInPlace`'s init rule.
+		const seedChunk = await reversedSource.read(1);
+		const backwardState = { value: seedChunk.samples[0]?.[0] ?? 0 };
 
-		// Reverse-in: copy `forwardChunk` into `reversedScratch` (or a
-		// subview thereof) reversed in-place.
-		const reversedView = reversedScratch.subarray(0, chunkLength);
+		await reversedSource.reset();
 
-		for (let index = 0; index < chunkLength; index++) {
-			reversedView[index] = forwardChunk[chunkLength - 1 - index] ?? 0;
+		for (;;) {
+			const chunk = await reversedSource.read(chunkSize);
+			const data = chunk.samples[0];
+			const chunkLength = data?.length ?? 0;
+
+			if (data === undefined || chunkLength === 0) break;
+
+			const filtered = iir.applyForwardPass(data, backwardState);
+
+			await filteredReversed.write([filtered], sr, bd);
+
+			if (chunkLength < chunkSize) break;
 		}
 
-		// Seed backward state on the very first reverse iteration to
-		// `reversedView[0]` — this is the buffer's final sample in
-		// forward order, matching `applyBackwardPassInPlace`'s init
-		// rule of `y = buffer[buffer.length - 1]`.
-		if (!backwardSeeded) {
-			backwardState.value = reversedView[0] ?? 0;
-			backwardSeeded = true;
-		}
+		await filteredReversed.flushWrites();
 
-		// Forward IIR over the reversed signal == backward IIR on the
-		// original. `applyForwardPass` returns a fresh `Float32Array`
-		// (per its current API); copy into the persistent forward-
-		// ordered scratch below.
-		const filtered = iir.applyForwardPass(reversedView, backwardState);
-
-		// Reverse-out: copy `filtered` back to forward order into
-		// `forwardOrderedScratch` (or a subview thereof).
-		const forwardOrderedView = forwardOrderedScratch.subarray(0, chunkLength);
-
-		for (let index = 0; index < chunkLength; index++) {
-			forwardOrderedView[index] = filtered[chunkLength - 1 - index] ?? 0;
-		}
-
-		await destBuffer.write(offset, [forwardOrderedView]);
-
-		if (offset === 0) break;
+		// Phase 3: reverse the IIR output to natural forward order, written
+		// directly into destBuffer.
+		await reverseBuffer(filteredReversed, destBuffer);
+	} finally {
+		await reversedSource.close();
+		await filteredReversed.close();
 	}
 }
 

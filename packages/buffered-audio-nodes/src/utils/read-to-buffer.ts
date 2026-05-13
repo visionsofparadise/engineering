@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import type * as Wavefile from "wavefile";
-import { FileChunkBuffer, type ChunkBuffer, type SourceMetadata } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer, type SourceMetadata } from "@e9g/buffered-audio-nodes-core";
 
 // wavefile interop: the package ships a CJS `main` (works under Node ESM, scratch
 // .mjs, tsx via Node resolver) and an ESM `module` with no default export (works
@@ -49,9 +49,10 @@ export interface ReadToBufferResult {
 
 export async function readToBuffer(path: string): Promise<ReadToBufferResult> {
 	const { samples, sampleRate, channels, durationFrames } = await readWavSamples(path);
-	const buffer = new FileChunkBuffer(durationFrames, channels);
+	const buffer = new ChunkBuffer();
 
-	await buffer.append(samples);
+	await buffer.write(samples, sampleRate);
+	await buffer.flushWrites();
 
 	return { buffer, context: { sampleRate, channels, durationFrames } };
 }

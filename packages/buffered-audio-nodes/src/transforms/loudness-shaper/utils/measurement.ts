@@ -51,11 +51,16 @@ export async function measureSourceLufsAndPeaks(buffer: ChunkBuffer, sampleRate:
 	let posPeak = 0;
 	let negPeak = 0;
 
-	for await (const chunk of buffer.iterate(CHUNK_FRAMES)) {
+	// Rewind read cursor — defensive; this is the first reader after the
+	// framework's `_process` call begins.
+	await buffer.reset();
+
+	for (;;) {
+		const chunk = await buffer.read(CHUNK_FRAMES);
 		const channels = chunk.samples;
 		const chunkFrames = channels[0]?.length ?? 0;
 
-		if (chunkFrames === 0) continue;
+		if (chunkFrames === 0) break;
 
 		for (const channel of channels) {
 			const length = channel.length;
@@ -73,6 +78,8 @@ export async function measureSourceLufsAndPeaks(buffer: ChunkBuffer, sampleRate:
 		}
 
 		accumulator.push(channels, chunkFrames);
+
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
 
 	return { lufs: accumulator.finalize(), posPeak, negPeak };

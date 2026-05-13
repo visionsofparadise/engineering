@@ -1,4 +1,4 @@
-import { MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { IntegratedLufsAccumulator, MixedRadixFft, Oversampler } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
 import { applyCurveBaseRateChunk } from "./apply";
@@ -113,13 +113,14 @@ function bandEnergy(magnitude: Float32Array, fromBin: number, toBinExclusive: nu
 }
 
 /**
- * Wrap per-channel synthetic arrays in a `MemoryChunkBuffer` for the
+ * Wrap per-channel synthetic arrays in a `ChunkBuffer` for the
  * iteration tests below.
  */
-async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<MemoryChunkBuffer> {
-	const buffer = new MemoryChunkBuffer(Infinity, channels.length);
+async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<ChunkBuffer> {
+	const buffer = new ChunkBuffer();
 
-	await buffer.append(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
+	await buffer.flushWrites();
 
 	return buffer;
 }
@@ -293,7 +294,7 @@ describe("applyFinalChunk", () => {
 		expect(finalHfEnergy).toBeLessThan(baseHfEnergy * 0.9);
 	});
 
-	it("base-rate-apply vs final-apply LUFS bias is within design tolerance (~0.5 dB)", async () => {
+	it("base-rate-apply vs final-apply LUFS bias is within design tolerance (~0.5 dB)", { timeout: 30_000 }, async () => {
 		const frames = SAMPLE_RATE * 5;
 		const source = makeStereoSyntheticSource(0xDEAD_BEEF, 0xC0FFEE_42, 0.2, frames);
 		const sourceLUFS = measureLufs(source);

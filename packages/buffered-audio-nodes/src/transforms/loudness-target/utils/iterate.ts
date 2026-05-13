@@ -7,8 +7,8 @@
  * Per design-loudness-target §"Iteration" (post
  * `plan-loudness-target-sequential-iteration` rewrite). Per
  * design-transforms §"Memory discipline": the source itself is
- * streamed via `buffer.iterate(CHUNK_FRAMES)`; never materialised as a
- * full-source-sized Float32Array at this level.
+ * streamed via `buffer.read(CHUNK_FRAMES)` loop until short chunk; never
+ * materialised as a full-source-sized Float32Array at this level.
  *
  * Single perceptual target — `targetLufs` — converges on a single curve
  * parameter, body gain `B` (dB). The limit anchor `limitDb` is set
@@ -66,7 +66,8 @@
  *   1. Build anchors `{ floorDb, pivotDb, limitDb, B, peakGainDb }`.
  *   2. **Walk A — fused streaming 4×-upsampled detect + max-pool +
  *      curve + forward IIR**: stream the source once via
- *      `buffer.iterate(CHUNK_FRAMES)`, computing per chunk:
+ *      `buffer.read(CHUNK_FRAMES)` loop until short chunk, computing per
+ *      chunk:
  *        - upsample each channel to 4× via a fresh per-channel
  *          `Oversampler` array (`detectionOversamplers`) allocated at
  *          walk start. Biquad state continues across chunks of THIS
@@ -184,7 +185,7 @@
  * question O3").
  */
 
-import { FileChunkBuffer, type ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { BidirectionalIir, LoudnessAccumulator, Oversampler, TruePeakAccumulator, linearToDb } from "@e9g/buffered-audio-nodes-utils";
 import { applyOversampledChunkFromCache } from "./apply";
 import { type Anchors, gainDbAt } from "./curve";
@@ -339,19 +340,19 @@ export interface IterationAttempt {
 export interface IterateResult {
 	/**
 	 * 4× upsampled smoothed gain envelope as a single-channel
-	 * `FileChunkBuffer` (size `frames * OVERSAMPLE_FACTOR`). Per
+	 * `ChunkBuffer` (size `frames * OVERSAMPLE_FACTOR`). Per
 	 * Phase 3 of `plan-loudness-target-stream-caching`, the envelope
 	 * is disk-backed rather than a flat `Float32Array` — `_unbuffer`
-	 * reads chunk-aligned slices via `read(offset, frames)` and feeds
+	 * reads chunk-aligned slices via `read(N)` sequential and feeds
 	 * them to `applyOversampledChunkFromCache`. The buffer's RAM
-	 * footprint stays at ~10 MB (per `FileChunkBuffer`'s
-	 * `DEFAULT_STORAGE_THRESHOLD`) regardless of source length.
+	 * footprint stays at ~10 MB (per `ChunkBuffer`'s lazy 10 MB
+	 * scratch threshold) regardless of source length.
 	 *
 	 * Lifetime: extends beyond `iterateForTargets`. The stream class
 	 * stores this in its persistent state; `_unbuffer` reads from it
 	 * chunk-by-chunk; teardown closes it.
 	 */
-	bestSmoothedEnvelopeBuffer: FileChunkBuffer;
+	bestSmoothedEnvelopeBuffer: ChunkBuffer;
 	/**
 	 * 4×-upsampled per-channel source cache built ONCE at iteration
 	 * entry and shared across every per-attempt Walk B (apply +
@@ -369,7 +370,7 @@ export interface IterateResult {
 	 * `null` when iteration short-circuited on a zero-frame / zero-
 	 * channel source (no cache was built).
 	 */
-	upsampledSource: FileChunkBuffer | null;
+	upsampledSource: ChunkBuffer | null;
 	bestB: number;
 	/**
 	 * The (constant) limit anchor `limitDb` used by every attempt.
@@ -483,7 +484,7 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 		// `_unbuffer` checks `winningSmoothedEnvelopeBuffer.frames` (or
 		// short-circuits on the null `upsampledSource`) before reading.
 		return {
-			bestSmoothedEnvelopeBuffer: new FileChunkBuffer(0, 1),
+			bestSmoothedEnvelopeBuffer: new ChunkBuffer(),
 			upsampledSource: null,
 			bestB: 0,
 			bestLimitDb: sourcePeakDb,
@@ -552,20 +553,20 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 
 	// Three single-channel disk-backed envelope buffers per Phase 3 of
 	// `plan-loudness-target-stream-caching`:
-	//   - `forwardEnvelopeBuffer`: Walk A appends forward-IIR output;
-	//     truncate(0) at the start of each attempt.
+	//   - `forwardEnvelopeBuffer`: Walk A writes forward-IIR output;
+	//     clear() at the end of each attempt.
 	//   - `activeRef` / `winningRef` (initially `activeBufferA` /
 	//     `activeBufferB`): the active dest for this attempt's
 	//     backward pass, and the held winner from the best attempt so
 	//     far. On a best-attempt update we swap the refs (pointer-
 	//     level swap, no copy — the whole point of the ping-pong is
 	//     to avoid frames×4×4-byte copies on every winner update).
-	const forwardEnvelopeBuffer = new FileChunkBuffer(frames * OVERSAMPLE_FACTOR, 1);
-	const activeBufferA = new FileChunkBuffer(frames * OVERSAMPLE_FACTOR, 1);
-	const activeBufferB = new FileChunkBuffer(frames * OVERSAMPLE_FACTOR, 1);
+	const forwardEnvelopeBuffer = new ChunkBuffer();
+	const activeBufferA = new ChunkBuffer();
+	const activeBufferB = new ChunkBuffer();
 
-	let activeRef: FileChunkBuffer = activeBufferA;
-	let winningRef: FileChunkBuffer = activeBufferB;
+	let activeRef: ChunkBuffer = activeBufferA;
+	let winningRef: ChunkBuffer = activeBufferB;
 	let winningPopulated = false;
 
 	try {
@@ -604,15 +605,14 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 			peakGainDb: currentPeakGainDb,
 		};
 
-		// Reset per-attempt buffers so this attempt's writes replace
-		// the previous attempt's contents rather than extending them.
-		await forwardEnvelopeBuffer.truncate(0);
-		await activeRef.truncate(0);
-
 		// Walk A — curve + forward IIR over the pre-built 4×-rate
 		// detection envelope cache. Writes into `forwardEnvelopeBuffer`
 		// chunk-by-chunk; on exit `forwardEnvelopeBuffer` holds the
 		// forward-IIR output at 4× rate, ready for the backward pass.
+		// `forwardEnvelopeBuffer` was either cleared at end of the prior
+		// iteration (loss / non-winning swap) or freshly-constructed on
+		// the very first attempt; `activeRef` was cleared on the prior
+		// iteration's exit branch (or is the freshly-constructed slot).
 		await streamCurveAndForwardIir({
 			detectionEnvelope: caches.detectionEnvelope,
 			anchors,
@@ -669,17 +669,34 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 			bestScore = score;
 			bestBoost = currentBoost;
 			bestPeakGainDb = currentPeakGainDb;
-			// Ping-pong swap: the just-written `activeRef` becomes the
-			// new winner; the old `winningRef` becomes the next
-			// attempt's `activeRef`. No data copy — just a reference
-			// assignment. The next-attempt `truncate(0)` at the top of
-			// the loop body clears the new active's stale contents.
+			// Swap: the just-written `activeRef` becomes the new winner;
+			// the old `winningRef` (which held the previous winner's
+			// envelope or is freshly-constructed) becomes the next
+			// attempt's `activeRef`. After the swap the new `activeRef`
+			// still holds stale data — clear it now so the next attempt
+			// starts on an empty buffer (writeReverse / write both
+			// accumulate, so an unflushed prior state would corrupt the
+			// next attempt's output).
 			const previousActive = activeRef;
 
 			activeRef = winningRef;
 			winningRef = previousActive;
 			winningPopulated = true;
+			await activeRef.clear();
+		} else {
+			// Loss: the just-written `activeRef` did not beat the held
+			// winner. Clear it immediately rather than waiting for the
+			// next attempt's top-of-loop reset — the new API has no
+			// equivalent of `truncate(0)` at top-of-loop; clearing on
+			// loss leaves both slots in a known state.
+			await activeRef.clear();
 		}
+
+		// Forward-envelope buffer is transient per-attempt. Clear now so
+		// the next attempt's Walk A starts on an empty buffer (Walk A
+		// `write`s through `streamCurveAndForwardIir` accumulate, just
+		// like the active buffer).
+		await forwardEnvelopeBuffer.clear();
 
 		// Phase A exits as soon as peak fits tolerance (or `skipPeak`).
 		// Note: NO `lufsErr` check here — see banner above.
@@ -730,9 +747,8 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 			peakGainDb: frozenPeakGainDb,
 		};
 
-		await forwardEnvelopeBuffer.truncate(0);
-		await activeRef.truncate(0);
-
+		// Both `forwardEnvelopeBuffer` and `activeRef` were cleared at
+		// end of the prior iteration (or by Phase A's terminal cleanup).
 		await streamCurveAndForwardIir({
 			detectionEnvelope: caches.detectionEnvelope,
 			anchors,
@@ -776,13 +792,24 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 			bestScore = score;
 			bestBoost = currentBoost;
 			bestPeakGainDb = frozenPeakGainDb;
-			// Same ping-pong swap as Phase A.
 			const previousActive = activeRef;
 
 			activeRef = winningRef;
 			winningRef = previousActive;
 			winningPopulated = true;
+			// Same clear-on-win as Phase A — see comment there. The new
+			// `activeRef` (previously the winner) holds stale data; clear
+			// to ready it for the next attempt's write-accumulating
+			// passes.
+			await activeRef.clear();
+		} else {
+			// Loss: clear the just-written active buffer now.
+			await activeRef.clear();
 		}
+
+		// Forward-envelope buffer transient — clear before any potential
+		// early return below.
+		await forwardEnvelopeBuffer.clear();
 
 		// Gate 1 — two-decimal-precision early exit. Always active.
 		// Fires when both axes round to zero error at two decimal places
@@ -885,23 +912,23 @@ interface StreamCurveAndForwardIirArgs {
 	detectionEnvelope: ChunkBuffer;
 	anchors: Anchors;
 	iir: BidirectionalIir;
-	forwardEnvelopeBuffer: FileChunkBuffer;
+	forwardEnvelopeBuffer: ChunkBuffer;
 }
 
 /**
  * Walk A of the per-attempt body, post-Phase-3-envelope-chunkbuffer:
  * read the pre-built detection-envelope cache and write the forward-
- * IIR output to a disk-backed `FileChunkBuffer` chunk-by-chunk. Per
+ * IIR output to a disk-backed `ChunkBuffer` chunk-by-chunk. Per
  * `plan-loudness-target-stream-caching` Phase 3.2.
  *
  * Streams the detection-envelope ChunkBuffer via
- * `detectionEnvelope.iterate(CHUNK_FRAMES * OVERSAMPLE_FACTOR)`. The
- * cache is single-channel at 4× rate (the leading-edge defer of
- * `halfWidth` samples was absorbed by the cache builder), so
+ * `detectionEnvelope.read(CHUNK_FRAMES * OVERSAMPLE_FACTOR)` loop until
+ * short chunk. The cache is single-channel at 4× rate (the leading-edge
+ * defer of `halfWidth` samples was absorbed by the cache builder), so
  * `chunk.samples[0]` carries the already-pooled detection envelope.
  *
- * `forwardEnvelopeBuffer` is appended chunk-by-chunk. The caller must
- * `truncate(0)` it before each attempt's walk-A call so this attempt's
+ * `forwardEnvelopeBuffer` is written chunk-by-chunk. The caller must
+ * `clear()` it before each attempt's walk-A call so this attempt's
  * output replaces (rather than extends) the previous attempt's.
  */
 async function streamCurveAndForwardIir(
@@ -910,6 +937,10 @@ async function streamCurveAndForwardIir(
 	const { detectionEnvelope, anchors, iir, forwardEnvelopeBuffer } = args;
 
 	if (detectionEnvelope.frames === 0) return;
+
+	// Rewind detection envelope's read cursor — the cache is re-read
+	// from frame 0 each attempt.
+	await detectionEnvelope.reset();
 
 	const forwardState = { value: 0 };
 	let forwardSeeded = false;
@@ -921,19 +952,28 @@ async function streamCurveAndForwardIir(
 	// per chunk (except the last) — no `+ halfWidth` slack is needed
 	// here because the sliding-window flush already happened in the
 	// cache build.
-	const gWindowScratch = new Float32Array(CHUNK_FRAMES * OVERSAMPLE_FACTOR);
+	const upsampledChunkSize = CHUNK_FRAMES * OVERSAMPLE_FACTOR;
+	const gWindowScratch = new Float32Array(upsampledChunkSize);
 
-	for await (const chunk of detectionEnvelope.iterate(CHUNK_FRAMES * OVERSAMPLE_FACTOR)) {
+	// Thread sample rate / bit depth from the source cache. Both are
+	// undefined-tolerant on `write`; passing them explicitly preserves
+	// the metadata down the pipeline.
+	const detectionSampleRate = detectionEnvelope.sampleRate;
+	const detectionBitDepth = detectionEnvelope.bitDepth;
+
+	for (;;) {
+		const chunk = await detectionEnvelope.read(upsampledChunkSize);
 		const windowChunk = chunk.samples[0];
+		const chunkLength = windowChunk?.length ?? 0;
 
-		if (windowChunk === undefined || windowChunk.length === 0) continue;
+		if (windowChunk === undefined || chunkLength === 0) break;
 
 		// Curve per output sample at 4× rate: `g[k] = 10^(gainDbAt(
 		// linearToDb(window[k])) / 20)`. View into the persistent
 		// `gWindowScratch` — fully overwritten by the fill loop below.
-		const gWindowChunk = gWindowScratch.subarray(0, windowChunk.length);
+		const gWindowChunk = gWindowScratch.subarray(0, chunkLength);
 
-		for (let outputIdx = 0; outputIdx < windowChunk.length; outputIdx++) {
+		for (let outputIdx = 0; outputIdx < chunkLength; outputIdx++) {
 			const levelDb = linearToDb(windowChunk[outputIdx] ?? 0);
 			const gainDb = gainDbAt(levelDb, anchors);
 
@@ -950,8 +990,15 @@ async function streamCurveAndForwardIir(
 
 		const forwardChunk = iir.applyForwardPass(gWindowChunk, forwardState);
 
-		await forwardEnvelopeBuffer.append([forwardChunk]);
+		await forwardEnvelopeBuffer.write([forwardChunk], detectionSampleRate, detectionBitDepth);
+
+		if (chunkLength < upsampledChunkSize) break;
 	}
+
+	// Ensure the backward pass (which reads via `readReverse`) sees a
+	// consistent state. `readReverse` spans head-scratch / disk / tail-
+	// scratch transparently, but flushing makes the contract obvious.
+	await forwardEnvelopeBuffer.flushWrites();
 }
 
 interface MeasureAttemptArgs {
@@ -968,10 +1015,10 @@ interface MeasureAttemptArgs {
 	 * 4×-rate smoothed gain envelope from this attempt's walks, held as
 	 * a single-channel `ChunkBuffer` (per Phase 3 of
 	 * `plan-loudness-target-stream-caching`: the envelope is disk-
-	 * backed via `FileChunkBuffer`, not a flat `Float32Array`). Frames
+	 * backed via `ChunkBuffer`, not a flat `Float32Array`). Frames
 	 * count matches `upsampledSource.frames` exactly. Read in chunks
-	 * in lockstep with `upsampledSource.iterate(CHUNK_FRAMES *
-	 * OVERSAMPLE_FACTOR)`.
+	 * in lockstep with `upsampledSource.read(CHUNK_FRAMES *
+	 * OVERSAMPLE_FACTOR)` sequential.
 	 */
 	gSmoothed: ChunkBuffer;
 }
@@ -1035,26 +1082,30 @@ async function measureAttemptOutput(args: MeasureAttemptArgs): Promise<MeasureAt
 	}
 
 	const upsampledChunkSize = CHUNK_FRAMES * OVERSAMPLE_FACTOR;
-	let consumedUpsampledFrames = 0;
 
-	for await (const upChunk of upsampledSource.iterate(upsampledChunkSize)) {
+	// Rewind both caches' read cursors — each attempt reads them from
+	// frame 0 in lockstep. Both are read-only at this point so reset()
+	// just rewinds the read cursor; safe even if a prior attempt's
+	// reads left the cursor mid-buffer.
+	await upsampledSource.reset();
+	await gSmoothed.reset();
+
+	for (;;) {
+		const upChunk = await upsampledSource.read(upsampledChunkSize);
 		const upChunkFrames = upChunk.samples[0]?.length ?? 0;
 
-		if (upChunkFrames === 0) continue;
+		if (upChunkFrames === 0) break;
 
 		// Source-rate chunk frames = upsampled chunk frames / factor.
 		// Both the upsampled cache (post-build) and the source itself
 		// have lengths that are exact multiples of `OVERSAMPLE_FACTOR`,
 		// so this integer divide is exact for every chunk.
 		const chunkFrames = upChunkFrames / OVERSAMPLE_FACTOR;
-		// Chunk-aligned envelope slice — read from the envelope
-		// ChunkBuffer at the running `consumedUpsampledFrames` offset.
-		// The envelope is disk-backed (`FileChunkBuffer`); each read
-		// returns a freshly-allocated `Float32Array` of the requested
-		// length. Lockstep invariant with `upsampledSource.iterate(...)`:
-		// the envelope is written in source order and is one channel
-		// wide, so the running offset matches.
-		const envelopeChunk = await gSmoothed.read(consumedUpsampledFrames, upChunkFrames);
+		// Chunk-aligned envelope slice — pulled from gSmoothed in
+		// lockstep with the upsampled-source read. Both buffers were
+		// reset above and are read forward; cursors stay aligned by
+		// construction.
+		const envelopeChunk = await gSmoothed.read(upChunkFrames);
 		const envelopeSlice = envelopeChunk.samples[0];
 
 		if (envelopeSlice?.length !== upChunkFrames) {
@@ -1082,7 +1133,7 @@ async function measureAttemptOutput(args: MeasureAttemptArgs): Promise<MeasureAt
 		accumulator.push(transformed, chunkFrames);
 		truePeakAccumulator.push(transformed, chunkFrames);
 
-		consumedUpsampledFrames += upChunkFrames;
+		if (upChunkFrames < upsampledChunkSize) break;
 	}
 
 	const result = accumulator.finalize();

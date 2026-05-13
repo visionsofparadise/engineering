@@ -15,7 +15,7 @@ export interface TransformTestResult {
 
 export async function runTransform(inputPath: string, transform: TransformNode, options?: { outputBitDepth?: WavBitDepth }): Promise<TransformTestResult> {
 	const inputResult = await readToBuffer(inputPath);
-	const inputChunk = await inputResult.buffer.read(0, inputResult.buffer.frames);
+	const inputChunk = await inputResult.buffer.read(inputResult.buffer.frames);
 	const inputSamples = inputChunk.samples;
 
 	await inputResult.buffer.close();
@@ -32,7 +32,7 @@ export async function runTransform(inputPath: string, transform: TransformNode, 
 		await source.render();
 
 		const outputResult = await readToBuffer(tempPath);
-		const outputChunk = await outputResult.buffer.read(0, outputResult.buffer.frames);
+		const outputChunk = await outputResult.buffer.read(outputResult.buffer.frames);
 		const outputSamples = outputChunk.samples;
 
 		await outputResult.buffer.close();

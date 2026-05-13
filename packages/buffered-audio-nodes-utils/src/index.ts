@@ -21,6 +21,8 @@ export { Oversampler } from "./oversample";
 export type { OversamplingFactor } from "./oversample";
 export { replaceChannel } from "./replace-channel";
 export { resampleDirect } from "./resample-direct";
+export { ResampleStream } from "./resample-stream";
+export type { ResampleStreamOptions } from "./resample-stream";
 export { SlidingWindowMaxStream, slidingWindowMax } from "./sliding-window-max";
 export { bitReverse, butterflyStages, createFftWorkspace, fft, hanningWindow, ifft, istft, stft } from "./stft";
 export type { FftWorkspace, StftOutput, StftResult } from "./stft";

@@ -182,7 +182,7 @@ export class LoudnessShaperStream extends BufferedTransformStream<LoudnessShaper
 		}
 
 		// 4. Iterate to find the winning boost. `iterateForTarget`
-		//    streams the source via `buffer.iterate(CHUNK_FRAMES)` per
+		//    streams the source via `buffer.read(CHUNK_FRAMES)` per
 		//    attempt — no source-sized Float32Array materialisation. Per-
 		//    attempt allocation is bounded by chunk size.
 		const tIter0 = Date.now();

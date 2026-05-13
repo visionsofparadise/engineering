@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
-import { FileChunkBuffer, type StreamContext } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer, type StreamContext } from "@e9g/buffered-audio-nodes-core";
 import { Vst3Stream } from ".";
 
 // Stub binary mimics the real `vst-host` whole-file CLI shape: parses
@@ -20,10 +20,11 @@ const buildContext = (): StreamContext => ({
 
 const dummyInput = (): ReadableStream => new ReadableStream({ start: (controller) => controller.close() });
 
-const populate = async (channels: Array<Float32Array>, sampleRate = 44100): Promise<FileChunkBuffer> => {
-	const buffer = new FileChunkBuffer(0, channels.length, 64 * 1024 * 1024);
+const populate = async (channels: Array<Float32Array>, sampleRate = 44100): Promise<ChunkBuffer> => {
+	const buffer = new ChunkBuffer();
 
-	await buffer.append(channels, sampleRate, 32);
+	await buffer.write(channels, sampleRate, 32);
+	await buffer.flushWrites();
 
 	return buffer;
 };
@@ -57,7 +58,7 @@ describe("Vst3Stream subprocess lifecycle", () => {
 
 		await stream._process(buffer);
 
-		const after = await buffer.read(0, buffer.frames);
+		const after = await buffer.read(buffer.frames);
 
 		expect(after.samples.length).toBe(channels);
 		expect(after.samples[0]!.length).toBe(frames);
@@ -95,7 +96,7 @@ describe("Vst3Stream subprocess lifecycle", () => {
 
 		await stream._process(buffer);
 
-		const after = await buffer.read(0, buffer.frames);
+		const after = await buffer.read(buffer.frames);
 
 		expect(after.samples[0]!.length).toBe(frames);
 

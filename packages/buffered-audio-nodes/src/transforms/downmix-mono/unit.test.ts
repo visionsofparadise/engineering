@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { downmixMono, DownmixMonoNode } from ".";
 
 function makeChunk(channelValues: Array<number>, frames = 256) {
@@ -14,7 +14,7 @@ function makeChunk(channelValues: Array<number>, frames = 256) {
 async function applyDownmix(chunk: ReturnType<typeof makeChunk>) {
 	const node = downmixMono();
 	const stream = node.createStream();
-	const buffer = new MemoryChunkBuffer(256, chunk.samples.length);
+	const buffer = new ChunkBuffer();
 	await stream._buffer(chunk, buffer);
 	return stream._unbuffer(chunk);
 }

@@ -10,8 +10,9 @@
  *
  * Memory discipline (per design-transforms §"Memory discipline"): this
  * module never allocates source-sized arrays. The caller streams the
- * source via `chunkBuffer.iterate(CHUNK_FRAMES)` and feeds each chunk
- * through `applyCurveBaseRateChunk` in turn; the per-chunk allocation
+ * source via a sequential `chunkBuffer.read(CHUNK_FRAMES)` loop and
+ * feeds each chunk through `applyCurveBaseRateChunk` in turn; the
+ * per-chunk allocation
  * is `chunkFrames × channelCount × 4 bytes` of fresh output samples.
  *
  * Pipeline per chunk:

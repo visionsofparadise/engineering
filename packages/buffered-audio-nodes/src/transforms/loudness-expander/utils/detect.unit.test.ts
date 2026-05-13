@@ -1,29 +1,48 @@
-import { MemoryChunkBuffer } from "@e9g/buffered-audio-nodes-core";
+import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { describe, expect, it } from "vitest";
 import { computeLinkedDetection } from "./detect";
 
 const SAMPLE_RATE = 48_000;
 
 /**
- * Wrap per-channel arrays in a `MemoryChunkBuffer`. Mirrors the
- * loudness-shaper iterate test pattern. Returns a fresh buffer so the
- * `iterate` cursor walks from 0 each call.
+ * Wrap per-channel arrays in a `ChunkBuffer`. Mirrors the loudness-
+ * shaper iterate test pattern. Returns a fresh buffer so the read
+ * cursor walks from 0 each call.
  *
- * `appendChunkFrames` controls the chunk granularity used at append
- * time (the buffer's internal segmentation), letting tests assert that
- * the detection result is independent of how the buffer was filled.
+ * `writeChunkFrames` controls the granularity of the writes used to
+ * populate the buffer (slicing each channel into successive `write`
+ * calls), letting tests assert that the detection result is independent
+ * of how the buffer was filled.
  */
 async function makeBufferFromChannels(
 	channels: ReadonlyArray<Float32Array>,
-	appendChunkFrames = 32,
-): Promise<MemoryChunkBuffer> {
-	const buffer = new MemoryChunkBuffer(Infinity, channels.length);
+	writeChunkFrames = 32,
+): Promise<ChunkBuffer> {
+	const buffer = new ChunkBuffer();
+	const frameCount = channels[0]?.length ?? 0;
 
-	await buffer.append(
-		channels.map((channel) => new Float32Array(channel)),
-		SAMPLE_RATE,
-		appendChunkFrames,
-	);
+	if (frameCount === 0) {
+		await buffer.write(
+			channels.map(() => new Float32Array(0)),
+			SAMPLE_RATE,
+			32,
+		);
+
+		return buffer;
+	}
+
+	for (let start = 0; start < frameCount; start += writeChunkFrames) {
+		const end = Math.min(start + writeChunkFrames, frameCount);
+		const slice = channels.map((channel) => {
+			const out = new Float32Array(end - start);
+
+			out.set(channel.subarray(start, end));
+
+			return out;
+		});
+
+		await buffer.write(slice, SAMPLE_RATE, 32);
+	}
 
 	return buffer;
 }

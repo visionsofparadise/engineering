@@ -125,12 +125,12 @@ describe("ReadWavStream", () => {
 
 				// Verify the selected channel matches the original channel 0
 				const original = await readToBuffer(testVoice);
-				const originalChunk = await original.buffer.read(0, original.buffer.frames);
+				const originalChunk = await original.buffer.read(original.buffer.frames);
 				const originalCh0 = originalChunk.samples[0]!;
 				await original.buffer.close();
 
 				const monoResult = await readToBuffer(monoOutPath);
-				const monoChunk = await monoResult.buffer.read(0, monoResult.buffer.frames);
+				const monoChunk = await monoResult.buffer.read(monoResult.buffer.frames);
 				const monoCh = monoChunk.samples[0]!;
 				await monoResult.buffer.close();
 
