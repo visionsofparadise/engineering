@@ -1,12 +1,14 @@
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { IntegratedLufsAccumulator, MixedRadixFft, Oversampler } from "@e9g/buffered-audio-nodes-utils";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { applyCurveBaseRateChunk } from "./apply";
 import { applyFinalChunk, DEFAULT_FACTOR } from "./apply-final";
 import type { CurveParams } from "./curve";
 import { iterateForTarget } from "./iterate";
 
 const SAMPLE_RATE = 48_000;
+
+const buffersToClose: ChunkBuffer[] = [];
 
 /**
  * Tiny LCG (numerical-recipes constants) for deterministic noise.
@@ -122,6 +124,8 @@ async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Pr
 	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
 	await buffer.flushWrites();
 
+	buffersToClose.push(buffer);
+
 	return buffer;
 }
 
@@ -151,6 +155,11 @@ function runWholeFinalApply(args: {
 }
 
 describe("applyFinalChunk", () => {
+	afterEach(async () => {
+		for (const buf of buffersToClose) await buf.close();
+		buffersToClose.length = 0;
+	});
+
 	it("identity (boost = 0): output matches Oversampler pass-through within filter tolerance", () => {
 		// boost = 0 makes the curve evaluate to gain = 1 at every sample,
 		// so the only difference between this pipeline and a pass-through

@@ -1,8 +1,8 @@
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
-import { BidirectionalIir } from "@e9g/buffered-audio-nodes-utils";
+import { BidirectionalIir, slidingWindowMin } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
-import { type Anchors } from "./curve";
-import { applyBackwardPassOverChunkBuffer, peakRespectingEnvelope } from "./envelope";
+import { type Anchors, gainDbAt } from "./curve";
+import { applyBackwardPassOverChunkBuffer, peakRespectingEnvelope, windowSamplesFromMs } from "./envelope";
 
 const SAMPLE_RATE = 48000;
 
@@ -243,6 +243,92 @@ describe("applyBackwardPassOverChunkBuffer", () => {
 		expect(destBuffer.frames).toBe(0);
 
 		await sourceBuffer.close();
+		await destBuffer.close();
+	});
+
+	it("brick-wall exactness: spike in flat-low region clamps to per-sample target gain", { timeout: 30_000 }, async () => {
+		// Phase 1 of `plan-loudness-target-deterministic`: with the
+		// min-hold + per-sample clamp in place, the output gain at the
+		// peak sample of any source equals `gainDbAt(peakLevel)` exactly
+		// (within float32 precision). Construct a synthetic per-sample
+		// linear-gain envelope with one spike-down (heavier attenuation)
+		// in an otherwise flat-low (lighter gain) region, simulate the
+		// Walk-A pipeline in memory, drive the disk-backed backward pass
+		// with the min-held ceiling, and check the spike sample lands on
+		// its own target gain — NOT averaged with the surrounding lighter
+		// gains the IIR would otherwise pull in.
+		const length = 4000;
+		const halfWidth = windowSamplesFromMs(1, SAMPLE_RATE); // 48 samples
+		const peakIdx = 2000;
+
+		// Anchors picked so the descending upper segment + brick-wall
+		// gives the peak sample noticeably less gain than the body.
+		const anchors: Anchors = {
+			floorDb: null,
+			pivotDb: -30,
+			limitDb: -3,
+			B: 6,
+			peakGainDb: 2,
+		};
+
+		// Body sits below pivot → uniform body gain `B`. Peak hits the
+		// brick-wall extension above `limitDb`.
+		const bodyLevelDb = -40;
+		const peakLevelDb = +3;
+
+		// Per-sample gain envelope before min-hold: flat-body gain
+		// everywhere except a single sample at `peakIdx` that gets the
+		// brick-wall gain.
+		const gPerSample = new Float32Array(length);
+		const bodyGainLinear = Math.pow(10, gainDbAt(bodyLevelDb, anchors) / 20);
+		const peakGainLinear = Math.pow(10, gainDbAt(peakLevelDb, anchors) / 20);
+
+		gPerSample.fill(bodyGainLinear);
+		gPerSample[peakIdx] = peakGainLinear;
+
+		// Stage 1 (in-memory reference): sliding-window-min on the linear
+		// gain. The peak sample's heavy gain propagates over the
+		// `[peakIdx - halfWidth, peakIdx + halfWidth]` window.
+		const gMinHold = slidingWindowMin(gPerSample, halfWidth);
+
+		// Stage 2 (in-memory reference): forward IIR on the min-held
+		// gain. This is the input the disk-backed backward pass receives.
+		const iir = new BidirectionalIir({ smoothingMs: 1, sampleRate: SAMPLE_RATE });
+		const forwardState = { value: gMinHold[0] ?? 0 };
+		const gForward = iir.applyForwardPass(gMinHold, forwardState);
+
+		// Drive the disk-backed backward pass with the min-held ceiling
+		// and confirm the clamp fires at the peak.
+		const sourceBuffer = await makeFileBufferFromSamples(gForward);
+		const minHeldBuffer = await makeFileBufferFromSamples(gMinHold);
+		const destBuffer = new ChunkBuffer();
+
+		await applyBackwardPassOverChunkBuffer({
+			sourceBuffer,
+			destBuffer,
+			iir,
+			chunkSize: 512,
+			minHeldBuffer,
+		});
+
+		const gFinal = await readAll(destBuffer);
+
+		expect(gFinal.length).toBe(length);
+		// Brick-wall exactness: the peak sample equals the per-sample
+		// target gain (i.e. the brick-wall gain at the peak's own level).
+		expect(Math.abs((gFinal[peakIdx] ?? 0) - peakGainLinear)).toBeLessThan(1e-6);
+
+		// Invariant `g_final[k] <= g_min_hold[k]` for every sample: the
+		// clamp can only pull gain DOWN, never up.
+		for (let frameIdx = 0; frameIdx < length; frameIdx++) {
+			const final = gFinal[frameIdx] ?? 0;
+			const minHold = gMinHold[frameIdx] ?? 0;
+
+			expect(final).toBeLessThanOrEqual(minHold + 1e-6);
+		}
+
+		await sourceBuffer.close();
+		await minHeldBuffer.close();
 		await destBuffer.close();
 	});
 

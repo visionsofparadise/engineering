@@ -118,12 +118,16 @@
  * ## Pipeline per attempt
  *
  *   1. Build anchors `{ floorDb, pivotDb, limitDb, B, peakGainDb }`.
- *   2. **Walk A** — curve + forward IIR over the pre-built 4×-rate
- *      detection envelope cache. Writes into `forwardEnvelopeBuffer`.
+ *   2. **Walk A** — curve + forward IIR over the pre-built BASE-RATE
+ *      detection envelope cache (post 2026-05-13 base-rate-downstream
+ *      rewrite). Writes into `forwardEnvelopeBuffer` at base rate.
  *   3. **Walk B sub-pass B1** — backward IIR over `forwardEnvelopeBuffer`
- *      into `activeRef` (the per-attempt smoothed envelope destination).
- *   4. **Walk B sub-pass B2** — apply (multiply by `activeRef`) +
- *      measure (LUFS / LRA / true peak) over the upsampled source cache.
+ *      at base rate into `activeRef` (the per-attempt smoothed envelope
+ *      destination, also at base rate).
+ *   4. **Walk B sub-pass B2** — apply (multiply source × `activeRef` at
+ *      base rate) + measure (LUFS / LRA / true peak — the
+ *      `TruePeakAccumulator` handles its own internal 4× upsample for
+ *      TP detection) over the source ChunkBuffer.
  *   5. Record `(B, peakGainDb, lufsErr, peakErr, outputLra)`. On
  *      best-attempt update, swap `activeRef` / `winningRef` (pointer-
  *      level, no envelope copy). Otherwise clear `activeRef` for the
@@ -154,19 +158,31 @@
  */
 
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
-import { BidirectionalIir, LoudnessAccumulator, Oversampler, TruePeakAccumulator, linearToDb } from "@e9g/buffered-audio-nodes-utils";
-import { applyOversampledChunkFromCache } from "./apply";
+import { BidirectionalIir, LoudnessAccumulator, SlidingWindowMinStream, TruePeakAccumulator, linearToDb } from "@e9g/buffered-audio-nodes-utils";
+import { applyBaseRateChunk } from "./apply";
 import { type Anchors, gainDbAt } from "./curve";
 import { applyBackwardPassOverChunkBuffer, windowSamplesFromMs } from "./envelope";
-import { buildSourceUpsampledAndDetectionCaches } from "./source-caches";
+import { buildBaseRateDetectionCache } from "./source-caches";
 
 /**
- * 4× oversampling factor for the upsampled detection / max-pool /
- * curve / IIR / apply pipeline. Mirrors `loudnessShaper`'s
- * `OVERSAMPLE_FACTOR`. The stream class re-imports this so the
- * `_unbuffer` apply pass uses the same factor as the iteration
- * walks (otherwise the persistent apply oversamplers would consume
- * the winning envelope at the wrong rate).
+ * 4× oversampling factor for the detection max-pool inside
+ * `buildBaseRateDetectionCache` and for the Pass-1 source
+ * measurement's internal upsample inside `measurement.ts`. Mirrors
+ * `loudnessShaper`'s `OVERSAMPLE_FACTOR`.
+ *
+ * Post the 2026-05-13 base-rate-downstream rewrite this constant is
+ * NO LONGER used for envelope-buffer sizing, walk-loop offsets, or
+ * any per-attempt iteration work — Walk A, the backward pass, Walk B,
+ * and `_unbuffer`'s apply all operate at base rate. It survives as an
+ * export because two external consumers still depend on it:
+ *   - `measurement.ts` (the Pass-1 source measurement walk's internal
+ *     per-channel `TruePeakUpsampler` factor; that pipeline is out of
+ *     scope of the base-rate-downstream rewrite).
+ *   - `source-caches.ts` (the cache-build pass's inline 4× upsample
+ *     for detection max-pool, which IS structurally required because
+ *     max-pool is what captures inter-sample peaks for the curve to
+ *     see — the detection signal is collapsed to base rate by
+ *     max-of-4 immediately after the max-pool).
  */
 export const OVERSAMPLE_FACTOR = 4;
 
@@ -179,9 +195,9 @@ export const OVERSAMPLE_FACTOR = 4;
 export const CHUNK_FRAMES = 44_100;
 
 /** Lower clamp on body gain `B` (dB). */
-const BOOST_LOWER_BOUND = -30;
+export const BOOST_LOWER_BOUND = -30;
 /** Upper clamp on body gain `B` (dB). */
-const BOOST_UPPER_BOUND = 30;
+export const BOOST_UPPER_BOUND = 30;
 
 /**
  * Minimum separation enforced internally between `pivotDb` and
@@ -283,38 +299,23 @@ export interface IterationAttempt {
  */
 export interface IterateResult {
 	/**
-	 * 4× upsampled smoothed gain envelope as a single-channel
-	 * `ChunkBuffer` (size `frames * OVERSAMPLE_FACTOR`). Per
-	 * Phase 3 of `plan-loudness-target-stream-caching`, the envelope
-	 * is disk-backed rather than a flat `Float32Array` — `_unbuffer`
-	 * reads chunk-aligned slices via `read(N)` sequential and feeds
-	 * them to `applyOversampledChunkFromCache`. The buffer's RAM
-	 * footprint stays at ~10 MB (per `ChunkBuffer`'s lazy 10 MB
-	 * scratch threshold) regardless of source length.
+	 * BASE-RATE smoothed gain envelope as a single-channel
+	 * `ChunkBuffer` (size `frames`, no `× OVERSAMPLE_FACTOR` factor).
+	 * Post the 2026-05-13 base-rate-downstream rewrite the envelope
+	 * is stored at base rate — the smoothing pipeline (curve, IIR,
+	 * backward pass) bandlimits its content far below base-rate
+	 * Nyquist, so the 4× storage from the prior design was pure
+	 * waste. `_unbuffer` reads chunk-aligned slices via `read(N)`
+	 * sequential and feeds them to `applyBaseRateChunk` (no
+	 * downsample roundtrip). The buffer's RAM footprint stays at
+	 * ~10 MB (per `ChunkBuffer`'s lazy 10 MB scratch threshold)
+	 * regardless of source length.
 	 *
 	 * Lifetime: extends beyond `iterateForTargets`. The stream class
 	 * stores this in its persistent state; `_unbuffer` reads from it
 	 * chunk-by-chunk; teardown closes it.
 	 */
 	bestSmoothedEnvelopeBuffer: ChunkBuffer;
-	/**
-	 * 4×-upsampled per-channel source cache built ONCE at iteration
-	 * entry and shared across every per-attempt Walk B (apply +
-	 * measure) AND `_unbuffer`'s final apply pass. Per Phase 2 of
-	 * `plan-loudness-target-stream-caching`, this eliminates the
-	 * per-attempt upsample pass — across N attempts, savings are
-	 * `(N − 1) × channelCount` upsamples per attempt loop.
-	 *
-	 * Lifetime: extends beyond `iterateForTargets`. The stream class
-	 * (`LoudnessTargetStream._process`) stores this in its persistent
-	 * state; `_unbuffer` reads from it chunk-by-chunk; the stream's
-	 * teardown closes it. Caller is responsible for `close()` after
-	 * the final `_unbuffer` chunk emits.
-	 *
-	 * `null` when iteration short-circuited on a zero-frame / zero-
-	 * channel source (no cache was built).
-	 */
-	upsampledSource: ChunkBuffer | null;
 	bestB: number;
 	/**
 	 * The (constant) limit anchor `limitDb` used by every attempt.
@@ -376,6 +377,16 @@ export interface IterateForTargetsArgs {
 	 * attempt and the peak component of the convergence check.
 	 */
 	peakTolerance: number;
+	/**
+	 * Optional initial body gain `B` for attempt 1. When omitted falls
+	 * back to the RMS-shift seed (`targetLufs - sourceLufs`). The caller
+	 * supplies this from `predictInitialB` (a histogram-based predictor,
+	 * see `solve.ts`) so attempt 1 starts close to the LUFS target and
+	 * the secant converges in fewer attempts. The seed is clamped to
+	 * `[BOOST_LOWER_BOUND, BOOST_UPPER_BOUND]` like any other `B` value;
+	 * iteration's secant + convergence gates are unchanged.
+	 */
+	seedB?: number | undefined;
 }
 
 /**
@@ -388,6 +399,12 @@ export interface IterateForTargetsArgs {
  * `sqrt(lufsErr² + peakErr²)`; the buffer-swap mechanic guarantees
  * the held smoothed envelope matches the reported
  * `(bestB, bestPeakGainDb)`.
+ *
+ * Per `plan-loudness-target-deterministic` 2026-05-13 revert: the
+ * caller (`index.ts`) seeds `seedB` from `predictInitialB` (a
+ * histogram-based predictor — see `solve.ts`). The seed is just an
+ * initial probe — iteration still drives convergence to within
+ * `tolerance` via the secant on signed `lufsErr`.
  */
 export async function iterateForTargets(args: IterateForTargetsArgs): Promise<IterateResult> {
 	const {
@@ -404,6 +421,7 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 		maxAttempts = DEFAULT_MAX_ATTEMPTS,
 		tolerance = DEFAULT_TOLERANCE,
 		peakTolerance,
+		seedB,
 	} = args;
 
 	const channelCount = buffer.channels;
@@ -412,11 +430,10 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 	if (channelCount === 0 || frames === 0) {
 		// Pass-through bail: build a zero-frame envelope buffer so the
 		// return shape stays consistent with the normal-path returns.
-		// `_unbuffer` checks `winningSmoothedEnvelopeBuffer.frames` (or
-		// short-circuits on the null `upsampledSource`) before reading.
+		// `_unbuffer` checks `winningSmoothedEnvelopeBuffer.frames`
+		// before reading.
 		return {
 			bestSmoothedEnvelopeBuffer: new ChunkBuffer(),
-			upsampledSource: null,
 			bestB: 0,
 			bestLimitDb: sourcePeakDb,
 			bestPeakGainDb: 0,
@@ -454,25 +471,28 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 	// `peakTolerance`. Since `currentLimit` does not change, the
 	// closed-form baseline is computed once here.
 	let currentPeakGainDb = effectiveTargetTp - currentLimit;
-	// Phase 4: detection, max-pool, curve, and IIR all run at 4× rate.
-	// `halfWidth` is in upsampled samples; `iir` is constructed at the
-	// upsampled rate so its alpha matches the upsampled signal's
-	// bandwidth.
-	const upsampledRate = sampleRate * OVERSAMPLE_FACTOR;
-	const halfWidth = windowSamplesFromMs(smoothingMs, upsampledRate);
-	const iir = new BidirectionalIir({ smoothingMs, sampleRate: upsampledRate });
+	// Post the 2026-05-13 base-rate-downstream rewrite, the entire
+	// downstream pipeline (Walk A's curve + forward IIR, the backward
+	// pass, Walk B's apply / measure, `_unbuffer`'s apply) operates at
+	// BASE rate. The slider's `halfWidth` and the IIR's coefficient
+	// are both derived against the base sample rate so they cover the
+	// same milliseconds the prior 4× pipeline did — only the per-axis
+	// sample count and alpha change. `BidirectionalIir` derives its
+	// coefficient rate-agnostically from `(smoothingMs, sampleRate)`,
+	// so passing `sampleRate` (not `sampleRate × OVERSAMPLE_FACTOR`)
+	// produces the correct base-rate alpha (the time response in ms
+	// is identical; only alpha changes).
+	const halfWidth = windowSamplesFromMs(smoothingMs, sampleRate);
+	const iir = new BidirectionalIir({ smoothingMs, sampleRate });
 
-	// Build the per-source caches ONCE at iteration entry. Both are
-	// pure functions of the source (post-upsample) and do not depend on
-	// any per-attempt parameter. Walk A reads `caches.detectionEnvelope`;
-	// Walk B (via `measureAttemptOutput`) and `_unbuffer` read
-	// `caches.upsampledSource` (Phase 2.3 / 2.4 of `plan-loudness-target-
-	// stream-caching`). The detection-envelope cache has no consumer
-	// outside this function, so it is closed in the `finally` below.
-	// The upsampled-source cache outlives this function — it is
-	// returned via `IterateResult.upsampledSource` and the stream
-	// class is responsible for closing it after `_unbuffer` drains.
-	const caches = await buildSourceUpsampledAndDetectionCaches({
+	// Build the per-source detection cache ONCE at iteration entry.
+	// The cache is a pure function of the source — same value every
+	// attempt. Walk A reads it; Walk B (via `measureAttemptOutput`) and
+	// `_unbuffer` read the SOURCE ChunkBuffer directly at base rate
+	// (no upsampled-source cache exists — eliminated by the 2026-05-13
+	// rewrite). The detection-envelope cache has no consumer outside
+	// this function, so it is closed in the `finally` below.
+	const detectionEnvelope = await buildBaseRateDetectionCache({
 		buffer,
 		sampleRate,
 		channelCount,
@@ -480,17 +500,30 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 		halfWidth,
 	});
 
-	// Three single-channel disk-backed envelope buffers per Phase 3 of
-	// `plan-loudness-target-stream-caching`:
+	// Three single-channel disk-backed envelope buffers, all at BASE
+	// rate post the 2026-05-13 base-rate-downstream rewrite (envelope
+	// content is bandlimited far below base-rate Nyquist by the
+	// smoothing time constant; storing at base rate loses nothing and
+	// drops the per-buffer footprint to 1/4):
 	//   - `forwardEnvelopeBuffer`: Walk A writes forward-IIR output;
-	//     clear() at the end of each attempt.
+	//     clear() at the end of each attempt. Sized at `frames` (base
+	//     rate), not `frames × OVERSAMPLE_FACTOR`.
 	//   - `activeRef` / `winningRef` (initially `activeBufferA` /
 	//     `activeBufferB`): the active dest for this attempt's
 	//     backward pass, and the held winner from the best attempt so
 	//     far. On a best-attempt update we swap the refs (pointer-
 	//     level swap, no copy — the whole point of the ping-pong is
-	//     to avoid frames×4×4-byte copies on every winner update).
+	//     to avoid frames×4-byte copies on every winner update).
 	const forwardEnvelopeBuffer = new ChunkBuffer();
+	// `minHeldEnvelopeBuffer` carries the per-sample min-held linear
+	// gain (the brick-wall exactness ceiling). Walk A writes it in
+	// lockstep with `forwardEnvelopeBuffer`. The backward pass reads
+	// it in lockstep with the post-IIR output and clamps each sample
+	// to the lower of the two. Same lifecycle as
+	// `forwardEnvelopeBuffer` — clear() at the end of each attempt;
+	// close() in `finally`. Per `plan-loudness-target-deterministic`
+	// Phase 1.
+	const minHeldEnvelopeBuffer = new ChunkBuffer();
 	const activeBufferA = new ChunkBuffer();
 	const activeBufferB = new ChunkBuffer();
 
@@ -506,7 +539,17 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 		// satisfied. The `peakGainDb` update branch is also skipped.
 		const skipPeak = targetTp === undefined;
 
-		let currentBoost = clampBoost(targetLufs - sourceLufs);
+		// Attempt 1 `B` seed. When the caller provides `seedB` (the
+		// histogram-based predictor's seed from `predictInitialB`, per
+		// `plan-loudness-target-deterministic` revert 2026-05-13), use
+		// it so attempt 1 lands close to the LUFS target and the secant
+		// converges in fewer attempts. When omitted, fall back to the
+		// closed-form RMS-shift seed `targetLufs - sourceLufs` (the
+		// pre-Phase-2 behaviour, preserved for any caller that doesn't
+		// want to pay the predictor cost).
+		let currentBoost = clampBoost(
+			seedB !== undefined && Number.isFinite(seedB) ? seedB : targetLufs - sourceLufs,
+		);
 
 		const attempts: Array<IterationAttempt> = [];
 		let bestBoost = currentBoost;
@@ -550,29 +593,48 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 				peakGainDb: currentPeakGainDb,
 			};
 
-			// Walk A — curve + forward IIR over the pre-built 4×-rate
-			// detection envelope cache. Writes into `forwardEnvelopeBuffer`
-			// chunk-by-chunk.
+			// Walk A — curve + min-hold + forward IIR over the pre-built
+			// BASE-RATE detection envelope cache. Writes into
+			// `forwardEnvelopeBuffer` (IIR output) and
+			// `minHeldEnvelopeBuffer` (pre-IIR min-held gain — the
+			// brick-wall ceiling) chunk-by-chunk at base rate. The min-
+			// held envelope is the input to the IIR AND the clamp ceiling
+			// for the backward pass, per `plan-loudness-target-
+			// deterministic` Phase 1.
 			await streamCurveAndForwardIir({
-				detectionEnvelope: caches.detectionEnvelope,
+				detectionEnvelope,
 				anchors,
 				iir,
+				halfWidth,
 				forwardEnvelopeBuffer,
+				minHeldEnvelopeBuffer,
 			});
 
 			// Walk B sub-pass B1 — backward IIR over the forward-envelope
-			// ChunkBuffer into the active smoothed-envelope buffer.
+			// ChunkBuffer into the active smoothed-envelope buffer, at
+			// base rate, with per-sample clamp against the min-held
+			// ceiling. The "reverse twice + forward IIR" trick is rate-
+			// agnostic in shape; the per-sample `min(g_iir, g_min_hold)`
+			// clamp guarantees the smoothed gain at any sample never
+			// exceeds the per-sample target gain at the loudest
+			// neighbour within `halfWidth` — the brick-wall exactness
+			// invariant.
 			await applyBackwardPassOverChunkBuffer({
 				sourceBuffer: forwardEnvelopeBuffer,
 				destBuffer: activeRef,
 				iir,
-				chunkSize: CHUNK_FRAMES * OVERSAMPLE_FACTOR,
+				chunkSize: CHUNK_FRAMES,
+				minHeldBuffer: minHeldEnvelopeBuffer,
 			});
 
-			// Walk B sub-pass B2 — source-streaming apply + LUFS / LRA / TP
-			// measurement at 4× rate.
+			// Walk B sub-pass B2 — base-rate source streaming apply +
+			// LUFS / LRA / TP measurement. No upsample/downsample
+			// roundtrip — `source × envelope` is computed at base rate
+			// and fed directly into the accumulators. The
+			// `TruePeakAccumulator` handles its own internal 4×
+			// upsample for TP detection (unchanged).
 			const measured = await measureAttemptOutput({
-				upsampledSource: caches.upsampledSource,
+				source: buffer,
 				sampleRate,
 				channelCount,
 				gSmoothed: activeRef,
@@ -631,8 +693,10 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 				await activeRef.clear();
 			}
 
-			// Forward-envelope buffer is transient per-attempt.
+			// Forward-envelope and min-held-envelope buffers are transient
+			// per-attempt.
 			await forwardEnvelopeBuffer.clear();
+			await minHeldEnvelopeBuffer.clear();
 
 			// Gate 1 — two-decimal-precision early exit. Always active.
 			// Fires when both axes round to zero error at two decimal
@@ -650,7 +714,6 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 					bestLimitDb: currentLimit,
 					bestPeakGainDb,
 					attempts,
-					upsampledSource: caches.upsampledSource,
 					converged: true,
 				};
 			}
@@ -664,7 +727,6 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 			if (lufsConverged && peakConverged) {
 				return {
 					bestSmoothedEnvelopeBuffer: winningRef,
-					upsampledSource: caches.upsampledSource,
 					bestB: bestBoost,
 					bestLimitDb: currentLimit,
 					bestPeakGainDb,
@@ -709,7 +771,6 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 
 		return {
 			bestSmoothedEnvelopeBuffer: winningRef,
-			upsampledSource: caches.upsampledSource,
 			bestB: bestBoost,
 			bestLimitDb: currentLimit,
 			bestPeakGainDb,
@@ -719,16 +780,18 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 	} finally {
 		// `detectionEnvelope` has no downstream consumer — close it
 		// here on every return path (normal returns above + exception
-		// propagation). The `upsampledSource` cache is intentionally
-		// NOT closed here: it is returned via `IterateResult` and
-		// outlives this function (`_unbuffer` reads from it per chunk).
-		await caches.detectionEnvelope.close();
-		// `forwardEnvelopeBuffer` is transient — closed unconditionally.
-		// The losing one of `activeBufferA` / `activeBufferB` (the one
-		// NOT held by `winningRef`) is also closed here. The winning
-		// buffer is returned via `IterateResult.bestSmoothedEnvelopeBuffer`
-		// and outlives this function.
+		// propagation). No upsampled-source cache exists post the
+		// 2026-05-13 rewrite — `_unbuffer` reads the source ChunkBuffer
+		// at base rate directly.
+		await detectionEnvelope.close();
+		// `forwardEnvelopeBuffer` and `minHeldEnvelopeBuffer` are
+		// transient — both closed unconditionally. The losing one of
+		// `activeBufferA` / `activeBufferB` (the one NOT held by
+		// `winningRef`) is also closed here. The winning buffer is
+		// returned via `IterateResult.bestSmoothedEnvelopeBuffer` and
+		// outlives this function.
 		await forwardEnvelopeBuffer.close();
+		await minHeldEnvelopeBuffer.close();
 		// If no best-attempt update ever fired (impossible for non-zero
 		// frames since the first attempt always beats `Infinity`),
 		// `winningRef` still equals `activeBufferB` and `activeBufferA`
@@ -745,35 +808,80 @@ export async function iterateForTargets(args: IterateForTargetsArgs): Promise<It
 	}
 }
 
-interface StreamCurveAndForwardIirArgs {
+export interface StreamCurveAndForwardIirArgs {
 	detectionEnvelope: ChunkBuffer;
 	anchors: Anchors;
 	iir: BidirectionalIir;
+	/**
+	 * Half-width of the sliding-window-min over per-sample linear gain.
+	 * Matches the detection-cache slider's `halfWidth` so the min-hold
+	 * spans the same `[k − halfWidth, k + halfWidth]` window as the
+	 * max-pool on detection. Identical halfWidth on both ends is the
+	 * brick-wall exactness invariant: at the peak sample `k_peak`, the
+	 * detection max-pool window `[k_peak − halfWidth, k_peak + halfWidth]`
+	 * contains `k_peak` itself, so the per-sample gain at that index is
+	 * the brick-wall target; the min-hold on linear gain then carries
+	 * that minimum (heaviest) gain across the same window, and the
+	 * backward-pass clamp pins `g_final[k_peak]` to it.
+	 */
+	halfWidth: number;
 	forwardEnvelopeBuffer: ChunkBuffer;
+	/**
+	 * Per-attempt min-held linear-gain envelope. Filled in lockstep
+	 * with `forwardEnvelopeBuffer` (same length, same rate) and consumed
+	 * by `applyBackwardPassOverChunkBuffer` as the per-sample clamp
+	 * ceiling. Per `plan-loudness-target-deterministic` Phase 1.
+	 */
+	minHeldEnvelopeBuffer: ChunkBuffer;
 }
 
 /**
- * Walk A of the per-attempt body, post-Phase-3-envelope-chunkbuffer:
- * read the pre-built detection-envelope cache and write the forward-
- * IIR output to a disk-backed `ChunkBuffer` chunk-by-chunk. Per
- * `plan-loudness-target-stream-caching` Phase 3.2.
+ * Walk A of the per-attempt body, post-2026-05-13 base-rate-downstream
+ * rewrite (with Phase 1 of `plan-loudness-target-deterministic`
+ * grafting in the sliding-window-min): read the pre-built BASE-RATE
+ * detection-envelope cache and produce TWO chunk-streamed outputs at
+ * base rate:
  *
- * Streams the detection-envelope ChunkBuffer via
- * `detectionEnvelope.read(CHUNK_FRAMES * OVERSAMPLE_FACTOR)` loop until
- * short chunk. The cache is single-channel at 4× rate (the leading-edge
- * defer of `halfWidth` samples was absorbed by the cache builder), so
- * `chunk.samples[0]` carries the already-pooled detection envelope.
+ *   - `forwardEnvelopeBuffer`: forward-IIR output over the min-held
+ *     linear gain. Consumed by the backward pass (reverse-twice +
+ *     forward IIR) to produce `g_iir`.
+ *   - `minHeldEnvelopeBuffer`: pre-IIR `min over [k − halfWidth,
+ *     k + halfWidth] of g_per_sample[k']`. Carries the brick-wall
+ *     exactness ceiling; the backward pass clamps each IIR output
+ *     sample to the lower of the two.
  *
- * `forwardEnvelopeBuffer` is written chunk-by-chunk. The caller must
- * `clear()` it before each attempt's walk-A call so this attempt's
- * output replaces (rather than extends) the previous attempt's.
+ * Pipeline per chunk:
+ *   1. Curve eval at base rate: `g[k] = 10^(gainDbAt(linearToDb(
+ *      pool[k])) / 20)` into the `gWindowScratch` view.
+ *   2. Push the curve output through `SlidingWindowMinStream` (state
+ *      continuity across chunks; the stream defers emission by
+ *      `halfWidth` on the leading edge and flushes the trailing
+ *      `halfWidth` samples on `isFinal === true`).
+ *   3. Forward IIR over the emitted min-held chunk (which may be
+ *      shorter than the input chunk in the leading-edge regime, and
+ *      longer than the input chunk on the final chunk when the trailing
+ *      edge flushes).
+ *   4. Append the IIR output to `forwardEnvelopeBuffer` and the min-
+ *      held chunk to `minHeldEnvelopeBuffer`.
+ *
+ * Min in linear gain = max attenuation. Computing the min-hold in
+ * linear gain (not dB) is intentional: linear is the apply-multiply's
+ * native space, and a min over linear-gain values is equivalent to a
+ * max over `−gainDb` values (the worst-needed gain over the window).
+ *
+ * Both output buffers end with `frames === detectionEnvelope.frames`
+ * by construction once the trailing-edge flush completes on the final
+ * chunk. The caller must `clear()` both before each attempt's walk-A
+ * call so this attempt's output replaces (rather than extends) the
+ * previous attempt's.
  */
-async function streamCurveAndForwardIir(
+export async function streamCurveAndForwardIir(
 	args: StreamCurveAndForwardIirArgs,
 ): Promise<void> {
-	const { detectionEnvelope, anchors, iir, forwardEnvelopeBuffer } = args;
+	const { detectionEnvelope, anchors, iir, halfWidth, forwardEnvelopeBuffer, minHeldEnvelopeBuffer } = args;
+	const totalFrames = detectionEnvelope.frames;
 
-	if (detectionEnvelope.frames === 0) return;
+	if (totalFrames === 0) return;
 
 	// Rewind detection envelope's read cursor — the cache is re-read
 	// from frame 0 each attempt.
@@ -781,16 +889,12 @@ async function streamCurveAndForwardIir(
 
 	const forwardState = { value: 0 };
 	let forwardSeeded = false;
+	const minStream = new SlidingWindowMinStream(halfWidth);
 
-	// Persistent per-chunk scratch for the curve-eval output. Same
-	// pattern as Phase 1.1 (`gWindowScratch`): sized at the maximum
-	// upsampled chunk length, reused via `.subarray(0, length)`. The
-	// cache emits exactly `CHUNK_FRAMES * OVERSAMPLE_FACTOR` samples
-	// per chunk (except the last) — no `+ halfWidth` slack is needed
-	// here because the sliding-window flush already happened in the
-	// cache build.
-	const upsampledChunkSize = CHUNK_FRAMES * OVERSAMPLE_FACTOR;
-	const gWindowScratch = new Float32Array(upsampledChunkSize);
+	// Persistent per-chunk scratch for the curve-eval output. Sized at
+	// `CHUNK_FRAMES` (base rate, no `× OVERSAMPLE_FACTOR` factor), reused
+	// via `.subarray(0, length)` for the variable last-chunk length.
+	const gWindowScratch = new Float32Array(CHUNK_FRAMES);
 
 	// Thread sample rate / bit depth from the source cache. Both are
 	// undefined-tolerant on `write`; passing them explicitly preserves
@@ -798,15 +902,17 @@ async function streamCurveAndForwardIir(
 	const detectionSampleRate = detectionEnvelope.sampleRate;
 	const detectionBitDepth = detectionEnvelope.bitDepth;
 
+	let consumedFrames = 0;
+
 	for (;;) {
-		const chunk = await detectionEnvelope.read(upsampledChunkSize);
+		const chunk = await detectionEnvelope.read(CHUNK_FRAMES);
 		const windowChunk = chunk.samples[0];
 		const chunkLength = windowChunk?.length ?? 0;
 
 		if (windowChunk === undefined || chunkLength === 0) break;
 
-		// Curve per output sample at 4× rate: `g[k] = 10^(gainDbAt(
-		// linearToDb(window[k])) / 20)`. View into the persistent
+		// Curve per output sample at BASE rate: `g[n] = 10^(gainDbAt(
+		// linearToDb(detection[n])) / 20)`. View into the persistent
 		// `gWindowScratch` — fully overwritten by the fill loop below.
 		const gWindowChunk = gWindowScratch.subarray(0, chunkLength);
 
@@ -817,160 +923,160 @@ async function streamCurveAndForwardIir(
 			gWindowChunk[outputIdx] = Math.pow(10, gainDb / 20);
 		}
 
-		// Forward IIR (at upsampled rate, alpha already correct) with
-		// state continuity across chunks. Seed from the first emitted
-		// curve sample.
-		if (!forwardSeeded) {
-			forwardState.value = gWindowChunk[0] ?? 0;
-			forwardSeeded = true;
+		consumedFrames += chunkLength;
+		const isFinal = consumedFrames >= totalFrames;
+		// `SlidingWindowMinStream.push` returns the min-held emissions
+		// for the input it has now seen. On the leading edge it emits
+		// fewer samples than ingested (defer by `halfWidth`); on the
+		// final chunk it flushes the trailing-edge so total emitted ==
+		// total ingested. Either way, the IIR is fed exactly the
+		// returned slice and the same slice is also appended to the
+		// min-held envelope buffer — they stay byte-aligned by
+		// construction.
+		const minHeldChunk = minStream.push(gWindowChunk, isFinal);
+
+		if (minHeldChunk.length > 0) {
+			// Forward IIR (at BASE rate; the IIR's alpha was derived from
+			// `(smoothingMs, baseRate)` at construction so the time
+			// response in ms is identical to the prior 4× pipeline).
+			// State continuity across chunks. Seed from the first emitted
+			// min-held sample.
+			if (!forwardSeeded) {
+				forwardState.value = minHeldChunk[0] ?? 0;
+				forwardSeeded = true;
+			}
+
+			const forwardChunk = iir.applyForwardPass(minHeldChunk, forwardState);
+
+			await forwardEnvelopeBuffer.write([forwardChunk], detectionSampleRate, detectionBitDepth);
+			// The min-held chunk is a fresh `Float32Array` from
+			// `SlidingWindowMinStream.push`; safe to hand to `write`
+			// without copying.
+			await minHeldEnvelopeBuffer.write([minHeldChunk], detectionSampleRate, detectionBitDepth);
 		}
 
-		const forwardChunk = iir.applyForwardPass(gWindowChunk, forwardState);
-
-		await forwardEnvelopeBuffer.write([forwardChunk], detectionSampleRate, detectionBitDepth);
-
-		if (chunkLength < upsampledChunkSize) break;
+		if (chunkLength < CHUNK_FRAMES) break;
 	}
 
 	// Ensure the backward pass (which reads via `readReverse`) sees a
 	// consistent state. `readReverse` spans head-scratch / disk / tail-
 	// scratch transparently, but flushing makes the contract obvious.
 	await forwardEnvelopeBuffer.flushWrites();
+	await minHeldEnvelopeBuffer.flushWrites();
 }
 
-interface MeasureAttemptArgs {
+export interface MeasureAttemptArgs {
 	/**
-	 * 4×-upsampled per-channel source cache built ONCE at iteration
-	 * entry. The per-attempt walk B reads this in chunks at upsampled
-	 * rate, multiplies each channel by the chunk-aligned envelope slice,
-	 * and downsamples — skipping the per-attempt upsample step.
+	 * Source ChunkBuffer read directly at BASE rate. Post the
+	 * 2026-05-13 base-rate-downstream rewrite, no upsampled-source
+	 * cache exists — every Walk B reads the source ChunkBuffer at
+	 * base rate and multiplies by the base-rate envelope.
 	 */
-	upsampledSource: ChunkBuffer;
+	source: ChunkBuffer;
 	sampleRate: number;
 	channelCount: number;
 	/**
-	 * 4×-rate smoothed gain envelope from this attempt's walks, held as
-	 * a single-channel `ChunkBuffer` (per Phase 3 of
-	 * `plan-loudness-target-stream-caching`: the envelope is disk-
-	 * backed via `ChunkBuffer`, not a flat `Float32Array`). Frames
-	 * count matches `upsampledSource.frames` exactly. Read in chunks
-	 * in lockstep with `upsampledSource.read(CHUNK_FRAMES *
-	 * OVERSAMPLE_FACTOR)` sequential.
+	 * BASE-rate smoothed gain envelope from this attempt's walks, held
+	 * as a single-channel `ChunkBuffer`. Frames count matches
+	 * `source.frames` exactly. Read in chunks in lockstep with
+	 * `source.read(CHUNK_FRAMES)` sequential.
 	 */
 	gSmoothed: ChunkBuffer;
 }
 
-interface MeasureAttemptResult {
+export interface MeasureAttemptResult {
 	readonly outputLufs: number;
 	readonly outputLra: number;
 	/**
 	 * 4× upsampled true peak in dBTP of the transformed output of THIS
-	 * attempt. Measured in lockstep with the `LoudnessAccumulator` via
-	 * a parallel {@link TruePeakAccumulator} over the same transformed
-	 * chunks. `-Infinity` for silent output.
+	 * attempt. The {@link TruePeakAccumulator} handles its own
+	 * internal 4× upsample for TP detection — the apply step here
+	 * runs at base rate, but TP is still measured at 4×.
+	 * `-Infinity` for silent output.
 	 */
 	readonly outputTruePeakDb: number;
 }
 
 /**
- * Per-attempt body (walk B sub-pass B2), post-Phase-2-stream-caching:
- * iterate the upsampled-source CACHE (built once at iteration entry)
- * chunk-by-chunk, multiply by the chunk-aligned 4×-rate envelope
- * slice, and downsample via a fresh per-channel `Oversampler` set.
- * Parallel `LoudnessAccumulator` / `TruePeakAccumulator` consume the
- * downsampled chunks. Returns integrated LUFS, LRA, and 4× true peak
- * of the transformed signal.
+ * Per-attempt body (walk B sub-pass B2), post the 2026-05-13 base-rate-
+ * downstream rewrite: iterate the SOURCE ChunkBuffer at base rate
+ * (no upsampled-source cache exists), multiply by the chunk-aligned
+ * base-rate envelope slice, and feed the result directly into
+ * `LoudnessAccumulator` + `TruePeakAccumulator`. Returns integrated
+ * LUFS, LRA, and 4× true peak of the transformed signal.
  *
- * The per-attempt upsample step from the pre-cache pipeline is gone —
- * the cache absorbed it. Only the downsample side of the
- * `Oversampler` is exercised here. Downsamplers MUST be fresh per
- * attempt: their post-multiply input differs per attempt, so reusing
- * across attempts would corrupt the AA filter state.
+ * No upsample, no downsample, no AA filter at the multiply: the
+ * smoothed gain envelope is bandlimited far below base-rate Nyquist by
+ * its smoothing time constant, so `source × envelope` produces no
+ * meaningful high-frequency content. The `TruePeakAccumulator` still
+ * handles its own internal 4× upsample for TP detection — that
+ * pipeline is unchanged.
+ *
+ * Per-attempt sample throughput drops by `OVERSAMPLE_FACTOR` relative
+ * to the pre-rewrite pipeline; per-attempt allocation footprint drops
+ * accordingly.
  */
-async function measureAttemptOutput(args: MeasureAttemptArgs): Promise<MeasureAttemptResult> {
-	const { upsampledSource, sampleRate, channelCount, gSmoothed } = args;
+export async function measureAttemptOutput(args: MeasureAttemptArgs): Promise<MeasureAttemptResult> {
+	const { source, sampleRate, channelCount, gSmoothed } = args;
 	const accumulator = new LoudnessAccumulator(sampleRate, channelCount);
 	const truePeakAccumulator = new TruePeakAccumulator(sampleRate, channelCount);
 
-	// Fresh per-channel downsamplers. Distinct from walk A's
-	// (now-deleted) detection set, from the cache-build set inside
-	// `buildSourceUpsampledAndDetectionCaches`, and from the stream
-	// class's persistent apply set. Each `Oversampler` here is used
-	// for its `downsample` side only — the upsample side ran during
-	// cache build.
-	const downsamplers: Array<Oversampler> = [];
-
-	for (let channelIdx = 0; channelIdx < channelCount; channelIdx++) {
-		downsamplers.push(new Oversampler(OVERSAMPLE_FACTOR, sampleRate));
-	}
-
 	// Persistent per-attempt output scratch: one `Float32Array` per
-	// channel sized to the steady-state source-rate chunk length.
+	// channel sized to the steady-state base-rate chunk length.
 	// Reused across chunks via `subarray(0, chunkFrames)` for the
 	// variable last-chunk length. Kept inside `measureAttemptOutput`
-	// (not hoisted to `iterateForTargets`) per the Phase 1.3 plan —
-	// the scratch is cheap (sized by chunk, not by source) and the
-	// per-attempt-fresh pattern preserves clear ownership boundaries
-	// with the `downsamplers` set.
+	// — the scratch is cheap (sized by chunk, not by source) and the
+	// per-attempt-fresh pattern preserves clear ownership boundaries.
 	const applyOutputScratch: Array<Float32Array> = [];
 
 	for (let channelIdx = 0; channelIdx < channelCount; channelIdx++) {
 		applyOutputScratch.push(new Float32Array(CHUNK_FRAMES));
 	}
 
-	const upsampledChunkSize = CHUNK_FRAMES * OVERSAMPLE_FACTOR;
-
-	// Rewind both caches' read cursors — each attempt reads them from
-	// frame 0 in lockstep. Both are read-only at this point so reset()
-	// just rewinds the read cursor; safe even if a prior attempt's
-	// reads left the cursor mid-buffer.
-	await upsampledSource.reset();
+	// Rewind both buffers' read cursors — each attempt reads them
+	// from frame 0 in lockstep. Both are read-only at this point so
+	// reset() just rewinds the read cursor; safe even if a prior
+	// attempt's reads left the cursor mid-buffer.
+	await source.reset();
 	await gSmoothed.reset();
 
 	for (;;) {
-		const upChunk = await upsampledSource.read(upsampledChunkSize);
-		const upChunkFrames = upChunk.samples[0]?.length ?? 0;
+		const sourceChunk = await source.read(CHUNK_FRAMES);
+		const chunkFrames = sourceChunk.samples[0]?.length ?? 0;
 
-		if (upChunkFrames === 0) break;
+		if (chunkFrames === 0) break;
 
-		// Source-rate chunk frames = upsampled chunk frames / factor.
-		// Both the upsampled cache (post-build) and the source itself
-		// have lengths that are exact multiples of `OVERSAMPLE_FACTOR`,
-		// so this integer divide is exact for every chunk.
-		const chunkFrames = upChunkFrames / OVERSAMPLE_FACTOR;
 		// Chunk-aligned envelope slice — pulled from gSmoothed in
-		// lockstep with the upsampled-source read. Both buffers were
-		// reset above and are read forward; cursors stay aligned by
+		// lockstep with the source read. Both buffers were reset
+		// above and are read forward; cursors stay aligned by
 		// construction.
-		const envelopeChunk = await gSmoothed.read(upChunkFrames);
+		const envelopeChunk = await gSmoothed.read(chunkFrames);
 		const envelopeSlice = envelopeChunk.samples[0];
 
-		if (envelopeSlice?.length !== upChunkFrames) {
+		if (envelopeSlice?.length !== chunkFrames) {
 			throw new Error(
-				`measureAttemptOutput: envelope ChunkBuffer returned ${envelopeSlice?.length ?? 0} samples; expected ${upChunkFrames}`,
+				`measureAttemptOutput: envelope ChunkBuffer returned ${envelopeSlice?.length ?? 0} samples; expected ${chunkFrames}`,
 			);
 		}
 
 		// Build per-chunk views into the persistent scratch so the
 		// trailing short chunk gets correctly-sized slots (the
-		// cache-fed apply helper validates `output[ch].length ===
-		// upsampledChunkSamples[ch].length / factor`).
+		// base-rate apply helper validates each `output[ch].length`
+		// against the chunk length).
 		const applyOutputView: Array<Float32Array> = applyOutputScratch.map(
 			(slot) => slot.subarray(0, chunkFrames),
 		);
 
-		const transformed = applyOversampledChunkFromCache({
-			upsampledChunkSamples: upChunk.samples,
+		const transformed = applyBaseRateChunk({
+			chunkSamples: sourceChunk.samples,
 			smoothedGain: envelopeSlice,
-			downsamplers,
-			factor: OVERSAMPLE_FACTOR,
 			output: applyOutputView,
 		});
 
 		accumulator.push(transformed, chunkFrames);
 		truePeakAccumulator.push(transformed, chunkFrames);
 
-		if (upChunkFrames < upsampledChunkSize) break;
+		if (chunkFrames < CHUNK_FRAMES) break;
 	}
 
 	const result = accumulator.finalize();
@@ -1091,7 +1197,7 @@ function clampBoost(boost: number): number {
  * fallback) — matches the iterator's initial-value semantics when
  * the auto-derived value is `+Infinity`.
  */
-function clampLimit(limitDb: number, pivotDb: number, sourcePeakDb: number): number {
+export function clampLimit(limitDb: number, pivotDb: number, sourcePeakDb: number): number {
 	if (!Number.isFinite(limitDb)) return sourcePeakDb;
 
 	const lower = pivotDb + LIMIT_EPSILON_DB;

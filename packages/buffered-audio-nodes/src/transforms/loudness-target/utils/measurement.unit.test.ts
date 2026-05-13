@@ -1,11 +1,29 @@
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { measureSource } from "./measurement";
 
 const SAMPLE_RATE = 48_000;
 
 /** Provisional default percentile from plan §"Approach" item 1. */
 const LIMIT_PERCENTILE = 0.995;
+
+/**
+ * Pool half-width passed to `measureSource` — matches the apply path's
+ * `windowSamplesFromMs(smoothingMs, baseRate)`. Using ~1 ms at 48 kHz
+ * (48 samples) keeps the pooled-axis behaviour close to per-sample for
+ * shape tests while still exercising the post-2026-05-13 pooled
+ * histogram code path. The tests below assert qualitative ordering
+ * (limit > pivot, limit ≤ truePeak) which holds under any non-degenerate
+ * pool width.
+ */
+const HALF_WIDTH = 48;
+
+/**
+ * Buffers created by `makeBufferFromChannels` during a test. The
+ * `afterEach` hook below drains and closes them so the test suite
+ * does not leak `%TEMP%\chunk-buffer-*.bin` files.
+ */
+const buffersToClose: ChunkBuffer[] = [];
 
 /**
  * Wrap per-channel synthetic arrays in a `ChunkBuffer`. Mirrors
@@ -16,6 +34,8 @@ async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Pr
 
 	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
 	await buffer.flushWrites();
+
+	buffersToClose.push(buffer);
 
 	return buffer;
 }
@@ -32,6 +52,14 @@ function makeLcg(seed: number): () => number {
 }
 
 describe("measureSource — limitAutoDb (top-down percentile walk)", () => {
+	afterEach(async () => {
+		for (const buf of buffersToClose) {
+			await buf.close();
+		}
+
+		buffersToClose.length = 0;
+	});
+
 	it("sine source with anomalous transients → limitAutoDb sits in the upper portion of the detection range", async () => {
 		// 8-second mono 220 Hz sine at body amplitude 0.05 (≈ -26 dBFS
 		// linear peak) with rare anomalous transients at 0.7 amplitude
@@ -71,24 +99,25 @@ describe("measureSource — limitAutoDb (top-down percentile walk)", () => {
 		}
 
 		const buffer = await makeBufferFromChannels([channel]);
-		const result = await measureSource(buffer, SAMPLE_RATE, LIMIT_PERCENTILE);
+		const result = await measureSource(buffer, SAMPLE_RATE, LIMIT_PERCENTILE, HALF_WIDTH);
 
 		// Sanity: pivot finite and well below the transient level.
 		expect(Number.isFinite(result.pivotAutoDb)).toBe(true);
 		expect(Number.isFinite(result.truePeakDb)).toBe(true);
 		expect(Number.isFinite(result.limitAutoDb)).toBe(true);
 
-		// Quantitative band: the transient cluster supplies ~0.17 %
-		// of the upsampled detection samples (well below the 0.5 %
-		// target), so the walk descends past the transients (at
-		// ~ -3 dBFS) through the sparsely-populated intermediate
-		// buckets and into the upper envelope of the sine body
-		// (linear-peak ≈ 0.05 → ≈ -26 dBFS). Observed: pivot ≈
-		// -28.7 dBFS, limit ≈ -25.7 dBFS, peak ≈ -1.95 dBFS.
+		// Quantitative band (post-2026-05-13 pooled-axis fix): each
+		// 4-sample transient is amplified by the `SlidingWindowMaxStream`
+		// to fill its full `2·halfWidth+1` window. With HALF_WIDTH=48
+		// and ~40 transients, ~40·(2·48+5) ≈ 4000 pooled samples sit at
+		// the transient amplitude (~0.7 linear ≈ -3 dBFS) out of
+		// 8·48000 ≈ 384000 total — ~1 % of the pooled distribution.
+		// That exceeds the 0.5 % target, so the top-down walk now
+		// terminates inside the transient cluster, near the true peak.
 		expect(result.limitAutoDb).toBeGreaterThan(result.pivotAutoDb);
-		expect(result.limitAutoDb).toBeLessThan(result.truePeakDb);
-		expect(result.limitAutoDb).toBeGreaterThan(-28);
-		expect(result.limitAutoDb).toBeLessThan(-22);
+		expect(result.limitAutoDb).toBeLessThanOrEqual(result.truePeakDb);
+		expect(result.limitAutoDb).toBeGreaterThan(-10);
+		expect(result.limitAutoDb).toBeLessThan(0);
 	});
 
 	it("flat sine wave → limitAutoDb lands near the true peak", async () => {
@@ -108,7 +137,7 @@ describe("measureSource — limitAutoDb (top-down percentile walk)", () => {
 		}
 
 		const buffer = await makeBufferFromChannels([channel]);
-		const result = await measureSource(buffer, SAMPLE_RATE, LIMIT_PERCENTILE);
+		const result = await measureSource(buffer, SAMPLE_RATE, LIMIT_PERCENTILE, HALF_WIDTH);
 
 		expect(Number.isFinite(result.pivotAutoDb)).toBe(true);
 		expect(Number.isFinite(result.truePeakDb)).toBe(true);
@@ -121,6 +150,34 @@ describe("measureSource — limitAutoDb (top-down percentile walk)", () => {
 		expect(Math.abs(result.limitAutoDb - result.truePeakDb)).toBeLessThan(0.5);
 	});
 
+	it("non-silent source surfaces a non-empty shortTermLufs block series", async () => {
+		// `solveTargets` (Phase 2 of `plan-loudness-target-deterministic`)
+		// consumes `shortTermLufs` as the discrete level distribution it
+		// inverts against `targetLufs`. The series must be populated for
+		// any source long enough to produce at least one 3-second
+		// short-term block.
+		const durationSeconds = 8;
+		const frames = SAMPLE_RATE * durationSeconds;
+		const channel = new Float32Array(frames);
+		const angularStep = (2 * Math.PI * 220) / SAMPLE_RATE;
+
+		for (let frameIndex = 0; frameIndex < frames; frameIndex++) {
+			channel[frameIndex] = 0.3 * Math.sin(angularStep * frameIndex);
+		}
+
+		const buffer = await makeBufferFromChannels([channel]);
+		const result = await measureSource(buffer, SAMPLE_RATE, LIMIT_PERCENTILE, HALF_WIDTH);
+
+		expect(result.shortTermLufs.length).toBeGreaterThan(0);
+		// All blocks finite for a non-silent sine — sanity that the
+		// pass-through from `LoudnessAccumulator.finalize().shortTerm`
+		// did not include any -Infinity / NaN entries that would poison
+		// the solver's predict step.
+		for (const blockLufs of result.shortTermLufs) {
+			expect(Number.isFinite(blockLufs)).toBe(true);
+		}
+	});
+
 	it("silent source → limitAutoDb = +Infinity", async () => {
 		// 8 seconds of pure zeros. `AmplitudeHistogramAccumulator`
 		// reports bucketMax = 0; `computeLimitAutoDb` short-circuits
@@ -130,7 +187,7 @@ describe("measureSource — limitAutoDb (top-down percentile walk)", () => {
 		const channel = new Float32Array(frames);
 
 		const buffer = await makeBufferFromChannels([channel]);
-		const result = await measureSource(buffer, SAMPLE_RATE, LIMIT_PERCENTILE);
+		const result = await measureSource(buffer, SAMPLE_RATE, LIMIT_PERCENTILE, HALF_WIDTH);
 
 		expect(result.limitAutoDb).toBe(Number.POSITIVE_INFINITY);
 	});

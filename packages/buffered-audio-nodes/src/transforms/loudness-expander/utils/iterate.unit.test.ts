@@ -1,6 +1,6 @@
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { IntegratedLufsAccumulator } from "@e9g/buffered-audio-nodes-utils";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { computeLinkedDetection } from "./detect";
 import { iterateForTarget } from "./iterate";
 import { type CurveParams } from "./curve";
@@ -8,6 +8,8 @@ import { type CurveParams } from "./curve";
 const SAMPLE_RATE = 48_000;
 const DURATION_SECONDS = 4;
 const FRAME_COUNT = SAMPLE_RATE * DURATION_SECONDS;
+
+const buffersToClose: ChunkBuffer[] = [];
 
 /**
  * Wrap per-channel synthetic arrays in a `ChunkBuffer` so the streaming
@@ -19,6 +21,8 @@ async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Pr
 
 	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
 	await buffer.flushWrites();
+
+	buffersToClose.push(buffer);
 
 	return buffer;
 }
@@ -77,6 +81,11 @@ function makeCurveParams(floor: number, pivot: number): CurveParams {
 }
 
 describe("iterateForTarget", () => {
+	afterEach(async () => {
+		for (const buf of buffersToClose) await buf.close();
+		buffersToClose.length = 0;
+	});
+
 	it("converges within tolerance on a typical source", async () => {
 		const source = makeSyntheticSource(0xDEAD_BEEF, 0.2);
 		const sourceLUFS = measureSourceLufsInline(source);

@@ -13,8 +13,12 @@ function makeStereoChunk(leftValue: number, rightValue: number, frames = 256): {
 async function applyPan(node: ReturnType<typeof pan>, chunk: { samples: Array<Float32Array>; offset: number; sampleRate: number; bitDepth: number }) {
 	const stream = node.createStream();
 	const buffer = new ChunkBuffer();
-	await stream._buffer(chunk, buffer);
-	return stream._unbuffer(chunk);
+	try {
+		await stream._buffer(chunk, buffer);
+		return stream._unbuffer(chunk);
+	} finally {
+		await buffer.close();
+	}
 }
 
 describe("PanNode", () => {
@@ -117,8 +121,12 @@ describe("PanNode", () => {
 				bitDepth: 32,
 			};
 			const buffer = new ChunkBuffer();
-			await stream._buffer(chunk, buffer);
-			expect(() => stream._unbuffer(chunk)).toThrow(/PanNode supports 1 or 2 channel inputs only/);
+			try {
+				await stream._buffer(chunk, buffer);
+				expect(() => stream._unbuffer(chunk)).toThrow(/PanNode supports 1 or 2 channel inputs only/);
+			} finally {
+				await buffer.close();
+			}
 		});
 	});
 });

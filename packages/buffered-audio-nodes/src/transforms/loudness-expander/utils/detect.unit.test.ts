@@ -1,8 +1,18 @@
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { computeLinkedDetection } from "./detect";
 
 const SAMPLE_RATE = 48_000;
+
+/**
+ * Per-file registry of `ChunkBuffer`s that must be closed at the end
+ * of each test. `makeBufferFromChannels` pushes every buffer it
+ * creates (including the empty-frame short-circuit path); the
+ * `afterEach` hook drains and re-empties the list. Result buffers
+ * are not tracked here because `computeLinkedDetection` returns a
+ * `Float32Array`, not a buffer.
+ */
+const buffersToClose: Array<ChunkBuffer> = [];
 
 /**
  * Wrap per-channel arrays in a `ChunkBuffer`. Mirrors the loudness-
@@ -19,6 +29,9 @@ async function makeBufferFromChannels(
 	writeChunkFrames = 32,
 ): Promise<ChunkBuffer> {
 	const buffer = new ChunkBuffer();
+
+	buffersToClose.push(buffer);
+
 	const frameCount = channels[0]?.length ?? 0;
 
 	if (frameCount === 0) {
@@ -48,6 +61,14 @@ async function makeBufferFromChannels(
 }
 
 describe("computeLinkedDetection", () => {
+	afterEach(async () => {
+		for (const buf of buffersToClose) {
+			await buf.close();
+		}
+
+		buffersToClose.length = 0;
+	});
+
 	it("mono: detection equals abs(sample) at each frame", async () => {
 		const channel = new Float32Array([1, -2, 0.5, -0.25]);
 		const buffer = await makeBufferFromChannels([channel]);

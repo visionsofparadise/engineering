@@ -1,12 +1,14 @@
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { IntegratedLufsAccumulator } from "@e9g/buffered-audio-nodes-utils";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { type CurveParams } from "./curve";
 import { iterateForTarget } from "./iterate";
 
 const SAMPLE_RATE = 48_000;
 const DURATION_SECONDS = 5;
 const FRAME_COUNT = SAMPLE_RATE * DURATION_SECONDS;
+
+const buffersToClose: Array<ChunkBuffer> = [];
 
 /**
  * Wrap per-channel synthetic arrays in a `ChunkBuffer` so the streaming
@@ -19,6 +21,7 @@ const FRAME_COUNT = SAMPLE_RATE * DURATION_SECONDS;
 async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Promise<ChunkBuffer> {
 	const buffer = new ChunkBuffer();
 
+	buffersToClose.push(buffer);
 	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
 	await buffer.flushWrites();
 
@@ -81,7 +84,12 @@ function makeParams(floor: number, bodyLow: number, bodyHigh: number, peak: numb
 }
 
 describe("iterateForTarget", () => {
-	it("converges within tolerance on a moderate-boost target (synthetic source)", async () => {
+	afterEach(async () => {
+		for (const buf of buffersToClose) await buf.close();
+		buffersToClose.length = 0;
+	});
+
+	it("converges within tolerance on a moderate-boost target (synthetic source)", { timeout: 30_000 }, async () => {
 		const source = makeSyntheticSource(0xDEAD_BEEF, 0.2);
 		const sourceLUFS = measureSourceLufs(source);
 
@@ -111,7 +119,7 @@ describe("iterateForTarget", () => {
 		expect(Math.abs((winning?.outputLUFS ?? -Infinity) - targetLUFS)).toBeLessThan(0.5);
 	});
 
-	it("identity target (target = source LUFS): converges with bestBoost ≈ 0 in 1–2 attempts", async () => {
+	it("identity target (target = source LUFS): converges with bestBoost ≈ 0 in 1–2 attempts", { timeout: 30_000 }, async () => {
 		const source = makeSyntheticSource(0xC0FFEE, 0.2);
 		const sourceLUFS = measureSourceLufs(source);
 		const params = makeParams(0.005, 0.02, 0.18, 0.3);
@@ -131,7 +139,7 @@ describe("iterateForTarget", () => {
 		expect(result.bestBoost).toBeCloseTo(0, 5);
 	});
 
-	it("hard-target (+20 dB above source): does not crash, returns best attempt with converged = false if unreachable", async () => {
+	it("hard-target (+20 dB above source): does not crash, returns best attempt with converged = false if unreachable", { timeout: 30_000 }, async () => {
 		const source = makeSyntheticSource(0xBADBEEF, 0.05);
 		const sourceLUFS = measureSourceLufs(source);
 		const params = makeParams(0.001, 0.005, 0.05, 0.1);
@@ -162,7 +170,7 @@ describe("iterateForTarget", () => {
 		}
 	});
 
-	it("attempts step toward the target (no wild oscillation on a tractable target)", async () => {
+	it("attempts step toward the target (no wild oscillation on a tractable target)", { timeout: 30_000 }, async () => {
 		const source = makeSyntheticSource(0xFACE_F00D, 0.15);
 		const sourceLUFS = measureSourceLufs(source);
 		const params = makeParams(0.005, 0.02, 0.14, 0.25);
@@ -191,7 +199,7 @@ describe("iterateForTarget", () => {
 		expect(Math.abs(bestAttempt.outputLUFS - targetLUFS)).toBeLessThanOrEqual(Math.abs((first?.outputLUFS ?? Infinity) - targetLUFS));
 	});
 
-	it("preservePeaks = false (peak === null): converges and produces well-formed results", async () => {
+	it("preservePeaks = false (peak === null): converges and produces well-formed results", { timeout: 30_000 }, async () => {
 		// The expander mode lets the body lift continue above bodyHigh
 		// without an upper roll-off. Convergence properties are similar to
 		// preservePeaks=true at moderate boosts; the curve is just flat

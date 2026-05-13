@@ -15,8 +15,12 @@ async function applyDownmix(chunk: ReturnType<typeof makeChunk>) {
 	const node = downmixMono();
 	const stream = node.createStream();
 	const buffer = new ChunkBuffer();
-	await stream._buffer(chunk, buffer);
-	return stream._unbuffer(chunk);
+	try {
+		await stream._buffer(chunk, buffer);
+		return stream._unbuffer(chunk);
+	} finally {
+		await buffer.close();
+	}
 }
 
 describe("DownmixMonoNode", () => {

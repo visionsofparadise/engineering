@@ -25,12 +25,16 @@ describe("GainNode", () => {
 		const buffer = new ChunkBuffer();
 		const chunk = makeStereoChunk(0.5, -0.5);
 
-		await stream._buffer(chunk, buffer);
-		const output = stream._unbuffer(chunk);
+		try {
+			await stream._buffer(chunk, buffer);
+			const output = stream._unbuffer(chunk);
 
-		for (let i = 0; i < 512; i++) {
-			expect(output.samples[0]![i]).toBeCloseTo(0.5, 5);
-			expect(output.samples[1]![i]).toBeCloseTo(-0.5, 5);
+			for (let i = 0; i < 512; i++) {
+				expect(output.samples[0]![i]).toBeCloseTo(0.5, 5);
+				expect(output.samples[1]![i]).toBeCloseTo(-0.5, 5);
+			}
+		} finally {
+			await buffer.close();
 		}
 	});
 
@@ -40,11 +44,15 @@ describe("GainNode", () => {
 		const buffer = new ChunkBuffer();
 		const chunk = makeStereoChunk(0.25, 0.25);
 
-		await stream._buffer(chunk, buffer);
-		const output = stream._unbuffer(chunk);
+		try {
+			await stream._buffer(chunk, buffer);
+			const output = stream._unbuffer(chunk);
 
-		// 6 dB ≈ linear 1.995
-		expect(output.samples[0]![0]).toBeCloseTo(0.25 * Math.pow(10, 6 / 20), 4);
+			// 6 dB ≈ linear 1.995
+			expect(output.samples[0]![0]).toBeCloseTo(0.25 * Math.pow(10, 6 / 20), 4);
+		} finally {
+			await buffer.close();
+		}
 	});
 
 	it("attenuates signal by 6 dB", async () => {
@@ -53,10 +61,14 @@ describe("GainNode", () => {
 		const buffer = new ChunkBuffer();
 		const chunk = makeStereoChunk(0.5, 0.5);
 
-		await stream._buffer(chunk, buffer);
-		const output = stream._unbuffer(chunk);
+		try {
+			await stream._buffer(chunk, buffer);
+			const output = stream._unbuffer(chunk);
 
-		expect(output.samples[0]![0]).toBeCloseTo(0.5 * Math.pow(10, -6 / 20), 4);
+			expect(output.samples[0]![0]).toBeCloseTo(0.5 * Math.pow(10, -6 / 20), 4);
+		} finally {
+			await buffer.close();
+		}
 	});
 
 	it("processes all channels equally", async () => {
@@ -65,11 +77,15 @@ describe("GainNode", () => {
 		const buffer = new ChunkBuffer();
 		const chunk = makeStereoChunk(0.1, 0.2);
 
-		await stream._buffer(chunk, buffer);
-		const output = stream._unbuffer(chunk);
-		const factor = Math.pow(10, 6 / 20);
+		try {
+			await stream._buffer(chunk, buffer);
+			const output = stream._unbuffer(chunk);
+			const factor = Math.pow(10, 6 / 20);
 
-		expect(output.samples[0]![0]).toBeCloseTo(0.1 * factor, 4);
-		expect(output.samples[1]![0]).toBeCloseTo(0.2 * factor, 4);
+			expect(output.samples[0]![0]).toBeCloseTo(0.1 * factor, 4);
+			expect(output.samples[1]![0]).toBeCloseTo(0.2 * factor, 4);
+		} finally {
+			await buffer.close();
+		}
 	});
 });

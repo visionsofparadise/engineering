@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { BufferedTransformStream, TransformNode, WHOLE_FILE, type AudioChunk, type ChunkBuffer, type TransformNodeProperties } from "@e9g/buffered-audio-nodes-core";
-import { Oversampler } from "@e9g/buffered-audio-nodes-utils";
 import { PACKAGE_NAME, PACKAGE_VERSION } from "../../package-metadata";
-import { applyOversampledChunkFromCache } from "./utils/apply";
-import { OVERSAMPLE_FACTOR, iterateForTargets } from "./utils/iterate";
+import { applyBaseRateChunk } from "./utils/apply";
+import { windowSamplesFromMs } from "./utils/envelope";
+import { clampLimit, iterateForTargets } from "./utils/iterate";
 import { measureSource } from "./utils/measurement";
+import { predictInitialB } from "./utils/solve";
 
 /**
  * Minimum separation enforced internally between `floor` and `pivot`
@@ -35,13 +36,15 @@ const FLOOR_PIVOT_EPSILON_DB = 0.01;
  * `floor < pivot` only when both are set; per-field `.lt(0)` still
  * constrains each to dB < 0 when supplied.
  *
- * Iteration is 1D on `B` (body gain). `limitDb` is set ONCE from the
- * measurement (or an explicit override) and is constant across attempts.
- * `peakGainDb` is derived per attempt from the closed form
- * `effectiveTargetTp − limitDb` with proportional feedback on observed
- * TP overshoot (per `plan-loudness-target-tp-iteration`). LRA falls out
- * as a consequence of the resulting geometry — there is no LRA target
- * axis (see `plan-loudness-target-percentile-limit` Decisions log).
+ * Iteration is 2D joint on `(B, peakGainDb)`. `limitDb` is set ONCE
+ * from the measurement (or an explicit override) and is constant across
+ * attempts. Initial `B` is seeded by a histogram-based LUFS predictor
+ * (per `plan-loudness-target-deterministic` 2026-05-13 revert) so
+ * attempt 1 lands close to target and the secant converges in fewer
+ * attempts. Initial `peakGainDb` is the closed-form `effectiveTargetTp
+ * − limitDb`; per-attempt proportional feedback on TP overshoot moves
+ * it from there. LRA falls out as a consequence of the resulting
+ * geometry — there is no LRA target axis.
  *
  * `targetTp` is the do-no-harm-default peak axis:
  *   - `targetTp` undefined → `effectiveTargetTp = sourcePeakDb` and
@@ -84,10 +87,10 @@ export interface LoudnessTargetProperties extends z.infer<typeof schema>, Transf
 
 export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTargetProperties> {
 	/**
-	 * 4×-upsampled peak-respecting smoothed gain envelope produced by
-	 * the winning iteration attempt, held as a disk-backed single-
-	 * channel `ChunkBuffer` of size `frames * OVERSAMPLE_FACTOR`.
-	 * Per Phase 3 of `plan-loudness-target-stream-caching`, the
+	 * BASE-rate peak-respecting smoothed gain envelope produced by the
+	 * winning iteration attempt, held as a disk-backed single-channel
+	 * `ChunkBuffer` of size `frames` (post the 2026-05-13 base-rate-
+	 * downstream rewrite; no `× OVERSAMPLE_FACTOR` factor). The
 	 * envelope is read chunk-by-chunk in `_unbuffer` rather than held
 	 * as a flat `Float32Array` — keeps RAM at ~10 MB regardless of
 	 * source length. `null` when the stream passes through (silent /
@@ -96,12 +99,9 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 	private winningSmoothedEnvelopeBuffer: ChunkBuffer | null = null;
 
 	/**
-	 * Body gain `B` chosen by 1D secant iteration on the LUFS error
-	 * (limit is fixed per-source from the percentile, peakGainDb tracks
-	 * via proportional feedback on TP overshoot). `null` when the
+	 * Body gain `B` from the winning iteration attempt. `null` when the
 	 * stream passes through (no curve was learned). Diagnostic only —
-	 * the apply pass uses the materialised envelope, not the boost
-	 * directly.
+	 * the apply pass uses the materialised envelope, not `B` directly.
 	 */
 	private winningB: number | null = null;
 
@@ -117,64 +117,39 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 	/**
 	 * `peakGainDb` from the winning attempt — the upper-segment right-
 	 * endpoint anchor gain. Starts at the closed-form
-	 * `(targetTp ?? sourcePeakDb) - sourcePeakDb` and adjusts downward
-	 * via proportional feedback on observed `outputTruePeakDb` overshoot
-	 * (per `plan-loudness-target-tp-iteration`). `null` when the stream
-	 * passes through. Diagnostic only — the apply pass uses the
-	 * materialised envelope, not the anchor directly.
+	 * `effectiveTargetTp − limitDb` and adjusts via proportional
+	 * feedback on observed signed TP error. `null` when the stream
+	 * passes through.
 	 */
 	private winningPeakGainDb: number | null = null;
 
 	/**
-	 * 4×-upsampled per-channel source cache produced by
-	 * `iterateForTargets` and shared with the final `_unbuffer` apply
-	 * pass. The cache lives from the end of `_process` (when
-	 * iteration returns it) through every `_unbuffer` chunk read; it
-	 * is closed in `_teardown` to release the backing temp file.
-	 *
-	 * `null` when the stream passes through (silent / sub-block-length
-	 * source — no iteration ran, no cache exists).
-	 */
-	private upsampledSourceCache: ChunkBuffer | null = null;
-
-	/**
-	 * Set to `true` by the first `_unbuffer` call so both
-	 * `upsampledSourceCache` and `winningSmoothedEnvelopeBuffer` have
-	 * their read cursors rewound exactly once. Both caches are
-	 * read-only in `_unbuffer` and consumed forward in chunk-cadence
-	 * lockstep with upstream chunks; this lazy-reset pattern keeps the
-	 * cursor management out of `_setup`.
+	 * Set to `true` by the first `_unbuffer` call so the
+	 * `winningSmoothedEnvelopeBuffer`'s read cursor is rewound exactly
+	 * once. The envelope is read-only in `_unbuffer` and consumed
+	 * forward in chunk-cadence lockstep with upstream chunks; this
+	 * lazy-reset pattern keeps the cursor management out of `_setup`.
+	 * Post the 2026-05-13 base-rate-downstream rewrite the
+	 * upsampled-source cache no longer exists — `_unbuffer` reads
+	 * source samples directly from the framework-provided chunk.
 	 */
 	private unbufferCursorsReady = false;
 
 	/**
-	 * Per-channel downsampler instances allocated in `_process` and
-	 * reused across all `_unbuffer` calls. ONLY the downsample side
-	 * is used here — the upsample side was consumed during the
-	 * cache build inside `iterateForTargets`. The biquad states for
-	 * the AA decimation filter persist across chunks so chunk
-	 * boundaries are continuous — multi-chunk runs match single-
-	 * chunk runs.
-	 *
-	 * These are the FINAL apply downsamplers — distinct from the
-	 * per-attempt downsamplers `measureAttemptOutput` allocates
-	 * internally (those would have absorbed each attempt's
-	 * post-multiply input history and would corrupt the apply path
-	 * if reused here).
-	 */
-	private downsamplers: Array<Oversampler> | null = null;
-
-	/**
-	 * Per-chunk wall-clock time spent in `_unbuffer` (oversample +
-	 * per-sample multiply + downsample per chunk). Accumulated across
-	 * all `_unbuffer` calls.
+	 * Per-chunk wall-clock time spent in `_unbuffer`. Post the
+	 * 2026-05-13 base-rate-downstream rewrite, `_unbuffer` is a pure
+	 * base-rate multiply per chunk (no upsample, no downsample, no
+	 * AA filter — the smoothed envelope is bandlimited far below
+	 * base-rate Nyquist, so the multiply introduces no high-frequency
+	 * content). Accumulated across all `_unbuffer` calls.
 	 */
 	public unbufferElapsedMs = 0;
 
 	/**
-	 * Wall-clock breakdown of the learn pass. Mirrors the expander's
-	 * `learnTimingMs` for QA driver parity. `iteration` stays at 0
-	 * until Phase 3 wires the iteration loop in.
+	 * Wall-clock breakdown of the learn pass. `iteration` is the wall
+	 * time spent inside `iterateForTargets`. `detection` stays at 0 for
+	 * QA-driver log parity — detection-envelope build cost is folded
+	 * into `iteration`.
 	 */
 	public learnTimingMs: { sourceMeasurement: number; detection: number; iteration: number } = {
 		sourceMeasurement: 0,
@@ -193,10 +168,16 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 
 		// --- Learn pass ---
 		// 1. Source measurement — single chunked walk producing
-		//    integrated LUFS, LRA, 4× true peak, and the percentile-
-		//    derived `limitAutoDb` in one pass.
+		//    integrated LUFS, LRA, 4× true peak, the percentile-derived
+		//    `limitAutoDb`, and the POOLED base-rate detection-
+		//    amplitude histogram (used to seed iteration's initial `B`).
+		//    `halfWidth` matches `buildBaseRateDetectionCache`'s pool —
+		//    `windowSamplesFromMs(smoothingMs, baseRate)` — so the
+		//    histogram lands on the exact axis the curve evaluates on
+		//    (per the 2026-05-13 histogram-axis fix).
+		const measurementHalfWidth = windowSamplesFromMs(smoothing, sampleRate);
 		const tMeasure0 = Date.now();
-		const measurement = await measureSource(buffer, sampleRate, limitPercentile);
+		const measurement = await measureSource(buffer, sampleRate, limitPercentile, measurementHalfWidth);
 
 		this.learnTimingMs.sourceMeasurement = Date.now() - tMeasure0;
 
@@ -211,13 +192,8 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 		}
 
 		// 1a. Effective pivot — user-supplied if present, else
-		//     auto-derived from `median(considered LRA blocks)` (BS.1770 /
-		//     EBU R128 two-stage gate) carried on the measurement. The
-		//     `+Infinity` sentinel from `pivotAutoDb` indicates no
-		//     considered blocks survived gating (pathological short
-		//     non-silent source); fall back to a fixed `-40` dBFS so
-		//     the node stays functional and warn so the caller can
-		//     supply `pivot` explicitly.
+		//     auto-derived from `median(considered LRA blocks)` carried
+		//     on the measurement.
 		const userPivot = this.properties.pivot;
 		let effectivePivotDb: number;
 
@@ -229,9 +205,6 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 				`[loudness-target] pivot auto-derived to ${effectivePivotDb.toFixed(2)} dBFS (median(considered LRA blocks))`,
 			);
 		} else {
-			// Pre-Execution Review open question: non-silent source with no
-			// considered LRA blocks. Fixed sentinel keeps the node functional;
-			// warn so caller can supply pivot explicitly.
 			effectivePivotDb = -40;
 			console.warn(
 				`[loudness-target] pivot auto-derivation produced no considered LRA blocks; falling back to ${effectivePivotDb} dBFS. Supply 'pivot' explicitly for tighter control on short or near-silent sources.`,
@@ -239,25 +212,7 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 		}
 
 		// 1b. Effective floor — user-supplied if present, else
-		//     auto-derived from `min(considered LRA blocks)` (the lowest
-		//     short-term LUFS block that survived BS.1770 / EBU R128
-		//     two-stage gating). Pairs with the median-pivot heuristic:
-		//     pivot=median sets the body anchor, floor=min sets the
-		//     lower-segment roll-off start so the curve doesn't lift
-		//     ungated noise floor under the body.
-		//
-		//     The `+Infinity` sentinel indicates no considered blocks;
-		//     in that case stay floor-off.
-		//
-		//     INTERNAL CLAMP: floor must stay strictly below pivot — the
-		//     curve's lower-segment linear ramp divides by `(pivot - floor)`
-		//     (see `curve.ts:gainDbAt`). The schema's `.refine` enforces
-		//     `floor < pivot` for user-supplied combinations, but auto-
-		//     derived `min(considered)` can land above a user-supplied
-		//     pivot, and a user-supplied floor combined with an auto-
-		//     derived pivot is not pre-validated. Clamp to
-		//     `pivot - FLOOR_PIVOT_EPSILON_DB` whenever the derived value
-		//     would sit at or above pivot.
+		//     auto-derived from `min(considered LRA blocks)`.
 		const userFloor = this.properties.floor;
 		let effectiveFloorDb: number | null;
 
@@ -281,21 +236,48 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			effectiveFloorDb = clampedFloorDb;
 		}
 
-		// 2. Iteration — 1D secant on body gain `B` per
-		//    design-loudness-target §"Iteration" (post
-		//    `plan-loudness-target-percentile-limit` rewrite). `limitDb`
-		//    is set ONCE at iteration entry from the auto-derivation
-		//    table (`limitDbOverride` → percentile-derived `limitAutoDb`
-		//    → `sourcePeakDb`) and is constant across attempts.
-		//    `peakGainDb` starts at the closed-form `effectiveTargetTp −
-		//    currentLimit` and adjusts per attempt via proportional
-		//    feedback on observed TP overshoot. The cached source-sized
-		//    linked-detection envelope was dropped in Phase 2 of the
-		//    upsampled-streaming refactor; detection is now recomputed
-		//    chunk-by-chunk inside walk A. The `learnTimingMs.detection`
-		//    field is preserved for QA-driver log parity but always
-		//    emits 0 — the detection cost is folded into iteration
-		//    timing.
+		// 1c. Derive the limit anchor that iteration will see, mirroring
+		//     `iterateForTargets`'s internal auto-derivation table. We
+		//     compute it here too so the histogram-predictor seed
+		//     evaluates the predictor at the same `limitDb` iteration
+		//     will use — otherwise the seed targets a slightly different
+		//     curve geometry.
+		const effectiveTargetTp = targetTp ?? sourcePeakDb;
+		let solvedLimitDb: number;
+
+		if (limitDbOverride !== undefined) {
+			solvedLimitDb = clampLimit(limitDbOverride, effectivePivotDb, sourcePeakDb);
+		} else if (Number.isFinite(measurement.limitAutoDb)) {
+			solvedLimitDb = clampLimit(measurement.limitAutoDb, effectivePivotDb, sourcePeakDb);
+		} else {
+			solvedLimitDb = sourcePeakDb;
+		}
+
+		// 1d. Initial `B` seed via the histogram-based predictor (per
+		//     `plan-loudness-target-deterministic` 2026-05-13 revert).
+		//     Pure histogram math — microseconds, no apply pass, no
+		//     measurement. The seed is approximate (~0.5-2 LUFS error on
+		//     hard material); iteration's secant takes it from there.
+		const brickWallDormant = sourcePeakDb <= solvedLimitDb;
+		const closedFormPeakGainDb = effectiveTargetTp - solvedLimitDb;
+		const seedB = predictInitialB({
+			sourceLufs,
+			targetLufs,
+			anchors: { floorDb: effectiveFloorDb, pivotDb: effectivePivotDb, limitDb: solvedLimitDb },
+			histogram: measurement.detectionHistogram,
+			brickWallDormant,
+			closedFormPeakGainDb,
+			tolerance,
+		});
+
+		// 2. Iteration — 2D joint on `(B, peakGainDb)` over the source
+		//    via the restored `iterateForTargets`. The histogram-based
+		//    seed (`seedB`) shortens attempt 1's distance to the LUFS
+		//    target; iteration's secant + proportional feedback close
+		//    the rest. `iterateForTargets` manages its own buffer
+		//    lifecycle: detection cache built once, forward/min-held/
+		//    activeA/activeB swapped per attempt, winning envelope held
+		//    on return.
 		const tIterate0 = Date.now();
 		const result = await iterateForTargets({
 			buffer,
@@ -311,6 +293,7 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			maxAttempts,
 			tolerance,
 			peakTolerance,
+			seedB,
 		});
 
 		this.learnTimingMs.iteration = Date.now() - tIterate0;
@@ -318,42 +301,11 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 		this.winningB = result.bestB;
 		this.winningLimitDb = result.bestLimitDb;
 		this.winningPeakGainDb = result.bestPeakGainDb;
-		// Inherit the shared upsampled-source cache from iteration so
-		// `_unbuffer` can skip the per-stream upsample step. Lifetime
-		// extends through every `_unbuffer` chunk read — closed in
-		// `_teardown`. `null` only on the zero-frame / zero-channel
-		// short-circuit inside `iterateForTargets`.
-		this.upsampledSourceCache = result.upsampledSource;
-
-		// Allocate per-channel downsamplers for the final apply pass.
-		// ONLY the downsample side is used — the upsample step ran
-		// once during iteration's cache build. State persists across
-		// `_unbuffer` calls so chunk boundaries are continuous in the
-		// AA decimation filter response. DISTINCT from any per-attempt
-		// downsamplers `measureAttemptOutput` allocates internally —
-		// those have absorbed each attempt's post-multiply input and
-		// would corrupt the final apply path if reused here.
-		const downsamplers: Array<Oversampler> = [];
-
-		for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
-			downsamplers.push(new Oversampler(OVERSAMPLE_FACTOR, sampleRate));
-		}
-
-		this.downsamplers = downsamplers;
 
 		const lastAttempt = result.attempts[result.attempts.length - 1];
 		const outputLufsRepr = lastAttempt ? (targetLufs + lastAttempt.lufsErr).toFixed(2) : "n/a";
-		// `outputLraRepr` is observational only — LRA is no longer a
-		// target axis. The iterator's `lastAttempt.outputLra` carries the
-		// measured value from the winning attempt's smoothing pass.
 		const outputLraRepr = lastAttempt ? lastAttempt.outputLra.toFixed(2) : "n/a";
 		const lufsDeltaRepr = lastAttempt ? lastAttempt.lufsErr.toFixed(2) : "n/a";
-		// TP reconstruction mirrors the LUFS pattern:
-		// `outputTruePeakDb = effectiveTargetTp + peakErr`, where
-		// `effectiveTargetTp = targetTp ?? sourcePeakDb` (matches the
-		// iterator's collapse of the `targetTp` default into a usable
-		// ceiling).
-		const effectiveTargetTp = targetTp ?? sourcePeakDb;
 		const outputTruePeakRepr = lastAttempt ? (effectiveTargetTp + lastAttempt.peakErr).toFixed(2) : "n/a";
 		const peakDeltaRepr = lastAttempt ? lastAttempt.peakErr.toFixed(2) : "n/a";
 		const bestPeakGainDbRepr = result.bestPeakGainDb.toFixed(4);
@@ -366,10 +318,6 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			: effectiveFloorDb === null
 				? "none"
 				: `${effectiveFloorDb.toFixed(2)} (auto)`;
-		// `limitDbRepr` summarises which arm of the auto-derivation table
-		// fired. The iterator's `bestLimitDb` carries the numeric winner;
-		// this label classifies how the initial value was sourced so the
-		// QA log makes the dispatch decision visible.
 		let limitDbSource: "user" | "auto" | "none";
 
 		if (limitDbOverride !== undefined) {
@@ -381,19 +329,11 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 		}
 
 		const limitDbRepr = `${bestLimitDbRepr} (${limitDbSource})`;
-		// Expansion-flag suffix: when `peakGainDb > B` at convergence the
-		// upper segment of the curve is expansive (positive slope between
-		// pivot and limit). Geometrically valid — the brick-wall above
-		// `limitDb` still caps output at `targetTp` — but worth surfacing
-		// for the listener / QA reader. Per `plan-loudness-target-
-		// percentile-limit` Pre-Execution Review §"Open question O4".
 		const expansiveGeometry = result.bestPeakGainDb > result.bestB;
 		const expansionSuffix = expansiveGeometry ? " EXPANSIVE_UPPER_SEGMENT" : "";
 
 		// Per-attempt trajectory dump — diagnostic for iteration
 		// trajectory (does the secant converge, oscillate, or stall?).
-		// One line per attempt with the moving knobs (B, peakGainDb) and
-		// observed deviations from target.
 		for (let attemptIdx = 0; attemptIdx < result.attempts.length; attemptIdx++) {
 			const attempt = result.attempts[attemptIdx];
 
@@ -408,16 +348,12 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			);
 		}
 
-		// Format `undefined` as `off` for the three optional-on-the-BAG
-		// budget / tolerance fields (per Phase 4.2 of
-		// `plan-loudness-target-stream-caching`). Other numeric fields
-		// (`sourceLufs`, `outputLufs`, etc.) always have values, so
-		// `String(...)` / `.toFixed(...)` are sufficient there.
 		const fmt = (x: number | undefined): string => (x === undefined ? "off" : String(x));
 
 		console.log(
 			`[loudness-target] iteration: attempts=${result.attempts.length} ` +
 				`converged=${String(result.converged)} ` +
+				`seedB=${seedB.toFixed(4)} ` +
 				`bestB=${result.bestB.toFixed(4)} bestLimitDb=${bestLimitDbRepr} bestPeakGainDb=${bestPeakGainDbRepr} ` +
 				`outputLufs=${outputLufsRepr} (Δ${lufsDeltaRepr}) outputLra=${outputLraRepr} ` +
 				`outputTruePeakDb=${outputTruePeakRepr} (Δ${peakDeltaRepr}) ` +
@@ -439,10 +375,9 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 
 	override async _teardown(): Promise<void> {
 		// Print the wall-clock breakdown before the stream is destroyed
-		// so the QA driver can read it from stdout. Mirrors the
-		// expander's timing summary. `iteration` is the wall time
-		// spent inside `iterateForTargets` (per-attempt envelope build
-		// + measurement walk × attempts).
+		// so the QA driver can read it from stdout. `iteration` is the
+		// wall time spent inside `iterateForTargets` (detection cache
+		// build + per-attempt envelope walk + measurement × attempts).
 		if (this.winningSmoothedEnvelopeBuffer !== null) {
 			const total = this.learnTimingMs.sourceMeasurement + this.learnTimingMs.detection + this.learnTimingMs.iteration + this.unbufferElapsedMs;
 			const bRepr = this.winningB === null ? "n/a" : this.winningB.toFixed(4);
@@ -458,19 +393,12 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			);
 		}
 
-		// Release the shared upsampled-source cache. The cache outlived
-		// `iterateForTargets` so `_unbuffer` could read from it; now
-		// that the stream is being torn down, close the temp file.
-		// Safe to await on a `null` guard — `close` is the only side
-		// effect, no other consumer remains.
-		if (this.upsampledSourceCache !== null) {
-			await this.upsampledSourceCache.close();
-			this.upsampledSourceCache = null;
-		}
-
-		// Same for the winning-envelope buffer — closed here so the
-		// backing temp file is released after `_unbuffer` finishes
-		// draining.
+		// Post the 2026-05-13 base-rate-downstream rewrite there is no
+		// upsampled-source cache to release — `_unbuffer` reads source
+		// samples from the framework-provided chunk parameter directly.
+		// Only the winning-envelope buffer survives iteration and needs
+		// an explicit close here so the backing temp file is released
+		// after `_unbuffer` finishes draining.
 		if (this.winningSmoothedEnvelopeBuffer !== null) {
 			await this.winningSmoothedEnvelopeBuffer.close();
 			this.winningSmoothedEnvelopeBuffer = null;
@@ -479,16 +407,14 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 
 	override async _unbuffer(chunk: AudioChunk): Promise<AudioChunk> {
 		const envelopeBuffer = this.winningSmoothedEnvelopeBuffer;
-		const downsamplers = this.downsamplers;
-		const upsampledSourceCache = this.upsampledSourceCache;
 
 		// Pass-through when no envelope was learned (silent /
-		// sub-block-length source, no curve to apply). The
-		// pass-through bail at the top of `_process` leaves all three
-		// state fields at `null`, mirrored here for safety. A
-		// zero-frame envelope buffer (the iterator's pass-through
-		// return shape) also routes to pass-through.
-		if (envelopeBuffer === null || envelopeBuffer.frames === 0 || downsamplers === null || upsampledSourceCache === null) {
+		// sub-block-length source). The pass-through bail at the top of
+		// `_process` leaves `winningSmoothedEnvelopeBuffer` at `null`,
+		// mirrored here for safety. A zero-frame envelope buffer (the
+		// iterator's pass-through return shape) also routes to
+		// pass-through.
+		if (envelopeBuffer === null || envelopeBuffer.frames === 0) {
 			return chunk;
 		}
 
@@ -501,43 +427,34 @@ export class LoudnessTargetStream extends BufferedTransformStream<LoudnessTarget
 			return chunk;
 		}
 
-		// Rewind both caches' read cursors on the first `_unbuffer`
-		// call. After iteration's `measureAttemptOutput` walks they
-		// are positioned at the end of the buffer; `_unbuffer` reads
-		// them forward in chunk-cadence lockstep with upstream chunks.
-		// Done lazily here rather than eagerly in `_setup` so the
-		// reset happens after `_process` (and its iteration) has
-		// finished and a stable cursor state exists.
+		// Rewind the envelope's read cursor on the first `_unbuffer`
+		// call. After iteration's `measureAttemptOutput` walks it is
+		// positioned at the end of the buffer; `_unbuffer` reads it
+		// forward in chunk-cadence lockstep with upstream chunks. Done
+		// lazily here rather than eagerly in `_setup` so the reset
+		// happens after `_process` (and its iteration) has finished
+		// and a stable cursor state exists.
 		if (!this.unbufferCursorsReady) {
-			await upsampledSourceCache.reset();
 			await envelopeBuffer.reset();
 			this.unbufferCursorsReady = true;
 		}
 
-		// Per Phase 3.5 of `plan-loudness-target-stream-caching`: read
-		// both the upsampled-source chunk AND the envelope chunk from
-		// their respective `ChunkBuffer`s, then feed both into
-		// `applyOversampledChunkFromCache`. The envelope is single-
-		// channel; `samples[0]` is the chunk-aligned slice. Sequential
-		// reads — cursors advance in lockstep with upstream chunk
-		// cadence. The framework guarantees forward chunk order;
-		// out-of-order arrivals would desync.
-		const upsampledLength = chunkFrames * OVERSAMPLE_FACTOR;
-		const upsampledChunk = await upsampledSourceCache.read(upsampledLength);
-		const envelopeChunk = await envelopeBuffer.read(upsampledLength);
+		// Post the 2026-05-13 base-rate-downstream rewrite: the envelope
+		// is at base rate, the source samples arrive at base rate via
+		// the framework-provided `chunk` parameter, and the apply step
+		// is a pure base-rate multiply per sample.
+		const envelopeChunk = await envelopeBuffer.read(chunkFrames);
 		const envelopeSlice = envelopeChunk.samples[0];
 
-		if (envelopeSlice?.length !== upsampledLength) {
+		if (envelopeSlice?.length !== chunkFrames) {
 			throw new Error(
-				`loudnessTarget _unbuffer: envelope ChunkBuffer returned ${envelopeSlice?.length ?? 0} samples; expected ${upsampledLength}`,
+				`loudnessTarget _unbuffer: envelope ChunkBuffer returned ${envelopeSlice?.length ?? 0} samples; expected ${chunkFrames}`,
 			);
 		}
 
-		const transformed = applyOversampledChunkFromCache({
-			upsampledChunkSamples: upsampledChunk.samples,
+		const transformed = applyBaseRateChunk({
+			chunkSamples: chunk.samples,
 			smoothedGain: envelopeSlice,
-			downsamplers,
-			factor: OVERSAMPLE_FACTOR,
 		});
 
 		this.unbufferElapsedMs += Date.now() - tStart;

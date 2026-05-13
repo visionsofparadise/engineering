@@ -1,13 +1,10 @@
-import { Oversampler } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
-import { applyOversampledChunk, applyOversampledChunkFromCache } from "./apply";
+import { applyBaseRateChunk } from "./apply";
 
 const SAMPLE_RATE = 48_000;
-const FACTOR = 4;
 
 /**
  * Tiny LCG (numerical-recipes constants) for deterministic noise.
- * Mirrors `loudness-shaper/utils/apply-final.unit.test.ts`'s helper.
  */
 function makeLcg(seed: number): () => number {
 	let state = seed >>> 0;
@@ -32,24 +29,11 @@ function makeSineWithNoise(seed: number, frames: number, amplitude: number, freq
 }
 
 /**
- * Build a 4×-rate ramp envelope. Length is `frames * FACTOR`. Used to
- * exercise the chunk-boundary continuity tests with a non-constant
- * envelope at the upsampled rate.
+ * Base-rate ramp envelope of length `frames`. Mirrors the upsampled
+ * `makeRampGainUpsampled` from the prior 4×-rate apply tests but
+ * scaled to base rate (post the 2026-05-13 base-rate-downstream
+ * rewrite — the envelope is single-channel at base rate).
  */
-function makeRampGainUpsampled(frames: number, factor: number, fromGain: number, toGain: number): Float32Array {
-	const upLength = frames * factor;
-	const envelope = new Float32Array(upLength);
-
-	for (let upIdx = 0; upIdx < upLength; upIdx++) {
-		const t = upLength <= 1 ? 0 : upIdx / (upLength - 1);
-
-		envelope[upIdx] = fromGain + (toGain - fromGain) * t;
-	}
-
-	return envelope;
-}
-
-/** Native-rate ramp (used by the factor-1 cross-helper test where envelope length = frames). */
 function makeRampGain(frames: number, fromGain: number, toGain: number): Float32Array {
 	const envelope = new Float32Array(frames);
 
@@ -62,30 +46,68 @@ function makeRampGain(frames: number, fromGain: number, toGain: number): Float32
 	return envelope;
 }
 
-describe("applyOversampledChunk", () => {
-	it("multi-chunk apply matches single-chunk apply (oversampler state continuity across chunks, 4×-rate envelope)", () => {
-		// Phase 4 chunked-equivalence test. The 4×-rate envelope means
-		// each upsampled sample sees its own gain value (no more zero-
-		// order-hold from native rate). Persistent per-channel
-		// `Oversampler` state across chunks means the two outputs match
-		// within float-rounding tolerance.
-		const frames = 4096;
-		const source = makeSineWithNoise(0x0A0B_0C0D, frames, 0.2, 1000);
-		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
+describe("applyBaseRateChunk", () => {
+	it("output equals per-sample source × envelope multiply at base rate", () => {
+		// Anchor: the helper IS a plain per-sample multiply at base
+		// rate. Verify the bytes match an inline reference exactly
+		// modulo IEEE-754 multiply order (zero with our compiler).
+		const frames = 1024;
+		const sourceL = makeSineWithNoise(0xC0DE_BABE, frames, 0.25, 1000);
+		const sourceR = makeSineWithNoise(0xFACE_FEED, frames, 0.20, 1500);
+		const envelope = makeRampGain(frames, 0.5, 1.0);
 
-		// Single-chunk path.
-		const singleOversamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
-		const [single] = applyOversampledChunk({
-			chunkSamples: [source],
-			smoothedGain: gainEnvelopeUp,
-			offset: 0,
-			oversamplers: singleOversamplers,
-			factor: FACTOR,
+		const output = applyBaseRateChunk({
+			chunkSamples: [sourceL, sourceR],
+			smoothedGain: envelope,
 		});
 
-		// Multi-chunk paths with the SAME oversampler instance carried
-		// across all chunks. Multiple split granularities exercise the
-		// state-continuity contract under different chunk sizes.
+		expect(output.length).toBe(2);
+
+		for (let ch = 0; ch < 2; ch++) {
+			const got = output[ch]!;
+			const source = ch === 0 ? sourceL : sourceR;
+
+			expect(got.length).toBe(frames);
+
+			// Reference also goes through Float32Array storage so the
+			// f32 rounding matches byte-for-byte. Comparing f64
+			// arithmetic against an f32-rounded output would drift by
+			// ~ULP (~1e-7) and fail the strict-equality assertion.
+			const reference = new Float32Array(frames);
+
+			for (let i = 0; i < frames; i++) {
+				reference[i] = (source[i] ?? 0) * (envelope[i] ?? 0);
+			}
+
+			let maxDiff = 0;
+
+			for (let i = 0; i < frames; i++) {
+				const diff = Math.abs((got[i] ?? 0) - (reference[i] ?? 0));
+
+				if (diff > maxDiff) maxDiff = diff;
+			}
+
+			expect(maxDiff).toBe(0);
+		}
+	});
+
+	it("multi-chunk apply matches single-chunk apply (stateless helper, base rate)", () => {
+		// The helper is stateless (unlike the prior 4×-rate path with
+		// persistent biquad downsamplers), so multi-chunk and
+		// single-chunk paths must produce byte-identical outputs when
+		// the same envelope is sliced consistently across chunk
+		// boundaries.
+		const frames = 4096;
+		const source = makeSineWithNoise(0x0A0B_0C0D, frames, 0.2, 1000);
+		const envelope = makeRampGain(frames, 0.5, 1.0);
+
+		// Single-chunk path.
+		const [single] = applyBaseRateChunk({
+			chunkSamples: [source],
+			smoothedGain: envelope,
+		});
+
+		// Multi-chunk paths — split at different granularities.
 		const splitPoints: ReadonlyArray<ReadonlyArray<number>> = [
 			[2048],
 			[1024, 2048, 3072],
@@ -93,7 +115,6 @@ describe("applyOversampledChunk", () => {
 		];
 
 		for (const splits of splitPoints) {
-			const splitOversamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
 			const reassembled = new Float32Array(frames);
 			let cursor = 0;
 
@@ -101,12 +122,10 @@ describe("applyOversampledChunk", () => {
 
 			for (const boundary of boundaries) {
 				const chunkSlice = new Float32Array(source.subarray(cursor, boundary));
-				const [chunkOut] = applyOversampledChunk({
+				const envelopeSlice = envelope.subarray(cursor, boundary);
+				const [chunkOut] = applyBaseRateChunk({
 					chunkSamples: [chunkSlice],
-					smoothedGain: gainEnvelopeUp,
-					offset: cursor,
-					oversamplers: splitOversamplers,
-					factor: FACTOR,
+					smoothedGain: envelopeSlice,
 				});
 
 				expect(chunkOut?.length).toBe(boundary - cursor);
@@ -123,176 +142,78 @@ describe("applyOversampledChunk", () => {
 				if (diff > maxError) maxError = diff;
 			}
 
-			expect(maxError).toBeLessThan(1e-5);
+			expect(maxError).toBe(0);
 		}
 	});
 
-	it("constant 4×-rate gain reduces to native scalar multiply (upsample → ×c → downsample = native × c)", () => {
-		// Anchor for the 4×-rate apply path: a constant 4×-rate gain
-		// envelope of `c` produces the same bytes as a native-rate
-		// scalar multiply by `c`. Algebraically: upsample(x) is the
-		// linear AA-filtered interpolation of x's spectrum, multiplying
-		// every upsampled sample by constant `c` is linear (commutes
-		// with the filter), and downsample then takes the AA-filtered
-		// decimation back to native rate. So oversample(x, multiply
-		// by c) = c * x for any constant c — the LP filter passband is
-		// unity at DC and below 0.45 × Nyquist, so the in-band signal
-		// is preserved up to the same AA bias that affects ALL passes
-		// of the oversampler.
-		//
-		// Concretely: build a 4×-rate envelope filled with `c`, run
-		// `applyOversampledChunk` on it. Build a reference by calling
-		// `Oversampler.oversample(source, x => x * c)` directly (the
-		// canonical "upsample → multiply by constant → downsample"
-		// expression). Both produce the same output bytes within float
-		// tolerance.
+	it("constant gain reduces to native scalar multiply", () => {
 		const frames = 1024;
 		const source = makeSineWithNoise(0x1357_2468, frames, 0.25, 440);
 		const constant = 0.6;
 
-		const upConstantEnvelope = new Float32Array(frames * FACTOR);
+		const envelope = new Float32Array(frames);
 
-		upConstantEnvelope.fill(constant);
+		envelope.fill(constant);
 
-		const oversamplersA = [new Oversampler(FACTOR, SAMPLE_RATE)];
-		const [outputUpConstant] = applyOversampledChunk({
+		const [output] = applyBaseRateChunk({
 			chunkSamples: [source],
-			smoothedGain: upConstantEnvelope,
-			offset: 0,
-			oversamplers: oversamplersA,
-			factor: FACTOR,
-		});
-
-		// Reference: same source through a fresh oversampler with the
-		// `oversample` convenience that multiplies every upsampled
-		// sample by the same constant. The two expressions of the same
-		// constant-c semantic must match byte-for-byte.
-		const oversamplersB = [new Oversampler(FACTOR, SAMPLE_RATE)];
-		const reference = oversamplersB[0]!.oversample(source, (x) => x * constant);
-
-		expect(outputUpConstant?.length).toBe(frames);
-		expect(reference.length).toBe(frames);
-
-		let maxError = 0;
-
-		for (let frameIdx = 0; frameIdx < frames; frameIdx++) {
-			const diff = Math.abs((outputUpConstant?.[frameIdx] ?? 0) - (reference[frameIdx] ?? 0));
-
-			if (diff > maxError) maxError = diff;
-		}
-
-		expect(maxError).toBeLessThan(1e-6);
-	});
-
-	it("factor 1 pass-through produces native scalar multiply", () => {
-		// At factor 1 the gain envelope length equals `frames`
-		// (`frames * 1`). The helper's index math degenerates to
-		// `gainIdx = offset + upIdx` (the same as a native-rate scalar
-		// multiply). `Oversampler` returns a fresh copy of input at
-		// factor 1 with no filter state changes (per `oversample.ts`);
-		// the result equals an inline `samples[i] * gain[i]` multiply
-		// byte-for-byte. The native-rate `applySmoothedGainChunk`
-		// helper was retired in Phase 4 (the production pipeline only
-		// uses `applyOversampledChunk` at factor 4); this test stays
-		// against an inline native multiply as the reference.
-		const frames = 1024;
-		const source = makeSineWithNoise(0x1234_5678, frames, 0.3, 440);
-		const gainEnvelope = makeRampGain(frames, 0.4, 1.2);
-
-		const oversamplers = [new Oversampler(1, SAMPLE_RATE)];
-		const [oversampledOut] = applyOversampledChunk({
-			chunkSamples: [source],
-			smoothedGain: gainEnvelope,
-			offset: 0,
-			oversamplers,
-			factor: 1,
-		});
-
-		const referenceOut = new Float32Array(frames);
-
-		for (let frameIdx = 0; frameIdx < frames; frameIdx++) {
-			referenceOut[frameIdx] = (source[frameIdx] ?? 0) * (gainEnvelope[frameIdx] ?? 0);
-		}
-
-		expect(oversampledOut?.length).toBe(frames);
-
-		let maxError = 0;
-
-		for (let frameIdx = 0; frameIdx < frames; frameIdx++) {
-			const diff = Math.abs((oversampledOut?.[frameIdx] ?? 0) - (referenceOut[frameIdx] ?? 0));
-
-			if (diff > maxError) maxError = diff;
-		}
-
-		// Both paths multiply the same source samples by the same gain
-		// values; difference is zero modulo IEEE-754 multiply order.
-		expect(maxError).toBeLessThan(1e-9);
-	});
-
-	it("output length equals input length per channel at factor 4", () => {
-		const frames = 2048;
-		const source = makeSineWithNoise(0xDEAD_BEEF, frames, 0.25, 880);
-		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.6, 0.9);
-
-		const oversamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
-		const [output] = applyOversampledChunk({
-			chunkSamples: [source],
-			smoothedGain: gainEnvelopeUp,
-			offset: 0,
-			oversamplers,
-			factor: FACTOR,
+			smoothedGain: envelope,
 		});
 
 		expect(output?.length).toBe(frames);
+
+		// Reference also goes through Float32Array storage so the f32
+		// rounding matches byte-for-byte. Critically, read the
+		// constant FROM the f32 envelope (not the original JS f64
+		// literal) — `Float32Array.fill(0.6)` stores the f32-rounded
+		// representation, and the helper reads that rounded value
+		// from the array. Multiplying by the original f64 `0.6` would
+		// produce a slightly different product that rounds to a
+		// neighbouring f32 in some samples.
+		const f32Constant = envelope[0] ?? 0;
+		const reference = new Float32Array(frames);
+
+		for (let frameIdx = 0; frameIdx < frames; frameIdx++) {
+			reference[frameIdx] = (source[frameIdx] ?? 0) * f32Constant;
+		}
+
+		let maxError = 0;
+
+		for (let frameIdx = 0; frameIdx < frames; frameIdx++) {
+			const diff = Math.abs((output?.[frameIdx] ?? 0) - (reference[frameIdx] ?? 0));
+
+			if (diff > maxError) maxError = diff;
+		}
+
+		expect(maxError).toBe(0);
 	});
 
 	it("caller-provided `output` produces byte-equal results to the default-allocate path", () => {
-		// Phase 1.2: the optional `output` parameter lets the caller
-		// pre-allocate output slots (a `Float32Array` per channel) and
-		// have the helper write into them in-place instead of allocating
-		// fresh per call. Used by `measureAttemptOutput` in `iterate.ts`
-		// to hoist the per-chunk apply output to a persistent caller-side
-		// scratch. The two paths MUST produce byte-equal results for
-		// every channel — the only difference is where the bytes are
-		// stored.
+		// The optional `output` parameter lets the caller pre-allocate
+		// output slots and write into them in-place instead of
+		// allocating fresh per call. Used by `measureAttemptOutput` to
+		// hoist the per-chunk apply output to a persistent caller-side
+		// scratch. The two paths must produce byte-equal results.
 		const frames = 2048;
 		const sourceL = makeSineWithNoise(0xC0DE_BABE, frames, 0.25, 1000);
 		const sourceR = makeSineWithNoise(0xFACE_FEED, frames, 0.20, 1500);
-		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
+		const envelope = makeRampGain(frames, 0.5, 1.0);
 
-		// Default path — fresh allocation per channel.
-		const defaultOversamplers = [
-			new Oversampler(FACTOR, SAMPLE_RATE),
-			new Oversampler(FACTOR, SAMPLE_RATE),
-		];
-		const defaultOutput = applyOversampledChunk({
+		const defaultOutput = applyBaseRateChunk({
 			chunkSamples: [sourceL, sourceR],
-			smoothedGain: gainEnvelopeUp,
-			offset: 0,
-			oversamplers: defaultOversamplers,
-			factor: FACTOR,
+			smoothedGain: envelope,
 		});
 
-		// Override path — fresh oversamplers (state must match: same
-		// signal, same call order) and a pre-allocated output array.
-		const overrideOversamplers = [
-			new Oversampler(FACTOR, SAMPLE_RATE),
-			new Oversampler(FACTOR, SAMPLE_RATE),
-		];
 		const overrideOutput: Array<Float32Array> = [
 			new Float32Array(frames),
 			new Float32Array(frames),
 		];
-		const overrideReturn = applyOversampledChunk({
+		const overrideReturn = applyBaseRateChunk({
 			chunkSamples: [sourceL, sourceR],
-			smoothedGain: gainEnvelopeUp,
-			offset: 0,
-			oversamplers: overrideOversamplers,
-			factor: FACTOR,
+			smoothedGain: envelope,
 			output: overrideOutput,
 		});
 
-		// The helper returns the caller's array (not a fresh one).
 		expect(overrideReturn).toBe(overrideOutput);
 		expect(defaultOutput.length).toBe(2);
 		expect(overrideOutput.length).toBe(2);
@@ -312,18 +233,12 @@ describe("applyOversampledChunk", () => {
 	it("caller-provided `output` with mismatched channel count throws", () => {
 		const frames = 1024;
 		const source = makeSineWithNoise(0x1111_2222, frames, 0.25, 440);
-		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
-
-		const oversamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+		const envelope = makeRampGain(frames, 0.5, 1.0);
 
 		expect(() => {
-			applyOversampledChunk({
+			applyBaseRateChunk({
 				chunkSamples: [source],
-				smoothedGain: gainEnvelopeUp,
-				offset: 0,
-				oversamplers,
-				factor: FACTOR,
-				// Wrong: 2 output slots for 1-channel input.
+				smoothedGain: envelope,
 				output: [new Float32Array(frames), new Float32Array(frames)],
 			});
 		}).toThrow(/output array length/);
@@ -332,170 +247,37 @@ describe("applyOversampledChunk", () => {
 	it("caller-provided `output` with wrong per-channel length throws", () => {
 		const frames = 1024;
 		const source = makeSineWithNoise(0x3333_4444, frames, 0.25, 440);
-		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
-
-		const oversamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+		const envelope = makeRampGain(frames, 0.5, 1.0);
 
 		expect(() => {
-			applyOversampledChunk({
+			applyBaseRateChunk({
 				chunkSamples: [source],
-				smoothedGain: gainEnvelopeUp,
-				offset: 0,
-				oversamplers,
-				factor: FACTOR,
-				// Wrong: slot sized smaller than the chunk.
+				smoothedGain: envelope,
 				output: [new Float32Array(frames - 1)],
 			});
 		}).toThrow(/length/);
 	});
-});
 
-describe("applyOversampledChunkFromCache", () => {
-	it("byte-equal to applyOversampledChunk on the same logical input (cache fed pre-upsampled samples)", () => {
-		// Equivalence anchor: when the cache feeds already-upsampled
-		// samples (produced by a separate Oversampler pass over the
-		// same source), the cache-fed apply path must produce byte-
-		// equal output to the pre-cache path within float-rounding
-		// tolerance. The only structural difference is WHERE the
-		// upsample ran — inside the helper (default path) vs. outside
-		// (cache path).
-		const frames = 2048;
-		const sourceL = makeSineWithNoise(0xC0DE_BABE, frames, 0.25, 1000);
-		const sourceR = makeSineWithNoise(0xFACE_FEED, frames, 0.20, 1500);
-		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
-
-		// Reference path — pre-cache `applyOversampledChunk`.
-		const refOversamplers = [
-			new Oversampler(FACTOR, SAMPLE_RATE),
-			new Oversampler(FACTOR, SAMPLE_RATE),
-		];
-		const refOutput = applyOversampledChunk({
-			chunkSamples: [sourceL, sourceR],
-			smoothedGain: gainEnvelopeUp,
-			offset: 0,
-			oversamplers: refOversamplers,
-			factor: FACTOR,
-		});
-
-		// Cache path — upsample manually with a fresh oversampler set
-		// (matching the cache-build set), then call the cache-fed
-		// helper with a fresh downsampler set (matching the per-
-		// attempt set).
-		const upsampleSet = [
-			new Oversampler(FACTOR, SAMPLE_RATE),
-			new Oversampler(FACTOR, SAMPLE_RATE),
-		];
-		const upsampledL = upsampleSet[0]!.upsample(sourceL);
-		const upsampledR = upsampleSet[1]!.upsample(sourceR);
-		const downsamplers = [
-			new Oversampler(FACTOR, SAMPLE_RATE),
-			new Oversampler(FACTOR, SAMPLE_RATE),
-		];
-		const cacheOutput = applyOversampledChunkFromCache({
-			upsampledChunkSamples: [upsampledL, upsampledR],
-			smoothedGain: gainEnvelopeUp,
-			downsamplers,
-			factor: FACTOR,
-		});
-
-		expect(cacheOutput.length).toBe(2);
-
-		for (let ch = 0; ch < 2; ch++) {
-			const ref = refOutput[ch]!;
-			const got = cacheOutput[ch]!;
-
-			expect(got.length).toBe(ref.length);
-
-			let maxDiff = 0;
-
-			for (let i = 0; i < ref.length; i++) {
-				const diff = Math.abs(ref[i]! - got[i]!);
-
-				if (diff > maxDiff) maxDiff = diff;
-			}
-
-			// The two paths share the same multiplications and use
-			// independently-initialised Oversampler instances with
-			// matching internal state on a fresh call — bytes match
-			// exactly modulo IEEE-754 multiply order.
-			expect(maxDiff).toBeLessThan(1e-9);
-		}
-	});
-
-	it("caller-provided `output` produces byte-equal results to the default-allocate path", () => {
+	it("envelope shorter than chunk throws (caller must slice to match)", () => {
 		const frames = 1024;
-		const source = makeSineWithNoise(0xBEEF_CAFE, frames, 0.25, 880);
-		const upsampleSet = [new Oversampler(FACTOR, SAMPLE_RATE)];
-		const upsampled = upsampleSet[0]!.upsample(source);
-		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.4, 1.1);
-
-		const defaultDownsamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
-		const defaultOutput = applyOversampledChunkFromCache({
-			upsampledChunkSamples: [upsampled],
-			smoothedGain: gainEnvelopeUp,
-			downsamplers: defaultDownsamplers,
-			factor: FACTOR,
-		});
-
-		// Re-run with a fresh oversampler / downsampler so the
-		// stateful sides match — and with a pre-allocated output.
-		const upsampleSet2 = [new Oversampler(FACTOR, SAMPLE_RATE)];
-		const upsampled2 = upsampleSet2[0]!.upsample(source);
-		const overrideDownsamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
-		const overrideOutput: Array<Float32Array> = [new Float32Array(frames)];
-		const overrideReturn = applyOversampledChunkFromCache({
-			upsampledChunkSamples: [upsampled2],
-			smoothedGain: gainEnvelopeUp,
-			downsamplers: overrideDownsamplers,
-			factor: FACTOR,
-			output: overrideOutput,
-		});
-
-		expect(overrideReturn).toBe(overrideOutput);
-		expect(defaultOutput[0]!.length).toBe(overrideOutput[0]!.length);
-
-		for (let i = 0; i < defaultOutput[0]!.length; i++) {
-			expect(overrideOutput[0]![i]).toBe(defaultOutput[0]![i]);
-		}
-	});
-
-	it("output with mismatched channel count throws", () => {
-		const frames = 512;
-		const source = makeSineWithNoise(0x4321_1234, frames, 0.2, 440);
-		const upsampler = new Oversampler(FACTOR, SAMPLE_RATE);
-		const upsampled = upsampler.upsample(source);
-		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
-		const downsamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+		const source = makeSineWithNoise(0x5555_6666, frames, 0.25, 440);
+		const envelope = makeRampGain(frames - 1, 0.5, 1.0); // one short
 
 		expect(() => {
-			applyOversampledChunkFromCache({
-				upsampledChunkSamples: [upsampled],
-				smoothedGain: gainEnvelopeUp,
-				downsamplers,
-				factor: FACTOR,
-				output: [new Float32Array(frames), new Float32Array(frames)],
+			applyBaseRateChunk({
+				chunkSamples: [source],
+				smoothedGain: envelope,
 			});
-		}).toThrow(/output array length/);
+		}).toThrow(/smoothedGain length/);
 	});
 
-	it("output with wrong per-channel length throws", () => {
-		const frames = 512;
-		const source = makeSineWithNoise(0x9876_5432, frames, 0.2, 440);
-		const upsampler = new Oversampler(FACTOR, SAMPLE_RATE);
-		const upsampled = upsampler.upsample(source);
-		const gainEnvelopeUp = makeRampGainUpsampled(frames, FACTOR, 0.5, 1.0);
-		const downsamplers = [new Oversampler(FACTOR, SAMPLE_RATE)];
+	it("empty channel list returns empty result", () => {
+		const envelope = makeRampGain(1024, 0.5, 1.0);
+		const output = applyBaseRateChunk({
+			chunkSamples: [],
+			smoothedGain: envelope,
+		});
 
-		expect(() => {
-			applyOversampledChunkFromCache({
-				upsampledChunkSamples: [upsampled],
-				smoothedGain: gainEnvelopeUp,
-				downsamplers,
-				factor: FACTOR,
-				// Wrong: downsampled-output slot should be `frames`, not
-				// `frames - 1`.
-				output: [new Float32Array(frames - 1)],
-			});
-		}).toThrow(/length/);
+		expect(output.length).toBe(0);
 	});
 });

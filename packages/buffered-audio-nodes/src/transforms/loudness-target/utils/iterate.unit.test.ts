@@ -1,11 +1,19 @@
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
 import { LoudnessAccumulator, TruePeakAccumulator, linearToDb } from "@e9g/buffered-audio-nodes-utils";
-import { describe, expect, it } from "vitest";
-import { OVERSAMPLE_FACTOR, iterateForTargets } from "./iterate";
+import { afterEach, describe, expect, it } from "vitest";
+import { iterateForTargets } from "./iterate";
 
 const SAMPLE_RATE = 48_000;
 const DURATION_SECONDS = 8;
 const FRAME_COUNT = SAMPLE_RATE * DURATION_SECONDS;
+
+/**
+ * Per-file registry of `ChunkBuffer`s that must be closed at the end
+ * of each test. `makeBufferFromChannels` pushes inputs; tests push the
+ * `iterateForTargets` result's `bestSmoothedEnvelopeBuffer` via
+ * `trackResultBuffers`. Drained by the `afterEach` hook below.
+ */
+const buffersToClose: Array<ChunkBuffer> = [];
 
 /**
  * Wrap per-channel synthetic arrays in a `ChunkBuffer`. Mirrors
@@ -17,7 +25,24 @@ async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Pr
 	await buffer.write(channels.map((channel) => new Float32Array(channel)), SAMPLE_RATE, 32);
 	await buffer.flushWrites();
 
+	buffersToClose.push(buffer);
+
 	return buffer;
+}
+
+/**
+ * Track the buffers returned by `iterateForTargets` so the
+ * `afterEach` hook can release them. The iterator's `finally` closes
+ * the loser of `activeBufferA / activeBufferB` and the transient
+ * `forwardEnvelopeBuffer`; the winner (`bestSmoothedEnvelopeBuffer`)
+ * is returned to the caller and outlives the function — this file's
+ * responsibility to close. Post the 2026-05-13 base-rate-downstream
+ * rewrite there is no upsampled-source cache to track.
+ */
+function trackResultBuffers(result: {
+	bestSmoothedEnvelopeBuffer: ChunkBuffer;
+}): void {
+	buffersToClose.push(result.bestSmoothedEnvelopeBuffer);
 }
 
 /** LCG (numerical-recipes constants) for deterministic noise. */
@@ -82,6 +107,14 @@ function measureSourceMetrics(channels: ReadonlyArray<Float32Array>): SourceMetr
 describe("iterateForTargets", () => {
 	const TEST_TIMEOUT_MS = 120_000;
 
+	afterEach(async () => {
+		for (const buf of buffersToClose) {
+			await buf.close();
+		}
+
+		buffersToClose.length = 0;
+	});
+
 	it("converges within tolerance on a typical source (1D-on-B)", async () => {
 		// Post `plan-loudness-target-percentile-limit`: iteration is 1D
 		// on `B`. `limitDb` is set once at entry from the auto-derivation
@@ -118,13 +151,15 @@ describe("iterateForTargets", () => {
 			peakTolerance: 0.1,
 		});
 
+		trackResultBuffers(result);
+
 		expect(result.converged).toBe(true);
 		expect(result.attempts.length).toBeLessThanOrEqual(10);
-		// 4×-upsampled smoothed gain envelope, disk-backed
-		// (`ChunkBuffer` per Phase 3 of
-		// `plan-loudness-target-stream-caching`). `.frames` replaces
-		// `.length` from the pre-Phase-3 `Float32Array` shape.
-		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+		// BASE-rate smoothed gain envelope, disk-backed (post the
+		// 2026-05-13 base-rate-downstream rewrite — envelope is
+		// bandlimited far below base-rate Nyquist by smoothing, so
+		// storing at base rate loses nothing).
+		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT);
 
 		const lastAttempt = result.attempts[result.attempts.length - 1];
 
@@ -188,6 +223,8 @@ describe("iterateForTargets", () => {
 			peakTolerance: 0.1,
 		});
 
+		trackResultBuffers(result);
+
 		// `bestLimitDb` carries the auto-derivation result; must equal
 		// the clamped `limitAutoDb` (within the feasible window — at
 		// the value we passed since it's between pivot and peak).
@@ -203,7 +240,7 @@ describe("iterateForTargets", () => {
 		}
 
 		// `bestSmoothedEnvelopeBuffer` populated.
-		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT);
 	}, TEST_TIMEOUT_MS);
 
 	it("limitAutoDb = +Infinity falls back to sourcePeakDb (no limit)", async () => {
@@ -234,6 +271,8 @@ describe("iterateForTargets", () => {
 			tolerance: 0.5,
 			peakTolerance: 0.1,
 		});
+
+		trackResultBuffers(result);
 
 		// Fallback: `currentLimit = sourcePeakDb`. `bestLimitDb` carries
 		// this constant.
@@ -294,6 +333,8 @@ describe("iterateForTargets", () => {
 			peakTolerance: 1e-9,
 		});
 
+		trackResultBuffers(result);
+
 		expect(result.converged).toBe(false);
 		expect(result.attempts.length).toBe(4);
 
@@ -302,7 +343,7 @@ describe("iterateForTargets", () => {
 		const matchedAttempt = result.attempts.find((attempt) => attempt.boost === result.bestB);
 
 		expect(matchedAttempt).toBeDefined();
-		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+		expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT);
 
 		// Best score must be the minimum across all attempts. Score
 		// formula post joint-iteration rewrite (2026-05-13):
@@ -364,6 +405,8 @@ describe("iterateForTargets", () => {
 				tolerance: 0.5,
 				peakTolerance: 0.1,
 			});
+
+			trackResultBuffers(result);
 
 			expect(result.attempts.length).toBeGreaterThan(1);
 
@@ -445,6 +488,8 @@ describe("iterateForTargets", () => {
 				tolerance: 0.5,
 				peakTolerance: 0.1,
 			});
+
+			trackResultBuffers(result);
 
 			expect(result.attempts.length).toBeGreaterThan(2);
 
@@ -528,6 +573,8 @@ describe("iterateForTargets", () => {
 				peakTolerance: 0.1,
 			});
 
+			trackResultBuffers(result);
+
 			expect(result.attempts.length).toBeGreaterThan(1);
 
 			// For each consecutive attempt pair: if attempt[i]'s
@@ -572,6 +619,8 @@ describe("iterateForTargets", () => {
 				tolerance: 0.5,
 				peakTolerance: 0.1,
 			});
+
+			trackResultBuffers(result);
 
 			// `effectiveTargetTp = sourcePeakDb` under the skipPeak
 			// branch → closed-form initial `peakGainDb = sourcePeakDb -
@@ -622,6 +671,8 @@ describe("iterateForTargets", () => {
 				tolerance: 0.5,
 				peakTolerance: 0.1,
 			});
+
+			trackResultBuffers(result);
 
 			expect(result.attempts.length).toBeLessThanOrEqual(10);
 			expect(result.attempts.length).toBeGreaterThan(0);
@@ -674,6 +725,8 @@ describe("iterateForTargets", () => {
 				peakTolerance: 0.1,
 			});
 
+			trackResultBuffers(result);
+
 			expect(result.converged).toBe(false);
 			expect(result.attempts.length).toBe(10);
 			expect(result.bestPeakGainDb).toBeGreaterThanOrEqual(-60);
@@ -715,6 +768,8 @@ describe("iterateForTargets", () => {
 				peakTolerance: 1e-9,
 			});
 
+			trackResultBuffers(result);
+
 			expect(result.converged).toBe(false);
 			expect(result.attempts.length).toBe(4);
 
@@ -751,7 +806,7 @@ describe("iterateForTargets", () => {
 	describe("Phase 4 envelope shape", () => {
 		const TEST_TIMEOUT_MS_INNER = 120_000;
 
-		it("bestSmoothedEnvelopeBuffer is exactly frames * OVERSAMPLE_FACTOR samples (single attempt, multi-chunk fixture)", async () => {
+		it("bestSmoothedEnvelopeBuffer is exactly `frames` base-rate samples (single attempt, multi-chunk fixture)", async () => {
 			const source = makeSyntheticSource(0xCAFE_F00D, 0.1, 0.4);
 			const metrics = measureSourceMetrics(source);
 			const buffer = await makeBufferFromChannels(source);
@@ -772,8 +827,10 @@ describe("iterateForTargets", () => {
 				peakTolerance: 0.1,
 			});
 
+			trackResultBuffers(result);
+
 			expect(result.attempts.length).toBe(1);
-			expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+			expect(result.bestSmoothedEnvelopeBuffer.frames).toBe(FRAME_COUNT);
 
 			// Sanity-check: every sample is finite and positive. Catches a
 			// regression where the walk-A streaming loop fails to fill the
@@ -787,7 +844,7 @@ describe("iterateForTargets", () => {
 			const envelopeChunk = await result.bestSmoothedEnvelopeBuffer.read(result.bestSmoothedEnvelopeBuffer.frames);
 			const envelope = envelopeChunk.samples[0] ?? new Float32Array(0);
 
-			expect(envelope.length).toBe(FRAME_COUNT * OVERSAMPLE_FACTOR);
+			expect(envelope.length).toBe(FRAME_COUNT);
 
 			let allFinite = true;
 			let allPositive = true;
@@ -855,6 +912,8 @@ describe("iterateForTargets", () => {
 				peakTolerance: 1e-9,
 			});
 
+			trackResultBuffers(result);
+
 			expect(result.converged).toBe(true);
 			expect(result.attempts.length).toBeLessThanOrEqual(10);
 
@@ -869,5 +928,76 @@ describe("iterateForTargets", () => {
 			// collapses both gates into one.
 			expect(Math.abs(winningAttempt?.lufsErr ?? Infinity)).toBeGreaterThan(1e-9);
 		}, TEST_TIMEOUT_MS_INNER);
+	});
+});
+
+/**
+ * IIR rate-invariance regression — locks in the 2026-05-13 base-rate-
+ * downstream rewrite's claim that `BidirectionalIir` derives its
+ * coefficient from `(smoothingMs, sampleRate)` rate-agnostically, so
+ * the time-domain response (in milliseconds) of a fixed smoothing
+ * constant is identical at base rate and at 4× rate. The pre-rewrite
+ * pipeline constructed the IIR at `OVERSAMPLE_FACTOR × baseRate` and
+ * stored / applied envelopes at 4×; the rewrite constructs the IIR at
+ * `baseRate` and stores / applies at base rate. The two configurations
+ * must produce the same time-domain response — only alpha and the
+ * per-sample count change.
+ */
+describe("BidirectionalIir rate invariance (loudness-target smoothing contract)", () => {
+	it("step response settles in the same number of MILLISECONDS at base rate and at 4× rate (within ±1 base-sample)", async () => {
+		const { BidirectionalIir } = await import("@e9g/buffered-audio-nodes-utils");
+		const smoothingMs = 3; // production-typical
+		const baseRate = SAMPLE_RATE; // 48 kHz
+		const upRate = baseRate * 4;
+		const settleFractionTarget = 0.5;
+
+		// Construct a step input long enough to comfortably reach
+		// steady state at both rates. Pre-pad with zero so the IIR
+		// state has a clean baseline.
+		const baseLength = Math.round((smoothingMs * baseRate) / 1000) * 20; // 20× smoothing
+		const upLength = baseLength * 4;
+		const baseStep = new Float32Array(baseLength);
+		const upStep = new Float32Array(upLength);
+
+		baseStep.fill(1);
+		upStep.fill(1);
+
+		// Set the leading sample to 0 so the "step" is well-defined
+		// from a clean baseline. Both arrays use the same logical
+		// step waveform; only sample count differs.
+		baseStep[0] = 0;
+		upStep[0] = 0;
+
+		const baseIir = new BidirectionalIir({ smoothingMs, sampleRate: baseRate });
+		const upIir = new BidirectionalIir({ smoothingMs, sampleRate: upRate });
+
+		// `applyForwardPass` (single-direction; mirrors the per-chunk
+		// forward IIR used inside Walk A). Seed from the first sample
+		// at each rate so the leading-edge response is comparable.
+		const baseOut = baseIir.applyForwardPass(baseStep, { value: baseStep[0]! });
+		const upOut = upIir.applyForwardPass(upStep, { value: upStep[0]! });
+
+		// Find the first index at each rate where the output crosses
+		// `settleFractionTarget` (50 % of the asymptote, which is 1).
+		// Convert each to milliseconds and assert they match within
+		// ±1 base-sample's worth of tolerance — IEEE-754 rounding
+		// plus alpha-quantisation can drift by a fraction of a
+		// sample between rates, but never more than 1 base-sample at
+		// production smoothing values.
+		const findSettleIdx = (arr: Float32Array): number => {
+			for (let i = 0; i < arr.length; i++) {
+				if ((arr[i] ?? 0) >= settleFractionTarget) return i;
+			}
+
+			return arr.length;
+		};
+		const baseSettleIdx = findSettleIdx(baseOut);
+		const upSettleIdx = findSettleIdx(upOut);
+		const baseSettleMs = (baseSettleIdx / baseRate) * 1000;
+		const upSettleMs = (upSettleIdx / upRate) * 1000;
+		const toleranceMs = (1 / baseRate) * 1000; // 1 base-sample
+		const diffMs = Math.abs(baseSettleMs - upSettleMs);
+
+		expect(diffMs).toBeLessThan(toleranceMs);
 	});
 });

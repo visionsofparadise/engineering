@@ -1,8 +1,8 @@
 import { ChunkBuffer } from "@e9g/buffered-audio-nodes-core";
-import { Oversampler, SlidingWindowMaxStream } from "@e9g/buffered-audio-nodes-utils";
+import { SlidingWindowMaxStream, TruePeakUpsampler } from "@e9g/buffered-audio-nodes-utils";
 import { describe, expect, it } from "vitest";
 import { CHUNK_FRAMES, OVERSAMPLE_FACTOR } from "./iterate";
-import { buildSourceUpsampledAndDetectionCaches } from "./source-caches";
+import { buildBaseRateDetectionCache } from "./source-caches";
 
 const SAMPLE_RATE = 48_000;
 
@@ -39,59 +39,52 @@ async function makeBufferFromChannels(channels: ReadonlyArray<Float32Array>): Pr
 }
 
 /**
- * Read all frames from a ChunkBuffer into a flat per-channel
- * `Float32Array[]`. Used to compare cached output byte-equal against
- * reference single-pass output computed in test code. Uses sequential
- * `read` per the new API; rewinds via `reset()` first.
+ * Read all frames from a single-channel ChunkBuffer into a flat
+ * `Float32Array`. Used to compare cached output against reference
+ * single-pass output computed in test code. Reads at base rate (post
+ * `plan-loudness-target-base-rate-downstream`).
  */
-async function readAll(buffer: ChunkBuffer): Promise<Array<Float32Array>> {
-	const channelCount = buffer.channels;
+async function readAllSingleChannel(buffer: ChunkBuffer): Promise<Float32Array> {
 	const totalFrames = buffer.frames;
-	const out: Array<Float32Array> = [];
-
-	for (let ch = 0; ch < channelCount; ch++) {
-		out.push(new Float32Array(totalFrames));
-	}
+	const out = new Float32Array(totalFrames);
 
 	if (totalFrames === 0) return out;
 
 	await buffer.reset();
-	const chunkSize = CHUNK_FRAMES * OVERSAMPLE_FACTOR;
+	const chunkSize = CHUNK_FRAMES;
 	let offset = 0;
 
 	while (offset < totalFrames) {
 		const want = Math.min(chunkSize, totalFrames - offset);
 		const chunk = await buffer.read(want);
-		const got = chunk.samples[0]?.length ?? 0;
+		const src = chunk.samples[0];
+		const got = src?.length ?? 0;
 
-		if (got === 0) break;
+		if (got === 0 || src === undefined) break;
 
-		for (let ch = 0; ch < channelCount; ch++) {
-			const src = chunk.samples[ch];
-			const dst = out[ch];
-
-			if (src && dst) dst.set(src, offset);
-		}
-
+		out.set(src, offset);
 		offset += got;
 	}
 
 	return out;
 }
 
-describe("buildSourceUpsampledAndDetectionCaches", () => {
-	it("populates both caches with the expected frame counts", async () => {
+describe("buildBaseRateDetectionCache", () => {
+	it("produces a single base-rate detection ChunkBuffer (no upsampled-source cache)", async () => {
 		// Use ~2.5 chunks so we exercise both the steady-state path and
-		// the trailing short chunk.
+		// the trailing short chunk. Post the 2026-05-13 base-rate-
+		// downstream rewrite the function returns a SINGLE ChunkBuffer
+		// (the detection envelope) at base rate — no upsampled-source
+		// cache exists.
 		const frames = Math.floor(CHUNK_FRAMES * 2.5);
 		const channels = [
 			makeSineWithNoise(0xABCD_1234, frames, 0.2, 440),
 			makeSineWithNoise(0x1234_ABCD, frames, 0.25, 660),
 		];
 		const buffer = await makeBufferFromChannels(channels);
-		const halfWidth = 50; // small smoothing for fast test
+		const halfWidth = 50; // base-rate halfWidth, small for fast test
 
-		const caches = await buildSourceUpsampledAndDetectionCaches({
+		const detectionEnvelope = await buildBaseRateDetectionCache({
 			buffer,
 			sampleRate: SAMPLE_RATE,
 			channelCount: 2,
@@ -100,98 +93,28 @@ describe("buildSourceUpsampledAndDetectionCaches", () => {
 		});
 
 		try {
-			expect(caches.upsampledSource.frames).toBe(frames * OVERSAMPLE_FACTOR);
-			expect(caches.upsampledSource.channels).toBe(2);
-			expect(caches.detectionEnvelope.frames).toBe(frames * OVERSAMPLE_FACTOR);
-			expect(caches.detectionEnvelope.channels).toBe(1);
+			// Base-rate contract: detection envelope has exactly `frames`
+			// samples (no `× OVERSAMPLE_FACTOR` factor anywhere).
+			expect(detectionEnvelope.frames).toBe(frames);
+			expect(detectionEnvelope.channels).toBe(1);
+			// Sample-rate metadata is base rate, not 4×.
+			expect(detectionEnvelope.sampleRate).toBe(SAMPLE_RATE);
 		} finally {
-			await caches.upsampledSource.close();
-			await caches.detectionEnvelope.close();
+			await detectionEnvelope.close();
+			await buffer.close();
 		}
 	});
 
-	it("upsampled cache contents match per-chunk Oversampler.upsample outputs concatenated", async () => {
-		const frames = Math.floor(CHUNK_FRAMES * 1.75);
-		const channels = [
-			makeSineWithNoise(0xCAFE_BABE, frames, 0.3, 880),
-			makeSineWithNoise(0xBADD_F00D, frames, 0.22, 1320),
-		];
-		const buffer = await makeBufferFromChannels(channels);
-
-		const caches = await buildSourceUpsampledAndDetectionCaches({
-			buffer,
-			sampleRate: SAMPLE_RATE,
-			channelCount: 2,
-			frames,
-			halfWidth: 100,
-		});
-
-		try {
-			// Reference: walk the buffer chunk-by-chunk with a fresh
-			// Oversampler set (matching the cache builder's setup) and
-			// concatenate the per-chunk upsamples.
-			const refOversamplers = [
-				new Oversampler(OVERSAMPLE_FACTOR, SAMPLE_RATE),
-				new Oversampler(OVERSAMPLE_FACTOR, SAMPLE_RATE),
-			];
-			const refChannels: Array<Float32Array> = [
-				new Float32Array(frames * OVERSAMPLE_FACTOR),
-				new Float32Array(frames * OVERSAMPLE_FACTOR),
-			];
-			let writeOffset = 0;
-
-			await buffer.reset();
-			for (;;) {
-				const chunk = await buffer.read(CHUNK_FRAMES);
-				const chunkFrames = chunk.samples[0]?.length ?? 0;
-
-				if (chunkFrames === 0) break;
-
-				for (let ch = 0; ch < 2; ch++) {
-					const channel = chunk.samples[ch]!;
-					const up = refOversamplers[ch]!.upsample(channel);
-
-					refChannels[ch]!.set(up, writeOffset);
-				}
-
-				writeOffset += chunkFrames * OVERSAMPLE_FACTOR;
-				if (chunkFrames < CHUNK_FRAMES) break;
-			}
-
-			const got = await readAll(caches.upsampledSource);
-
-			for (let ch = 0; ch < 2; ch++) {
-				const ref = refChannels[ch]!;
-				const gotCh = got[ch]!;
-
-				expect(gotCh.length).toBe(ref.length);
-
-				let maxDiff = 0;
-
-				for (let i = 0; i < ref.length; i++) {
-					const diff = Math.abs(ref[i]! - gotCh[i]!);
-
-					if (diff > maxDiff) maxDiff = diff;
-				}
-
-				expect(maxDiff).toBe(0);
-			}
-		} finally {
-			await caches.upsampledSource.close();
-			await caches.detectionEnvelope.close();
-		}
-	});
-
-	it("detection envelope matches reference: max-link then SlidingWindowMaxStream over per-chunk upsamples", async () => {
+	it("detection envelope matches reference: per-chunk 4× upsample → max-of-channels → max-of-4 → base-rate slider", async () => {
 		const frames = Math.floor(CHUNK_FRAMES * 1.3);
 		const channels = [
 			makeSineWithNoise(0xFEED_DEAD, frames, 0.4, 1000),
 			makeSineWithNoise(0x5A5A_A5A5, frames, 0.35, 1500),
 		];
 		const buffer = await makeBufferFromChannels(channels);
-		const halfWidth = 200;
+		const halfWidth = 50; // base-rate halfWidth
 
-		const caches = await buildSourceUpsampledAndDetectionCaches({
+		const detectionEnvelope = await buildBaseRateDetectionCache({
 			buffer,
 			sampleRate: SAMPLE_RATE,
 			channelCount: 2,
@@ -201,16 +124,18 @@ describe("buildSourceUpsampledAndDetectionCaches", () => {
 
 		try {
 			// Reference: replicate the cache builder's interior — fresh
-			// oversamplers, fresh sliding window, fused walk — into a
-			// single flat array so we can compare byte-equal.
+			// per-channel BS.1770-4 Annex 1 polyphase FIR upsamplers,
+			// fresh sliding window, fused walk at base rate. Per-chunk
+			// 4× upsample → max-of-channels at 4× rate → max-of-4
+			// collapse to base rate → push base-rate chunk through
+			// slider.
 			const refOversamplers = [
-				new Oversampler(OVERSAMPLE_FACTOR, SAMPLE_RATE),
-				new Oversampler(OVERSAMPLE_FACTOR, SAMPLE_RATE),
+				new TruePeakUpsampler(OVERSAMPLE_FACTOR),
+				new TruePeakUpsampler(OVERSAMPLE_FACTOR),
 			];
 			const slidingWindow = new SlidingWindowMaxStream(halfWidth);
-			const upsampledTotal = frames * OVERSAMPLE_FACTOR;
-			const refDetection = new Float32Array(upsampledTotal);
-			let detectionWriteOffset = 0;
+			const refDetection = new Float32Array(frames);
+			let writeOffset = 0;
 			let consumed = 0;
 
 			await buffer.reset();
@@ -227,7 +152,8 @@ describe("buildSourceUpsampledAndDetectionCaches", () => {
 					upChannels.push(refOversamplers[ch]!.upsample(chunk.samples[ch]!));
 				}
 
-				const detectChunk = new Float32Array(upChunkLength);
+				// 4×-rate detection (max across channels).
+				const detect4x = new Float32Array(upChunkLength);
 
 				for (let upIdx = 0; upIdx < upChunkLength; upIdx++) {
 					let max = 0;
@@ -238,46 +164,227 @@ describe("buildSourceUpsampledAndDetectionCaches", () => {
 						if (v > max) max = v;
 					}
 
-					detectChunk[upIdx] = max;
+					detect4x[upIdx] = max;
 				}
 
-				consumed += upChunkLength;
-				const isFinal = consumed >= upsampledTotal;
-				const pooled = slidingWindow.push(detectChunk, isFinal);
+				// Max-of-4 collapse to base rate.
+				const detectBase = new Float32Array(chunkFrames);
+
+				for (let baseIdx = 0; baseIdx < chunkFrames; baseIdx++) {
+					const upOffset = baseIdx * OVERSAMPLE_FACTOR;
+					const s0 = detect4x[upOffset] ?? 0;
+					const s1 = detect4x[upOffset + 1] ?? 0;
+					const s2 = detect4x[upOffset + 2] ?? 0;
+					const s3 = detect4x[upOffset + 3] ?? 0;
+					const m01 = s0 > s1 ? s0 : s1;
+					const m23 = s2 > s3 ? s2 : s3;
+
+					detectBase[baseIdx] = m01 > m23 ? m01 : m23;
+				}
+
+				consumed += chunkFrames;
+				const isFinal = consumed >= frames;
+				const pooled = slidingWindow.push(detectBase, isFinal);
 
 				if (pooled.length > 0) {
-					refDetection.set(pooled, detectionWriteOffset);
-					detectionWriteOffset += pooled.length;
+					refDetection.set(pooled, writeOffset);
+					writeOffset += pooled.length;
 				}
 
 				if (chunkFrames < CHUNK_FRAMES) break;
 			}
 
-			expect(detectionWriteOffset).toBe(upsampledTotal);
+			expect(writeOffset).toBe(frames);
 
-			const got = await readAll(caches.detectionEnvelope);
+			const got = await readAllSingleChannel(detectionEnvelope);
 
-			expect(got[0]!.length).toBe(refDetection.length);
+			expect(got.length).toBe(refDetection.length);
 
 			let maxDiff = 0;
 
 			for (let i = 0; i < refDetection.length; i++) {
-				const diff = Math.abs(refDetection[i]! - got[0]![i]!);
+				const diff = Math.abs(refDetection[i]! - got[i]!);
 
 				if (diff > maxDiff) maxDiff = diff;
 			}
 
 			expect(maxDiff).toBe(0);
 		} finally {
-			await caches.upsampledSource.close();
-			await caches.detectionEnvelope.close();
+			await detectionEnvelope.close();
+			await buffer.close();
 		}
 	});
 
-	it("handles zero-frame source by returning empty buffers", async () => {
+	it("inter-sample peak preservation: post-collapse detection exceeds base-rate source maxima at the peak's neighborhood", async () => {
+		// Synthetic fixture: a high-frequency transient that produces
+		// inter-sample peaks when reconstructed at 4× rate. Use a
+		// short burst of a near-Nyquist sine on a single channel; the
+		// 4× upsampler's reconstruction filter produces inter-sample
+		// excursions larger than any base-rate sample.
+		//
+		// Post the base-rate-downstream rewrite the detection cache
+		// captures these via the inline 4× upsample + max-of-4
+		// collapse, so the post-collapse detection envelope at the
+		// peak's neighborhood reports a level ABOVE the per-base-sample
+		// |source| there. This is the structural reason for retaining
+		// the 4× upsample for detection only.
+		const frames = 4096;
+		const channel = new Float32Array(frames);
+		// Place an 11 kHz tone near Nyquist (24 kHz at 48 kHz sample
+		// rate) — its 4× reconstruction has inter-sample peaks well
+		// above the base-rate samples for short durations.
+		// Amplitude 0.6 keeps the signal well below clipping.
+		const fNear = 11_000;
+		const angular = (2 * Math.PI * fNear) / SAMPLE_RATE;
+
+		for (let i = 0; i < frames; i++) {
+			// Localise a transient around index 2000–2050 — outside the
+			// halfWidth lead-in / tail-out so the slider sees the full
+			// neighborhood.
+			const envelope = i >= 2000 && i < 2050 ? 0.6 : 0;
+
+			channel[i] = envelope * Math.sin(angular * i);
+		}
+
+		const buffer = await makeBufferFromChannels([channel]);
+		const halfWidth = 4; // tight slider so the test reads close to the transient
+
+		const detectionEnvelope = await buildBaseRateDetectionCache({
+			buffer,
+			sampleRate: SAMPLE_RATE,
+			channelCount: 1,
+			frames,
+			halfWidth,
+		});
+
+		try {
+			const got = await readAllSingleChannel(detectionEnvelope);
+			// Inside the transient region, base-rate |x| is bounded by
+			// 0.6 (the envelope amplitude); the 4× reconstruction's
+			// inter-sample peaks exceed 0.6 for this near-Nyquist tone.
+			// Find the max base-rate |source| in the transient region.
+			let maxBaseAbs = 0;
+
+			for (let i = 2000; i < 2050; i++) {
+				const v = Math.abs(channel[i] ?? 0);
+
+				if (v > maxBaseAbs) maxBaseAbs = v;
+			}
+			// Find the max post-collapse detection in the transient
+			// region (slightly widened to absorb slider lead/lag).
+			let maxDetection = 0;
+
+			for (let i = 1980; i < 2070; i++) {
+				const v = got[i] ?? 0;
+
+				if (v > maxDetection) maxDetection = v;
+			}
+			// The structural property: detection sees a strictly
+			// LARGER level than the base-rate source samples in the
+			// peak's neighborhood. If max-of-4 ever degraded to "every
+			// 4th sample of upsampled" this assertion would fire.
+			expect(maxDetection).toBeGreaterThan(maxBaseAbs);
+		} finally {
+			await detectionEnvelope.close();
+			await buffer.close();
+		}
+	});
+
+	it("temporal coverage: post-slider detection holds a transient peak for 2*halfWidth+1 base-rate samples", async () => {
+		// Synthetic: a single base-rate sample of large amplitude in
+		// the middle of a quiet field, on one channel. After the
+		// max-of-4 collapse this lands as a single base-rate "spike"
+		// in the detection-base signal. The slider then holds the
+		// spike across `[n - halfWidth, n + halfWidth]` (inclusive
+		// both sides — `2 × halfWidth + 1` base-rate samples). This
+		// proves the slider's window covers the same temporal extent
+		// at base rate as it did at 4× rate (halved halfWidth → halved
+		// upsampled-sample count, same milliseconds).
+		const frames = 1024;
+		const halfWidth = 7; // base-rate halfWidth, picked small for an exact spike count
+		const channel = new Float32Array(frames);
+		const spikeIdx = 500;
+
+		channel[spikeIdx] = 0.9;
+
+		const buffer = await makeBufferFromChannels([channel]);
+
+		const detectionEnvelope = await buildBaseRateDetectionCache({
+			buffer,
+			sampleRate: SAMPLE_RATE,
+			channelCount: 1,
+			frames,
+			halfWidth,
+		});
+
+		try {
+			const got = await readAllSingleChannel(detectionEnvelope);
+			// Find the spike's resulting plateau in the post-collapse
+			// signal. The 4× upsample's reconstruction filter splatters
+			// the spike across a small neighborhood of upsampled
+			// samples (and also induces a small filter-group-delay
+			// offset relative to the input spike index); after max-of-4
+			// collapse this lands as a small cluster of non-zero
+			// base-rate samples in the spike's neighborhood. The
+			// slider then propagates the cluster's max across
+			// `[k - halfWidth, k + halfWidth]` for each non-zero
+			// cluster sample k — so the union of all such windows
+			// stretches from `(cluster_first - halfWidth)` to
+			// `(cluster_last + halfWidth)` inclusive.
+			//
+			// We assert: the post-slider envelope holds the cluster
+			// max across AT LEAST `2 × halfWidth + 1` consecutive
+			// base-rate samples. The cluster's exact centre depends
+			// on the upsampler's filter response (a few base-rate
+			// samples around the spike), so the assertion locates the
+			// max's actual position in the post-slider signal and
+			// counts the surrounding plateau — locking the slider's
+			// `±halfWidth` widening property without fragility against
+			// the upsampler's filter delay.
+			let clusterMax = 0;
+			let clusterMaxIdx = -1;
+
+			for (let i = spikeIdx - 16; i <= spikeIdx + 16; i++) {
+				const v = got[i] ?? 0;
+
+				if (v > clusterMax) {
+					clusterMax = v;
+					clusterMaxIdx = i;
+				}
+			}
+			expect(clusterMax).toBeGreaterThan(0);
+			expect(clusterMaxIdx).toBeGreaterThanOrEqual(0);
+
+			// Walk outward from `clusterMaxIdx` to find the maximal
+			// contiguous run of samples holding `clusterMax` (within
+			// a tight relative tolerance for IEEE-754 rounding). The
+			// slider's contract: every sample within `±halfWidth` of
+			// a cluster sample holds at least that cluster sample's
+			// value. Since the cluster spans multiple base-rate
+			// samples around `clusterMaxIdx`, the post-slider plateau
+			// is at least `2 × halfWidth + 1` long.
+			const tolerance = clusterMax * 1e-6;
+			let left = clusterMaxIdx;
+
+			while (left > 0 && (got[left - 1] ?? 0) >= clusterMax - tolerance) left--;
+
+			let right = clusterMaxIdx;
+
+			while (right < got.length - 1 && (got[right + 1] ?? 0) >= clusterMax - tolerance) right++;
+
+			const plateauWidth = right - left + 1;
+
+			expect(plateauWidth).toBeGreaterThanOrEqual(2 * halfWidth + 1);
+		} finally {
+			await detectionEnvelope.close();
+			await buffer.close();
+		}
+	});
+
+	it("handles zero-frame source by returning an empty buffer", async () => {
 		const buffer = await makeBufferFromChannels([new Float32Array(0)]);
 
-		const caches = await buildSourceUpsampledAndDetectionCaches({
+		const detectionEnvelope = await buildBaseRateDetectionCache({
 			buffer,
 			sampleRate: SAMPLE_RATE,
 			channelCount: 1,
@@ -286,11 +393,10 @@ describe("buildSourceUpsampledAndDetectionCaches", () => {
 		});
 
 		try {
-			expect(caches.upsampledSource.frames).toBe(0);
-			expect(caches.detectionEnvelope.frames).toBe(0);
+			expect(detectionEnvelope.frames).toBe(0);
 		} finally {
-			await caches.upsampledSource.close();
-			await caches.detectionEnvelope.close();
+			await detectionEnvelope.close();
+			await buffer.close();
 		}
 	});
 });
